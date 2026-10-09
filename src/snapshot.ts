@@ -1,0 +1,61 @@
+// Opt-in "finest strain" snapshot: keeps a cropped copy of the video frame at
+// the run's peak strain. The crop lives in an in-memory canvas and is only
+// encoded to JPEG at game over. Nothing is uploaded anywhere.
+
+import type { FaceBox } from "./face";
+
+const WIDTH = 200;
+
+export class StrainSnapshot {
+  private canvas = document.createElement("canvas");
+  private peak = 0;
+  private has = false;
+
+  reset(): void {
+    this.peak = 0;
+    this.has = false;
+  }
+
+  get peakStrain(): number {
+    return this.peak;
+  }
+
+  /** Call on every detection during a run. Grabs the frame when strain hits a new peak. */
+  offer(video: HTMLVideoElement, box: FaceBox | null, strain: number): void {
+    if (!box || strain <= this.peak + 0.01 || strain < 0.15) return;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+    // Pad the landmark box so the whole face (and some forehead) fits.
+    const padX = box.w * 0.25;
+    const padY = box.h * 0.3;
+    const sx = Math.max(0, (box.x - padX) * vw);
+    const sy = Math.max(0, (box.y - padY) * vh);
+    const sw = Math.min(vw - sx, (box.w + padX * 2) * vw);
+    const sh = Math.min(vh - sy, (box.h + padY * 2) * vh);
+    if (sw < 8 || sh < 8) return;
+    const height = Math.round((WIDTH * sh) / sw);
+    this.canvas.width = WIDTH;
+    this.canvas.height = height;
+    const ctx = this.canvas.getContext("2d");
+    if (!ctx) return;
+    // Mirror so it matches what the player saw in the preview.
+    ctx.save();
+    ctx.translate(WIDTH, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, WIDTH, height);
+    ctx.restore();
+    this.peak = strain;
+    this.has = true;
+  }
+
+  /** JPEG data URL of the peak frame, or null if none was captured. */
+  toDataURL(): string | null {
+    if (!this.has) return null;
+    try {
+      return this.canvas.toDataURL("image/jpeg", 0.85);
+    } catch {
+      return null;
+    }
+  }
+}

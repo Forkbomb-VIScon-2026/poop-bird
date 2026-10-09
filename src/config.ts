@@ -21,15 +21,23 @@ export interface TunableSpec {
 
 export const CONFIG_SPEC = {
   // --- Physics -------------------------------------------------------------
-  gravity: { value: 900, min: 200, max: 2500, step: 10, group: "Physics", label: "Gravity", hint: "px/s²" },
-  maxFallSpeed: { value: 360, min: 100, max: 1200, step: 10, group: "Physics", label: "Max fall speed", hint: "px/s" },
+  gravity: { value: 420, min: 200, max: 2500, step: 10, group: "Physics", label: "Gravity", hint: "px/s²" },
+  maxFallSpeed: { value: 220, min: 100, max: 1200, step: 10, group: "Physics", label: "Max fall speed", hint: "px/s" },
   chargeGravityScale: {
     value: 0.5, min: 0, max: 1, step: 0.05, group: "Physics", label: "Gravity while charging",
     hint: "× gravity while straining (the bird tenses up and glides a bit)",
   },
-  pushMin: { value: 160, min: 0, max: 800, step: 10, group: "Physics", label: "Push: tiny pfft", hint: "upward px/s at ~0 charge" },
-  pushMax: { value: 640, min: 100, max: 1500, step: 10, group: "Physics", label: "Push: full charge", hint: "upward px/s at full charge" },
+  chargeMaxFallSpeed: {
+    value: 100, min: 20, max: 1200, step: 10, group: "Physics", label: "Max fall while charging",
+    hint: "px/s; lets you hold a long strain without hitting the ground",
+  },
+  pushMin: { value: 120, min: 0, max: 800, step: 10, group: "Physics", label: "Push: tiny pfft", hint: "upward px/s at ~0 charge" },
+  pushMax: { value: 480, min: 100, max: 1500, step: 10, group: "Physics", label: "Push: full charge", hint: "upward px/s at full charge" },
   pushCurve: { value: 0.8, min: 0.3, max: 3, step: 0.05, group: "Physics", label: "Push curve", hint: "exponent on charge (<1 = small strains count more)" },
+  startGrace: {
+    value: 1.5, min: 0, max: 5, step: 0.1, group: "Physics", label: "Start grace",
+    hint: "s after GO over which gravity ramps from 0 to full",
+  },
   fallCancel: { value: 0.85, min: 0, max: 1, step: 0.05, group: "Physics", label: "Fall cancel on push", hint: "fraction of downward speed removed on push" },
 
   // --- Charge & overstrain -------------------------------------------------
@@ -60,6 +68,7 @@ export const CONFIG_SPEC = {
   firstObstacleDelay: { value: 700, min: 0, max: 3000, step: 50, group: "World", label: "First obstacle after", hint: "px" },
 
   // --- Targets & score -----------------------------------------------------
+  poopGravity: { value: 1000, min: 100, max: 3000, step: 50, group: "Targets", label: "Poop gravity", hint: "px/s² (separate from the bird so aiming stays the same)" },
   targetSpawnRate: { value: 0.55, min: 0, max: 3, step: 0.05, group: "Targets", label: "Spawn rate", hint: "targets per second" },
   targetPoints: { value: 50, min: 0, max: 500, step: 5, group: "Targets", label: "Points per hit", hint: "base; cars ×1, pedestrians ×1.5, statue ×2" },
   comboStep: { value: 0.5, min: 0, max: 2, step: 0.05, group: "Targets", label: "Combo step", hint: "multiplier added per consecutive hit" },
