@@ -51,8 +51,8 @@ export interface Rect {
   h: number;
 }
 
-export type BottomKind = "building" | "chimney" | "tower" | "harbour" | "coral" | "rock" | "reef";
-export type TopKind = "sign" | "balloons" | "girder" | "harbourArch" | "chain" | "net" | "hull" | "reefArch" | "tabloid";
+export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "harbour" | "coral" | "rock" | "reef";
+export type TopKind = "sign" | "balloons" | "girder" | "harbourArch" | "chain" | "net" | "hull" | "reefArch";
 /** Tops that are one solid block from the top of the screen down to the gap. */
 const SOLID_TOPS: ReadonlySet<TopKind> = new Set(["girder", "harbourArch", "net", "hull", "reefArch"]);
 
@@ -76,7 +76,7 @@ export interface Obstacle {
   splats: Splat[];
   /** Set on the gate that ends a stage: flying through its gap starts the transition to `gate`. */
   gate: Stage | null;
-  /** Set when `top` is "tabloid": the published front page hanging in the way. */
+  /** Set when `bottom` is "billboard": the published front page it shows. */
   tabloid: Tabloid | null;
 }
 
@@ -968,10 +968,10 @@ export class Game {
     }
   }
 
-  /** Picks a gap centre in [top + margin + gap/2, GROUND_Y − margin − gap/2], within maxJump of the last one. */
-  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number): number {
+  /** Picks a gap centre in [top + margin + gap/2, GROUND_Y − bottomMargin − gap/2], within maxJump of the last one. */
+  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number, bottomMargin = margin): number {
     const minCenter = top + margin + gap / 2;
-    const maxCenter = GROUND_Y - margin - gap / 2;
+    const maxCenter = GROUND_Y - bottomMargin - gap / 2;
     let center = minCenter + Math.random() * Math.max(0, maxCenter - minCenter);
     center = Math.max(this.lastGapCenter - maxJump, Math.min(this.lastGapCenter + maxJump, center));
     center = Math.max(minCenter, Math.min(maxCenter, center));
@@ -982,14 +982,14 @@ export class Game {
   private spawnObstacle(): void {
     const d = this.difficulty;
     const gap = ramp(config.obstacleGap, config.obstacleGapMin, d);
-    // A published photo hangs in the way on the next obstacle, which needs room above the gap.
+    // A published photo goes up on a roadside billboard, which needs the whole board below the gap.
     const tabloid = this.pendingTabloids.shift() ?? null;
     // Limit how far the gap jumps, so the next gap is always reachable.
-    const center = this.pickGapCenter(gap, tabloid ? TABLOID_H - 10 : 0, 50, 140 + 140 * d);
+    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50);
 
-    const bottom: BottomKind = pick(["building", "building", "chimney", "tower"]);
-    const top: TopKind = tabloid ? "tabloid" : pick(["sign", "balloons", "girder"]);
-    const w = bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
+    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "chimney", "tower"]);
+    const top: TopKind = pick(["sign", "balloons", "girder"]);
+    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
@@ -1310,28 +1310,33 @@ export class Game {
 // --- geometry helpers ----------------------------------------------------------
 
 export const SIGN_H = 64;
-/** The hanging tabloid front page (see obstacleRects). */
-export const TABLOID_W = 130;
-export const TABLOID_H = 150;
+/** The roadside billboard: a board at the bottom of the gap on steel legs (see obstacleRects). */
+export const BILLBOARD_W = 230;
+export const BILLBOARD_H = 140;
+const BILLBOARD_MIN_LEGS = 40;
+/** The legs' frame covers the middle of the board's width; the board overhangs on both sides. */
+export const BILLBOARD_LEGS_INSET = 0.16;
 
 /** Collision rectangles for an obstacle, shared by rendering and physics. */
 export function obstacleRects(o: Obstacle): Rect[] {
   const rects: Rect[] = [];
-  // Bottom part rises from the ground to the gap.
-  rects.push({ x: o.x, y: o.gapBottom, w: o.w, h: GROUND_Y - o.gapBottom });
+  // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).
+  const billboard = o.bottom === "billboard";
+  rects.push({ x: o.x, y: o.gapBottom, w: o.w, h: billboard ? BILLBOARD_H : GROUND_Y - o.gapBottom });
   // Top part hangs down to the gap.
   const cx = o.x + o.w / 2;
-  if (o.top === "tabloid") {
-    const hangH = Math.min(TABLOID_H, o.gapTop);
-    rects.push({ x: cx - 4, y: 0, w: 8, h: o.gapTop - hangH });
-    rects.push({ x: cx - TABLOID_W / 2, y: o.gapTop - hangH, w: TABLOID_W, h: hangH });
-  } else if (SOLID_TOPS.has(o.top)) {
+  if (SOLID_TOPS.has(o.top)) {
     rects.push({ x: o.x - 6, y: 0, w: o.w + 12, h: o.gapTop });
   } else {
     const hangH = Math.min(SIGN_H, o.gapTop);
     // Cable(s) from the top of the screen.
     rects.push({ x: cx - 4, y: 0, w: 8, h: o.gapTop - hangH });
     rects.push({ x: o.x - 8, y: o.gapTop - hangH, w: o.w + 16, h: hangH });
+  }
+  if (billboard) {
+    const inset = o.w * BILLBOARD_LEGS_INSET;
+    const legsTop = o.gapBottom + BILLBOARD_H;
+    rects.push({ x: o.x + inset, y: legsTop, w: o.w - inset * 2, h: GROUND_Y - legsTop });
   }
   return rects;
 }

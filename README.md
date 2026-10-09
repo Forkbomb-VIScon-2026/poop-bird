@@ -87,9 +87,10 @@ there's no countdown.
 - **Paparazzi:** now and then a paparazzo walks on with his camera raised.
   The ring over his head fills as he closes in; when it's full (just past the
   bird) he takes your picture. Splat him first to smash the camera (×3).
-  Miss, and you get a flash, a polaroid, and your photo on a tabloid front
-  page hanging from the next obstacle (and on the game-over screen). The
-  run's first paparazzo walks slower and has a "SPLAT HIM!" arrow.
+  Miss, and you get a flash, a polaroid, and your photo on a roadside
+  billboard as the next obstacle, always before the harbour gate (and on the
+  game-over screen). The run's first paparazzo walks slower and has a
+  "SPLAT HIM!" arrow.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage

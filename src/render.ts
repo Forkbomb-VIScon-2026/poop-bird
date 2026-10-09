@@ -5,8 +5,8 @@ import {
   BIRD_RADIUS,
   GROUND_Y,
   SURFACE_Y,
-  TABLOID_H,
-  TABLOID_W,
+  BILLBOARD_H,
+  BILLBOARD_LEGS_INSET,
   TRANSITION_HOLD_AT,
   TRANSITION_SWAP_AT,
   VIEW_H,
@@ -274,7 +274,9 @@ export class Renderer {
     ctx.strokeStyle = OUTLINE;
 
     // Bottom part
-    if (o.bottom === "chimney") {
+    if (o.bottom === "billboard") {
+      this.drawBillboard(o, time);
+    } else if (o.bottom === "chimney") {
       ctx.fillStyle = "#a44a3f";
       roundRect(ctx, base.x, base.y, base.w, base.h + 4, 4);
       ctx.fill();
@@ -368,22 +370,6 @@ export class Renderer {
       ctx.fillRect(r.x, r.y + r.h - 10, r.w, 10);
       ctx.fillStyle = "#ffd166";
       for (let x = r.x; x < r.x + r.w; x += 16) ctx.fillRect(x, r.y + r.h - 10, 8, 10);
-    } else if (o.top === "tabloid") {
-      const cable = rects[1];
-      const box = rects[2];
-      ctx.strokeStyle = "#2b2d42";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(cable.x + cable.w / 2, -5);
-      ctx.lineTo(cable.x + cable.w / 2, box.y + 4);
-      ctx.stroke();
-      const sway = Math.sin(time * 1.3 + o.seed) * 0.03;
-      ctx.save();
-      ctx.translate(box.x + box.w / 2, box.y);
-      ctx.rotate(sway);
-      // Only the bottom of the page shows when the gap is high up.
-      drawFrontPage(ctx, -TABLOID_W / 2, box.h - TABLOID_H, TABLOID_W, TABLOID_H, o.tabloid, this.photos);
-      ctx.restore();
     } else {
       const cable = rects[1];
       const box = rects[2];
@@ -440,6 +426,83 @@ export class Renderer {
     }
 
     for (const s of o.splats) drawSplat(ctx, o.x + s.dx, s.dy, s.r, s.seed, 1);
+  }
+
+  /** Roadside billboard: the front page on a framed board, on a steel frame with a catwalk and lamps. */
+  private drawBillboard(o: Obstacle, time: number): void {
+    const ctx = this.ctx;
+    const x = o.x;
+    const w = o.w;
+    const top = o.gapBottom;
+    const boardBottom = top + BILLBOARD_H;
+    const inset = w * BILLBOARD_LEGS_INSET;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = OUTLINE;
+
+    // Steel frame: two legs with cross bracing, filling the collision box below the board.
+    const legW = 12;
+    const lx = x + inset;
+    const rx = x + w - inset - legW;
+    ctx.strokeStyle = "#6c757d";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (let y = boardBottom; y < GROUND_Y - 4; y += 36) {
+      const y2 = Math.min(GROUND_Y, y + 36);
+      ctx.moveTo(lx + legW, y);
+      ctx.lineTo(rx, y2);
+      ctx.moveTo(rx, y);
+      ctx.lineTo(lx + legW, y2);
+      ctx.moveTo(lx + legW, y);
+      ctx.lineTo(rx, y);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.fillStyle = "#495057";
+    for (const legX of [lx, rx]) {
+      ctx.fillRect(legX, boardBottom, legW, GROUND_Y - boardBottom + 4);
+      ctx.strokeRect(legX, boardBottom, legW, GROUND_Y - boardBottom + 4);
+    }
+
+    // Catwalk under the board, with lamps shining up at it.
+    ctx.fillStyle = "#343a40";
+    ctx.fillRect(x + 6, boardBottom, w - 12, 7);
+    ctx.strokeRect(x + 6, boardBottom, w - 12, 7);
+    for (let i = 0; i < 3; i++) {
+      const cx = x + w * (0.2 + i * 0.3);
+      const glow = 0.18 + Math.sin(time * 3 + i + o.seed) * 0.03;
+      ctx.fillStyle = `rgba(255,240,170,${glow})`;
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, boardBottom - 2);
+      ctx.lineTo(cx - 34, top + 10);
+      ctx.lineTo(cx + 34, top + 10);
+      ctx.lineTo(cx + 5, boardBottom - 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Board frame and the ad.
+    ctx.fillStyle = "#2b2d42";
+    roundRect(ctx, x, top, w, BILLBOARD_H, 4);
+    ctx.fill();
+    drawBillboardAd(ctx, x + 7, top + 7, w - 14, BILLBOARD_H - 14, o.tabloid, this.photos);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    roundRect(ctx, x, top, w, BILLBOARD_H, 4);
+    ctx.stroke();
+    // Lamp heads on the catwalk (drawn over the board's bottom edge).
+    ctx.fillStyle = "#adb5bd";
+    for (let i = 0; i < 3; i++) {
+      const cx = x + w * (0.2 + i * 0.3);
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, boardBottom + 2);
+      ctx.lineTo(cx + 7, boardBottom + 2);
+      ctx.lineTo(cx + 4, boardBottom - 6);
+      ctx.lineTo(cx - 4, boardBottom - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 
   // --- targets ----------------------------------------------------------------
@@ -2257,8 +2320,8 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
 }
 
 /**
- * A tabloid front page with the photo and headline, laid out to fit w×h. Used
- * for the billboard hanging in the city and for the game-over screen.
+ * A tabloid front page with the photo and headline, laid out to fit w×h (for
+ * the game-over screen; the billboard uses drawBillboardAd).
  */
 export function drawFrontPage(
   ctx: CanvasRenderingContext2D,
@@ -2328,5 +2391,62 @@ export function drawFrontPage(
     const ly = y + h - footer + lineH * (i + 0.8);
     ctx.fillRect(x + pad, ly, (w - pad * 2) * (i ? 0.7 : 1), Math.max(1.5, lineH * 0.35));
   }
+  ctx.restore();
+}
+
+/** The billboard's landscape layout: masthead across the top, the photo on the left, the headline beside it. */
+function drawBillboardAd(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  tabloid: Tabloid | null,
+  photos: ReadonlyMap<number, Photo>,
+): void {
+  const pad = 6;
+  ctx.save();
+  ctx.fillStyle = "#f5f1e6";
+  ctx.fillRect(x, y, w, h);
+  // Masthead
+  const mastH = h * 0.2;
+  ctx.fillStyle = "#d62828";
+  ctx.fillRect(x, y, w, mastH);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `italic 900 ${mastH * 0.66}px Georgia, 'Times New Roman', serif`;
+  ctx.fillText("The Daily Dropping", x + w / 2, y + mastH / 2 + 1, w - pad * 2);
+
+  // Photo on the left
+  const photoY = y + mastH + pad;
+  const photoH = y + h - pad - photoY;
+  const photoW = Math.min(photoH * 0.95, w * 0.45);
+  drawPhoto(ctx, tabloid ? photos.get(tabloid.photoId) : undefined, x + pad, photoY, photoW, photoH);
+
+  // Headline on the right, as big as fits in up to 4 lines
+  const tx = x + pad * 2 + photoW;
+  const tw = x + w - pad - tx;
+  const headline = tabloid?.headline ?? "EXCLUSIVE";
+  let hs = photoH * 0.34;
+  let lines: string[] = [];
+  for (; hs > 6; hs *= 0.92) {
+    ctx.font = `900 ${hs}px Impact, 'Arial Black', 'Trebuchet MS', sans-serif`;
+    lines = wrapText(ctx, headline, tw);
+    if (lines.length * hs * 1.05 <= photoH && lines.every((l) => ctx.measureText(l).width <= tw)) break;
+  }
+  ctx.fillStyle = "#111";
+  const textTop = photoY + (photoH - lines.length * hs * 1.05) / 2;
+  lines.forEach((l, i) => ctx.fillText(l, tx + tw / 2, textTop + hs * (0.55 + i * 1.05)));
+
+  // EXCLUSIVE badge on the photo's corner
+  ctx.save();
+  ctx.translate(x + pad + photoW - 4, photoY + 6);
+  ctx.rotate(0.3);
+  drawStar(ctx, 0, 0, 18, "#ffd60a");
+  ctx.fillStyle = "#d62828";
+  ctx.font = "900 7px 'Trebuchet MS', sans-serif";
+  ctx.fillText("EXCL!", 0, 1);
+  ctx.restore();
   ctx.restore();
 }
