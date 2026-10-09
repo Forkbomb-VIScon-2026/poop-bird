@@ -88,7 +88,8 @@ const snapshot = new StrainSnapshot();
 const debug = new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace());
 
 const CALIBRATION_KEY = "poopbird.calibration.v1";
-const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v1";
+// v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
+const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v2";
 
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
 /** Puff calibration (neutral vs. full puff). null = use the fixed cheekPuff fallback range. */
@@ -393,8 +394,8 @@ const FEATURE_LABELS: Record<FeatureName, string> = {
   mouthPucker: "pucker",
   mouthFunnel: "funnel lips",
   cheekWidth: "cheek width",
-  cheekBulge: "cheek bulge",
   mouthWidth: "mouth width",
+  eyeMouth: "eye–mouth distance",
 };
 
 /** Labels of the (up to 3) features a calibration weights most. */

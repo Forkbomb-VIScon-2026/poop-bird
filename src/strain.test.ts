@@ -5,6 +5,7 @@ import {
   buildCalibration,
   extractFeatures,
   featureStats,
+  robustFeatureStats,
   featureWeight,
   initialStrainState,
   normalizeFeature,
@@ -53,10 +54,10 @@ describe("extractFeatures", () => {
   });
 
   it("passes landmark geometry through, and treats missing geometry as 0", () => {
-    const f = extractFeatures({}, { cheekWidth: 0.7, cheekBulge: 0.2, mouthWidth: 0.55 });
+    const f = extractFeatures({}, { cheekWidth: 0.7, mouthWidth: 0.55, eyeMouth: 0.8 });
     expect(f.cheekWidth).toBe(0.7);
     expect(f.mouthWidth).toBe(0.55);
-    expect(extractFeatures({}, null).cheekBulge).toBe(0);
+    expect(extractFeatures({}, null).eyeMouth).toBe(0);
   });
 
   it("treats missing blendshapes as 0", () => {
@@ -99,6 +100,25 @@ describe("featureWeight", () => {
 
   it("penalizes noisy features", () => {
     expect(featureWeight(0.3, 0.3, 0.04)).toBeLessThan(featureWeight(0.3, 0.01, 0.04));
+  });
+});
+
+describe("robustFeatureStats", () => {
+  it("uses the median and MAD, so a short spike moves neither", () => {
+    const steady = [0.2, 0.21, 0.19, 0.2, 0.22, 0.18, 0.2, 0.2];
+    const spiked = [...steady, 0.95, 0.9];
+    const s = robustFeatureStats(spiked.map((v) => fv({ mouthPucker: v })));
+    expect(s.mean.mouthPucker).toBeCloseTo(0.2, 2);
+    expect(s.std.mouthPucker).toBeLessThan(0.03);
+    expect(featureStats(spiked.map((v) => fv({ mouthPucker: v }))).std.mouthPucker).toBeGreaterThan(0.2);
+    expect(s.count).toBe(10);
+  });
+
+  it("matches the std for normally distributed noise and handles empty input", () => {
+    const s = robustFeatureStats([0.4, 0.5, 0.6].map((v) => fv({ browDown: v })));
+    expect(s.mean.browDown).toBeCloseTo(0.5);
+    expect(s.std.browDown).toBeCloseTo(0.14826);
+    expect(robustFeatureStats([]).count).toBe(0);
   });
 });
 

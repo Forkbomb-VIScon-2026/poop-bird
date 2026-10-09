@@ -44,19 +44,22 @@ function samples(base: Partial<FeatureVector>, n: number, noise = 0.003): Featur
   });
 }
 
-// Like MediaPipe: cheekPuff stays ~0 even when puffing. The puff shows up in
-// the cheek geometry (small changes) and in pursed lips (blendshapes).
-const FACE = { cheekWidth: 0.7, cheekBulge: 0.2, mouthWidth: 0.55, cheekPuff: 0.00001 };
-const RELAXED = { ...FACE, browDown: 0.05, mouthPucker: 0.05 };
+// Like MediaPipe (shape taken from a recorded puff): cheekPuff stays ~0 even
+// when puffing. A held puff shows up in the geometry (small changes) and in
+// pressed lips; pursed lips only flicker while the cheeks fill.
+const FACE = { cheekWidth: 0.7, mouthWidth: 0.55, eyeMouth: 0.83, cheekPuff: 0.00001 };
+const RELAXED = { ...FACE, browDown: 0.05, mouthPucker: 0.03, mouthPress: 0.03 };
 const STRAINED = { ...RELAXED, browDown: 0.7, eyeSquint: 0.6 };
-const PUFFED = { ...RELAXED, cheekWidth: 0.73, cheekBulge: 0.24, mouthWidth: 0.5, mouthPucker: 0.3 };
+const PUFFED = { ...RELAXED, cheekWidth: 0.73, mouthWidth: 0.5, eyeMouth: 0.67, mouthPress: 0.2 };
+/** The moment the cheeks fill: lips purse hard and the mouth corners drop. */
+const FILLING = { ...RELAXED, eyeMouth: 0.93, mouthWidth: 0.41, mouthPucker: 0.95, mouthRollUpper: 0.5 };
 
 const mainCal = buildCalibration(featureStats(samples(RELAXED, 40)), featureStats(samples(STRAINED, 40)), PARAMS);
 
 describe("faceGeometry", () => {
   /** A crude frontal face: 478 points at the centre, the ones we measure placed explicitly. */
-  function face(opts: { contour?: number; bulge?: number; mouth?: number; scale?: number; dx?: number } = {}): LandmarkPoint[] {
-    const { contour = 0.28, bulge = 0.02, mouth = 0.1, scale = 1, dx = 0 } = opts;
+  function face(opts: { contour?: number; mouth?: number; mouthY?: number; scale?: number; dx?: number } = {}): LandmarkPoint[] {
+    const { contour = 0.28, mouth = 0.1, mouthY = 0.65, scale = 1, dx = 0 } = opts;
     const lm: LandmarkPoint[] = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
     const set = (i: number, x: number, y: number, z = 0) => {
       lm[i] = { x: 0.5 + (x - 0.5) * scale + dx, y: 0.5 + (y - 0.5) * scale, z: z * scale };
@@ -67,33 +70,49 @@ describe("faceGeometry", () => {
     set(361, 0.5 + contour / 2, 0.6);
     set(58, 0.5 - (contour - 0.02) / 2, 0.65);
     set(288, 0.5 + (contour - 0.02) / 2, 0.65);
-    for (const i of [50, 280, 205, 425]) set(i, 0.5, 0.55, -bulge);
-    set(61, 0.5 - mouth / 2, 0.65);
-    set(291, 0.5 + mouth / 2, 0.65);
+    set(61, 0.5 - mouth / 2, mouthY);
+    set(291, 0.5 + mouth / 2, mouthY);
     return lm;
   }
 
-  it("measures widths and bulge relative to the eye distance", () => {
+  it("measures distances relative to the eye distance", () => {
     const g = faceGeometry(face(), 1)!;
     expect(g.cheekWidth).toBeCloseTo((0.28 + 0.26) / 2 / 0.2 / 2);
     expect(g.mouthWidth).toBeCloseTo(0.5);
-    expect(g.cheekBulge).toBeCloseTo(0.1);
+    expect(g.eyeMouth).toBeCloseTo(Math.hypot(0.05, 0.25) / 0.2);
   });
 
   it("doesn't depend on face size or position", () => {
     const a = faceGeometry(face(), 1)!;
     const b = faceGeometry(face({ scale: 1.6, dx: 0.1 }), 1)!;
     expect(b.cheekWidth).toBeCloseTo(a.cheekWidth);
-    expect(b.cheekBulge).toBeCloseTo(a.cheekBulge);
     expect(b.mouthWidth).toBeCloseTo(a.mouthWidth);
+    expect(b.eyeMouth).toBeCloseTo(a.eyeMouth);
   });
 
-  it("goes up for wider, more forward cheeks and down for a narrower mouth", () => {
+  it("doesn't depend on head rotation (pitch or yaw)", () => {
+    const rotate = (lm: LandmarkPoint[], pitch: number, yaw: number) =>
+      lm.map((p) => {
+        const [x, y, z] = [p.x - 0.5, p.y - 0.5, p.z];
+        const y1 = y * Math.cos(pitch) - z * Math.sin(pitch);
+        const z1 = y * Math.sin(pitch) + z * Math.cos(pitch);
+        const x2 = x * Math.cos(yaw) + z1 * Math.sin(yaw);
+        const z2 = -x * Math.sin(yaw) + z1 * Math.cos(yaw);
+        return { x: x2 + 0.5, y: y1 + 0.5, z: z2 };
+      });
+    const a = faceGeometry(face(), 1)!;
+    const b = faceGeometry(rotate(face(), 0.2, -0.3), 1)!;
+    expect(b.cheekWidth).toBeCloseTo(a.cheekWidth);
+    expect(b.mouthWidth).toBeCloseTo(a.mouthWidth);
+    expect(b.eyeMouth).toBeCloseTo(a.eyeMouth);
+  });
+
+  it("goes up for wider cheeks and down for a narrower or raised mouth", () => {
     const relaxed = faceGeometry(face(), 1)!;
-    const puffed = faceGeometry(face({ contour: 0.3, bulge: 0.03, mouth: 0.09 }), 1)!;
+    const puffed = faceGeometry(face({ contour: 0.3, mouth: 0.09, mouthY: 0.62 }), 1)!;
     expect(puffed.cheekWidth).toBeGreaterThan(relaxed.cheekWidth);
-    expect(puffed.cheekBulge).toBeGreaterThan(relaxed.cheekBulge);
     expect(puffed.mouthWidth).toBeLessThan(relaxed.mouthWidth);
+    expect(puffed.eyeMouth).toBeLessThan(relaxed.eyeMouth);
   });
 
   it("corrects for the video aspect ratio", () => {
@@ -102,7 +121,7 @@ describe("faceGeometry", () => {
     const squeezed = face().map((p) => ({ x: 0.5 + (p.x - 0.5) * 0.75, y: p.y, z: p.z * 0.75 }));
     const wide = faceGeometry(squeezed, 4 / 3)!;
     expect(wide.cheekWidth).toBeCloseTo(square.cheekWidth);
-    expect(wide.cheekBulge).toBeCloseTo(square.cheekBulge);
+    expect(wide.eyeMouth).toBeCloseTo(square.eyeMouth);
   });
 
   it("returns null for missing or degenerate landmarks", () => {
@@ -120,14 +139,28 @@ describe("buildPuffCalibration", () => {
 
   it("finds the puff in geometry and lips although cheekPuff never moves", () => {
     expect(cal.weights.cheekWidth).toBeGreaterThan(0);
-    expect(cal.weights.cheekBulge).toBeGreaterThan(0);
     expect(cal.weights.mouthWidth).toBeGreaterThan(0);
-    expect(cal.weights.mouthPucker).toBeGreaterThan(0);
+    expect(cal.weights.eyeMouth).toBeGreaterThan(0);
+    expect(cal.weights.mouthPress).toBeGreaterThan(0);
     expect(cal.weights.cheekPuff).toBe(0);
   });
 
   it("weights by separation, so a small clean geometry change counts as much as a big blendshape change", () => {
-    expect(cal.weights.cheekWidth).toBeCloseTo(cal.weights.mouthPucker);
+    expect(cal.weights.cheekWidth).toBeCloseTo(cal.weights.mouthPress);
+  });
+
+  // Regression: with mean stats, the pucker blip as the cheeks filled got
+  // weight, so the fish only puffed during the change and sank while held.
+  it("ignores the brief pucker as the cheeks fill and keeps a held puff at full", () => {
+    const puff = [...samples(FILLING, 6), ...samples(PUFFED, 34)];
+    const c = buildPuffCalibration(mainCal, puff, PARAMS)!;
+    expect(c.weights.mouthPucker).toBe(0);
+    expect(c.weights.mouthRollUpper).toBe(0);
+    expect(c.weights.eyeMouth).toBeGreaterThan(0.5);
+    expect(c.weights.mouthPress).toBeGreaterThan(0.5);
+    expect(rawPuff(fv(PUFFED), c, PARAMS)).toBeGreaterThan(0.9);
+    expect(rawPuff(fv(RELAXED), c, PARAMS)).toBeLessThan(0.1);
+    expect(assessPuffCalibration(c, puff, { strain: 1 }, PARAMS).ok).toBe(true);
   });
 
   it("only weights puff candidates", () => {
@@ -137,7 +170,7 @@ describe("buildPuffCalibration", () => {
   it("scores relaxed ~0 and full puff ~1, as a continuous value", () => {
     expect(rawPuff(fv(RELAXED), cal, PARAMS)).toBeCloseTo(0, 1);
     expect(rawPuff(fv(PUFFED), cal, PARAMS)).toBeCloseTo(1, 1);
-    const half = rawPuff(fv({ ...RELAXED, cheekWidth: 0.715, cheekBulge: 0.22, mouthWidth: 0.525, mouthPucker: 0.175 }), cal, PARAMS);
+    const half = rawPuff(fv({ ...RELAXED, cheekWidth: 0.715, mouthWidth: 0.525, eyeMouth: 0.75, mouthPress: 0.115 }), cal, PARAMS);
     expect(half).toBeGreaterThan(0.35);
     expect(half).toBeLessThan(0.65);
   });
@@ -156,7 +189,7 @@ describe("buildPuffCalibration", () => {
 
 describe("strain is unaffected by the puff features", () => {
   it("gives puff-only features exactly zero strain weight, even if they moved while straining", () => {
-    const strainingWithPuff = { ...STRAINED, cheekWidth: 0.75, cheekBulge: 0.26, mouthWidth: 0.45, mouthPucker: 0.4, mouthFunnel: 0.3 };
+    const strainingWithPuff = { ...STRAINED, cheekWidth: 0.75, mouthWidth: 0.45, eyeMouth: 0.7, mouthPucker: 0.4, mouthFunnel: 0.3 };
     const cal = buildCalibration(featureStats(samples(RELAXED, 40)), featureStats(samples(strainingWithPuff, 40)), PARAMS);
     for (const f of FEATURE_NAMES) if (!STRAIN_FEATURES.includes(f)) expect(cal.weights[f]).toBe(0);
   });
@@ -172,7 +205,7 @@ describe("assessPuffCalibration", () => {
   });
 
   it("rejects a puff that barely differs from neutral", () => {
-    const puff = samples({ ...RELAXED, cheekWidth: 0.701, mouthPucker: 0.052 }, 40);
+    const puff = samples({ ...RELAXED, cheekWidth: 0.701, mouthPress: 0.032 }, 40);
     const cal = buildPuffCalibration(mainCal, puff, PARAMS)!;
     const q = assessPuffCalibration(cal, puff, { strain: 1 }, PARAMS);
     expect(q.ok).toBe(false);
@@ -187,7 +220,7 @@ describe("assessPuffCalibration", () => {
   });
 
   it("rejects a puff held for only part of the phase", () => {
-    const big = { ...RELAXED, cheekWidth: 0.78, cheekBulge: 0.3, mouthWidth: 0.45, mouthPucker: 0.6 };
+    const big = { ...RELAXED, cheekWidth: 0.78, mouthWidth: 0.45, eyeMouth: 0.6, mouthPress: 0.4 };
     const puff = [...samples(big, 12), ...samples(RELAXED, 28)];
     const cal = buildPuffCalibration(mainCal, puff, PARAMS)!;
     const q = assessPuffCalibration(cal, puff, { strain: 1 }, PARAMS);
@@ -208,9 +241,13 @@ describe("fallbackPuff", () => {
     expect(fallbackPuff(0.2, 0.3, 0.3)).toBe(0);
   });
 
-  it("is used by rawPuff when there is no calibration, reading pursed lips (cheekPuff is dead)", () => {
-    expect(rawPuff(fv({ mouthPucker: 0.3, cheekPuff: 0.00001 }), null, PARAMS)).toBeCloseTo(0.5);
-    expect(rawPuff(fv({ mouthPucker: 0.05, cheekPuff: 0.3 }), null, PARAMS)).toBeCloseTo(0.5);
+  it("is used by rawPuff when there is no calibration, reading pressed lips (cheekPuff is dead)", () => {
+    expect(rawPuff(fv({ mouthPress: 0.3, cheekPuff: 0.00001 }), null, PARAMS)).toBeCloseTo(0.5);
+    expect(rawPuff(fv({ mouthPress: 0.05, cheekPuff: 0.3 }), null, PARAMS)).toBeCloseTo(0.5);
+  });
+
+  it("ignores pursed lips, which only flicker as the cheeks fill", () => {
+    expect(rawPuff(fv({ mouthPucker: 0.9 }), null, PARAMS)).toBe(0);
   });
 });
 

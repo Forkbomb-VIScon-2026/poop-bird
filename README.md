@@ -161,24 +161,31 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 
 1. **Features.** MediaPipe's `cheekPuff` blendshape stays near 0 however hard
    you puff ([google-ai-edge/mediapipe#4436](https://github.com/google-ai-edge/mediapipe/issues/4436)),
-   so puff is read mostly from the face **landmarks** (`faceGeometry`), all
-   divided by the outer-eye-corner distance so face size and camera distance
-   don't matter:
-   - `cheekWidth`: face width at mouth level (puffed cheeks widen it)
-   - `cheekBulge`: how far the cheek surface sits in front of the eye corners
+   so puff is read mostly from the face **landmarks** (`faceGeometry`): 3D
+   distances divided by the outer-eye-corner distance, so face size, camera
+   distance and head rotation don't matter:
+   - `eyeMouth`: outer eye corner to the same-side mouth corner. In a recorded
+     puff this dropped ~18% and **held** while puffed (the tracked mouth
+     corners ride up as the cheeks fill), with almost no drift once relaxed
+   - `cheekWidth`: face width at mouth level (puffed cheeks may widen it)
    - `mouthWidth`: mouth-corner distance (pursed lips narrow it)
 
-   It also uses mouth blendshapes that come with puffing: `mouthPucker`,
-   `mouthFunnel`, `mouthPress`, `mouthRollLower`/`Upper` (and `cheekPuff`, in
+   It also uses mouth blendshapes that come with puffing: `mouthPress` (lips
+   stay pressed while the cheeks are held full), `mouthPucker`, `mouthFunnel`,
+   `mouthRollLower`/`Upper` (and `cheekPuff`, in
    case a future model fixes it). The strain calibration only weights its own
    features, so the new ones get strain weight 0 and strain detection is
    unchanged.
 2. **Neutral** comes from the main calibration's relaxed phase, which also
    stores each feature's standard deviation.
 3. **Puff phase.** On the first dive in face mode, with the world frozen, we
-   collect `oceanCalibrationSeconds` (2.5 s) of full puff and drop the first
+   collect `oceanCalibrationSeconds` (3 s) of full puff and drop the first
    `calibrationSettle`. Pausing restarts the phase; going to the menu or
-   recalibrating abandons it.
+   recalibrating abandons it. The phase is summarized with **robust stats**
+   (median and MAD): as the cheeks fill, the lips purse hard for ~0.2 s and
+   then relax, and with mean stats that blip got weight, so the fish only
+   puffed while the face was changing and sank while the puff was held. With
+   the median only what you hold through most of the phase counts.
 4. **Weights.** Geometry moves by a few hundredths while blendshapes move by
    tenths, so the puff weights are scale-free: a feature counts once its change
    exceeds `oceanPuffMinSeparation` (1.5) times its noise, with full weight at
@@ -188,7 +195,7 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 5. **Quality check.** It fails on low face coverage, summed puff weights below
    `oceanMinPuffChange` (0.5, i.e. at least half a feature that clearly moved),
    or fewer than 60% of puff samples scoring above the hover point. A failure
-   never blocks the game: puff falls back to `max(mouthPucker, cheekPuff)`
+   never blocks the game: puff falls back to `max(mouthPress, cheekPuff)`
    mapped through `oceanFallbackMin`..`oceanFallbackMax`, with a toast. A
    calibration saved before these features existed has no neutral stats for
    them, so the fish uses the fallback until you recalibrate with **C**.

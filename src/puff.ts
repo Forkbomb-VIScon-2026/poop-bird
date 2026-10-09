@@ -5,8 +5,10 @@
 //
 // MediaPipe's cheekPuff blendshape stays ~0 (google-ai-edge/mediapipe#4436),
 // so puff is mostly read from landmark geometry (faceGeometry: cheek width,
-// cheek bulge, mouth width) plus mouth blendshapes. Their units differ, so
-// the puff calibration weights by separation (signal / noise), not raw change.
+// mouth width, eye–mouth distance) plus mouth blendshapes. Their units differ,
+// so the puff calibration weights by separation (signal / noise), not raw
+// change. The puff phase uses robust stats: lips purse for a moment as the
+// cheeks fill, and that blip must not be what the fish listens to.
 //
 // Unlike strain there is no hysteresis: the fish needs the analog value.
 //   features → rawPuff (weighted, normalized; or the fallback range)
@@ -17,8 +19,8 @@ import {
   PUFF_FEATURES,
   buildCalibration,
   clamp,
-  featureStats,
   rawStrain,
+  robustFeatureStats,
   separationWeight,
   smoothStrain,
   type Calibration,
@@ -41,20 +43,22 @@ export const PUFF_LANDMARKS = {
   eyeOuter: [33, 263],
   /** Face-contour pairs at mouth level, where puffed cheeks widen the face. */
   cheekContour: [[132, 361], [58, 288]],
-  /** Points on the cheek surface, which move toward the camera when puffed. */
-  cheekSurface: [50, 280, 205, 425],
+  /** Same order as eyeOuter, so eyeOuter[i] → mouthCorners[i] is one side of the face. */
   mouthCorners: [61, 291],
 } as const;
 
 /**
  * Cheek and mouth shape from the 478 normalized landmarks (x by image width,
  * y by image height, z roughly on the x scale). `aspect` = video width /
- * height makes the space isotropic. Everything is divided by the eye-corner
- * distance, so it doesn't depend on face size or distance to the camera.
+ * height makes the space isotropic. Everything is a 3D distance divided by
+ * the eye-corner distance, so it depends neither on face size and distance to
+ * the camera nor on head rotation.
  *
  * - cheekWidth: face width at mouth level / eye distance / 2 (≈0.7)
- * - cheekBulge: how far the cheek surface sits in front of the eye corners
  * - mouthWidth: mouth-corner distance / eye distance (≈0.55; pursing narrows it)
+ * - eyeMouth: outer eye corner → same-side mouth corner / eye distance (≈0.8).
+ *   In recorded puffs this dropped ~18% and held steady while puffed: the
+ *   tracked mouth corners ride up as the cheeks fill.
  */
 export function faceGeometry(
   lm: readonly LandmarkPoint[],
@@ -72,12 +76,10 @@ export function faceGeometry(
   if (!(eye > 1e-4)) return null;
   const widths = PUFF_LANDMARKS.cheekContour.map(([a, b]) => dist(a, b));
   const cheekWidth = widths.reduce((s, w) => s + w, 0) / widths.length / eye / 2;
-  const zRef = (P(eyeR).z + P(eyeL).z) / 2;
-  const zCheek = PUFF_LANDMARKS.cheekSurface.reduce((s, i) => s + P(i).z, 0) / PUFF_LANDMARKS.cheekSurface.length;
-  // Smaller z = closer to the camera, so a cheek pushed forward raises this.
-  const cheekBulge = (zRef - zCheek) / eye;
-  const mouthWidth = dist(PUFF_LANDMARKS.mouthCorners[0], PUFF_LANDMARKS.mouthCorners[1]) / eye;
-  return { cheekWidth, cheekBulge, mouthWidth };
+  const [mouthR, mouthL] = PUFF_LANDMARKS.mouthCorners;
+  const mouthWidth = dist(mouthR, mouthL) / eye;
+  const eyeMouth = (dist(eyeR, mouthR) + dist(eyeL, mouthL)) / 2 / eye;
+  return { cheekWidth, mouthWidth, eyeMouth };
 }
 
 // --- Calibration ------------------------------------------------------------------
@@ -95,7 +97,7 @@ export function buildPuffCalibration(
   if (!main.neutralStd) return null;
   return buildCalibration(
     { mean: main.neutral, std: main.neutralStd },
-    featureStats(puffSamples),
+    robustFeatureStats(puffSamples),
     { minFeatureDelta: 0 },
     PUFF_FEATURES,
     (delta, noise) => separationWeight(delta, noise, params.oceanPuffMinSeparation),
@@ -151,12 +153,13 @@ export function fallbackPuff(score: number, min: number, max: number): number {
 }
 
 /**
- * The fallback's input: pursed lips (mouthPucker), which MediaPipe tracks,
- * or cheekPuff should a future model make it work. Geometry isn't used here
- * because its neutral values differ from face to face.
+ * The fallback's input: pressed lips (mouthPress), which stay pressed while
+ * the cheeks are held full, or cheekPuff should a future model make it work.
+ * Not mouthPucker: that only flickers as the cheeks fill. Geometry isn't used
+ * here because its neutral values differ from face to face.
  */
 export function fallbackPuffScore(features: FeatureVector): number {
-  return Math.max(features.cheekPuff, features.mouthPucker);
+  return Math.max(features.cheekPuff, features.mouthPress);
 }
 
 export interface RawPuffParams {

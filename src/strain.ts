@@ -33,7 +33,7 @@ export const FEATURE_SOURCES = {
  * Features measured from the face landmarks rather than blendshapes (see
  * puff.ts faceGeometry), all relative to the eye-corner distance.
  */
-export const GEOMETRY_FEATURE_NAMES = ["cheekWidth", "cheekBulge", "mouthWidth"] as const;
+export const GEOMETRY_FEATURE_NAMES = ["cheekWidth", "mouthWidth", "eyeMouth"] as const;
 export type GeometryFeatureName = (typeof GEOMETRY_FEATURE_NAMES)[number];
 type BlendshapeFeatureName = keyof typeof FEATURE_SOURCES;
 
@@ -48,12 +48,12 @@ export const STRAIN_FEATURES: readonly FeatureName[] = [
 ];
 
 /**
- * Features the puff calibration may weight: the cheek geometry, plus mouth
- * shapes that usually come with puffed cheeks (closed, pressed, pursed lips).
+ * Features the puff calibration may weight: the face geometry, plus mouth
+ * shapes that come with puffed cheeks (closed, pressed, pursed lips).
  * It may share mouth features with strain; the puff-only ones never get strain weight.
  */
 export const PUFF_FEATURES: readonly FeatureName[] = [
-  "cheekWidth", "cheekBulge", "mouthWidth",
+  "cheekWidth", "mouthWidth", "eyeMouth",
   "cheekPuff", "mouthPucker", "mouthFunnel", "mouthPress", "mouthRollLower", "mouthRollUpper",
 ];
 
@@ -103,9 +103,34 @@ export function featureStats(samples: readonly FeatureVector[]): FeatureStats {
   return { mean, std, count: n };
 }
 
+/**
+ * Like featureStats, but the median and a robust spread (MAD × 1.4826, which
+ * equals the std for normal noise). A short spike, such as the lips pursing
+ * for a moment as the cheeks fill, doesn't move either one, so only what was
+ * held through most of the phase counts.
+ */
+export function robustFeatureStats(samples: readonly FeatureVector[]): FeatureStats {
+  const mean = zeroFeatures();
+  const std = zeroFeatures();
+  const n = samples.length;
+  if (n === 0) return { mean, std, count: 0 };
+  for (const f of FEATURE_NAMES) {
+    const med = median(samples.map((s) => s[f]));
+    mean[f] = med;
+    std[f] = 1.4826 * median(samples.map((s) => Math.abs(s[f] - med)));
+  }
+  return { mean, std, count: n };
+}
+
+function median(values: number[]): number {
+  const v = values.slice().sort((a, b) => a - b);
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
 export interface Calibration {
   neutral: FeatureVector;
-  /** Mean of the active phase: the strain face, or the full puff for a puff calibration. */
+  /** Mean of the active phase (the strain face), or for a puff calibration the median full puff. */
   strain: FeatureVector;
   /** Non-negative weight per feature; features that didn't move get 0. */
   weights: FeatureVector;
