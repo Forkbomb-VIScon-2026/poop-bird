@@ -7,6 +7,7 @@
 // Units: distances in logical pixels (the playfield is 600 px tall), times in
 // seconds, speeds in px/s, accelerations in px/s².
 
+import { DEBUG } from "./env";
 import { storageGet, storageRemove, storageSet } from "./storage";
 
 export interface TunableSpec {
@@ -91,6 +92,8 @@ export function defaultConfig(): Config {
 
 function loadConfig(): Config {
   const cfg = defaultConfig();
+  // Tuning overrides come from the debug panel, so without it they are ignored.
+  if (!DEBUG) return cfg;
   const raw = storageGet(STORAGE_KEY);
   if (!raw) return cfg;
   try {
