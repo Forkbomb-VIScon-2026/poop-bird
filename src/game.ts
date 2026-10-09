@@ -956,7 +956,9 @@ export class Game {
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
       const before = Math.round(ocean ? config.oceanObstacles : config.cityObstaclesBeforeGate);
-      if (this.stageObstacles >= before) this.spawnGate();
+      // The harbour waits until a paparazzo's front page has hung in the city.
+      const holdGate = !ocean && (this.pendingTabloids.length > 0 || this.targets.some((t) => t.pap?.state === "watching"));
+      if (this.stageObstacles >= before && !holdGate) this.spawnGate();
       else if (ocean) this.spawnOceanObstacle();
       else this.spawnObstacle();
       this.stageObstacles++;
@@ -1050,6 +1052,7 @@ export class Game {
 
   private paparazzoDue(): boolean {
     return (
+      !this.gateSpawned &&
       this.distance >= config.paparazziMinDistance &&
       this.distance - this.lastPaparazzoAt >= config.paparazziMinGap &&
       !this.targets.some((t) => t.pap?.state === "watching")
