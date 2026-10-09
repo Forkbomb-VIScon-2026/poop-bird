@@ -6,6 +6,9 @@
 //   → rawStrain (normalize against the player's calibration, weighted mean)
 //   → smoothStrain (time-corrected EMA)
 //   → updateHysteresis (on/off thresholds → boolean "straining")
+//
+// The ocean stage's puff signal (puff.ts) reuses the calibration machinery
+// here with its own feature subset, PUFF_FEATURES.
 
 /** The features we look at. L/R pairs are averaged into one value. */
 export const FEATURE_SOURCES = {
@@ -19,11 +22,40 @@ export const FEATURE_SOURCES = {
   mouthRollUpper: ["mouthRollUpper"],
   mouthShrugUpper: ["mouthShrugUpper"],
   mouthShrugLower: ["mouthShrugLower"],
+  // Puff features (ocean stage). MediaPipe's cheekPuff is known to stay ~0
+  // (google-ai-edge/mediapipe#4436); it's kept in case a future model fixes it.
+  cheekPuff: ["cheekPuff"],
+  mouthPucker: ["mouthPucker"],
+  mouthFunnel: ["mouthFunnel"],
 } as const satisfies Record<string, readonly string[]>;
 
-export type FeatureName = keyof typeof FEATURE_SOURCES;
-export const FEATURE_NAMES = Object.keys(FEATURE_SOURCES) as FeatureName[];
+/**
+ * Features measured from the face landmarks rather than blendshapes (see
+ * puff.ts faceGeometry), all relative to the eye-corner distance.
+ */
+export const GEOMETRY_FEATURE_NAMES = ["cheekWidth", "mouthWidth", "eyeMouth"] as const;
+export type GeometryFeatureName = (typeof GEOMETRY_FEATURE_NAMES)[number];
+type BlendshapeFeatureName = keyof typeof FEATURE_SOURCES;
+
+export type FeatureName = BlendshapeFeatureName | GeometryFeatureName;
+export const FEATURE_NAMES = [...Object.keys(FEATURE_SOURCES), ...GEOMETRY_FEATURE_NAMES] as FeatureName[];
 export type FeatureVector = Record<FeatureName, number>;
+
+/** Features the strain calibration may weight. Puff features always get strain weight 0. */
+export const STRAIN_FEATURES: readonly FeatureName[] = [
+  "browDown", "eyeSquint", "eyeBlink", "noseSneer", "cheekSquint", "mouthPress",
+  "mouthRollLower", "mouthRollUpper", "mouthShrugUpper", "mouthShrugLower",
+];
+
+/**
+ * Features the puff calibration may weight: the face geometry, plus mouth
+ * shapes that come with puffed cheeks (closed, pressed, pursed lips).
+ * It may share mouth features with strain; the puff-only ones never get strain weight.
+ */
+export const PUFF_FEATURES: readonly FeatureName[] = [
+  "cheekWidth", "mouthWidth", "eyeMouth",
+  "cheekPuff", "mouthPucker", "mouthFunnel", "mouthPress", "mouthRollLower", "mouthRollUpper",
+];
 
 export function zeroFeatures(): FeatureVector {
   const out = {} as FeatureVector;
@@ -33,16 +65,21 @@ export function zeroFeatures(): FeatureVector {
 
 /**
  * Builds the feature vector from blendshape scores keyed by category name
- * (e.g. `{ browDownLeft: 0.3, ... }`). Missing blendshapes count as 0.
+ * (e.g. `{ browDownLeft: 0.3, ... }`) and optional landmark geometry.
+ * Missing blendshapes and geometry count as 0.
  */
-export function extractFeatures(scores: Readonly<Record<string, number>>): FeatureVector {
+export function extractFeatures(
+  scores: Readonly<Record<string, number>>,
+  geometry?: Readonly<Record<GeometryFeatureName, number>> | null,
+): FeatureVector {
   const out = {} as FeatureVector;
-  for (const f of FEATURE_NAMES) {
+  for (const f of Object.keys(FEATURE_SOURCES) as BlendshapeFeatureName[]) {
     const sources = FEATURE_SOURCES[f];
     let sum = 0;
     for (const s of sources) sum += scores[s] ?? 0;
     out[f] = sum / sources.length;
   }
+  for (const f of GEOMETRY_FEATURE_NAMES) out[f] = geometry?.[f] ?? 0;
   return out;
 }
 
@@ -66,11 +103,42 @@ export function featureStats(samples: readonly FeatureVector[]): FeatureStats {
   return { mean, std, count: n };
 }
 
+/**
+ * Like featureStats, but the median and a robust spread (MAD × 1.4826, which
+ * equals the std for normal noise). A short spike, such as the lips pursing
+ * for a moment as the cheeks fill, doesn't move either one, so only what was
+ * held through most of the phase counts.
+ */
+export function robustFeatureStats(samples: readonly FeatureVector[]): FeatureStats {
+  const mean = zeroFeatures();
+  const std = zeroFeatures();
+  const n = samples.length;
+  if (n === 0) return { mean, std, count: 0 };
+  for (const f of FEATURE_NAMES) {
+    const med = median(samples.map((s) => s[f]));
+    mean[f] = med;
+    std[f] = 1.4826 * median(samples.map((s) => Math.abs(s[f] - med)));
+  }
+  return { mean, std, count: n };
+}
+
+function median(values: number[]): number {
+  const v = values.slice().sort((a, b) => a - b);
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
 export interface Calibration {
   neutral: FeatureVector;
+  /** Mean of the active phase (the strain face), or for a puff calibration the median full puff. */
   strain: FeatureVector;
   /** Non-negative weight per feature; features that didn't move get 0. */
   weights: FeatureVector;
+  /**
+   * Std of the neutral phase, kept so the puff calibration can reuse the
+   * relaxed phase. Missing on calibrations saved before the ocean stage.
+   */
+  neutralStd?: FeatureVector;
 }
 
 export interface CalibrationParams {
@@ -94,17 +162,65 @@ export function featureWeight(delta: number, noise: number, minFeatureDelta: num
   return change * reliability;
 }
 
+/** Noise floor for separationWeight, so a feature that sat perfectly still can't look infinitely clean. */
+export const SEPARATION_NOISE_FLOOR = 0.004;
+
+/**
+ * Scale-free weight for mixing features with different units (blendshape
+ * scores vs. small geometry ratios): only how far the feature moved relative
+ * to its own noise counts. 0 below `minSeparation`, 1 from 2 × minSeparation.
+ */
+export function separationWeight(delta: number, noise: number, minSeparation: number): number {
+  const separation = Math.abs(delta) / (noise + SEPARATION_NOISE_FLOOR);
+  const min = Math.max(1e-3, minSeparation);
+  return clamp((separation - min) / min, 0, 1);
+}
+
+/** Weight of one feature from its mean change between phases and its summed noise. */
+export type WeightFn = (delta: number, noise: number) => number;
+
+/**
+ * Fits a calibration from a neutral and an active phase. Only `features` can
+ * get weight; every other feature is ignored by rawStrain. `weigh` defaults
+ * to the strain weighting (featureWeight).
+ */
 export function buildCalibration(
-  neutral: FeatureStats,
-  strain: FeatureStats,
+  neutral: Pick<FeatureStats, "mean" | "std">,
+  strain: Pick<FeatureStats, "mean" | "std">,
   params: Pick<CalibrationParams, "minFeatureDelta">,
+  features: readonly FeatureName[] = STRAIN_FEATURES,
+  weigh: WeightFn = (delta, noise) => featureWeight(delta, noise, params.minFeatureDelta),
 ): Calibration {
   const weights = zeroFeatures();
-  for (const f of FEATURE_NAMES) {
+  for (const f of features) {
     const delta = strain.mean[f] - neutral.mean[f];
-    weights[f] = featureWeight(delta, neutral.std[f] + strain.std[f], params.minFeatureDelta);
+    weights[f] = weigh(delta, neutral.std[f] + strain.std[f]);
   }
-  return { neutral: { ...neutral.mean }, strain: { ...strain.mean }, weights };
+  return { neutral: { ...neutral.mean }, strain: { ...strain.mean }, weights, neutralStd: { ...neutral.std } };
+}
+
+/**
+ * Validates a calibration loaded from storage. `required` features must be
+ * present; features added since it was saved are filled with 0 (they then
+ * have weight 0, so scoring is unchanged). A partial `neutralStd` is dropped.
+ */
+export function restoreCalibration(data: unknown, required: readonly FeatureName[]): Calibration | null {
+  if (typeof data !== "object" || data === null) return null;
+  const c = data as Partial<Record<keyof Calibration, unknown>>;
+  const vector = (v: unknown, need: readonly FeatureName[]): FeatureVector | null => {
+    if (typeof v !== "object" || v === null) return null;
+    const src = v as Partial<Record<string, unknown>>;
+    if (!need.every((f) => typeof src[f] === "number" && Number.isFinite(src[f]))) return null;
+    const out = zeroFeatures();
+    for (const f of FEATURE_NAMES) if (typeof src[f] === "number" && Number.isFinite(src[f])) out[f] = src[f];
+    return out;
+  };
+  const neutral = vector(c.neutral, required);
+  const strain = vector(c.strain, required);
+  const weights = vector(c.weights, required);
+  if (!neutral || !strain || !weights) return null;
+  const neutralStd = vector(c.neutralStd, FEATURE_NAMES);
+  return neutralStd ? { neutral, strain, weights, neutralStd } : { neutral, strain, weights };
 }
 
 /** `(x − neutral) / (strain − neutral)`, clamped to [0, clampMax]. Handles features that decrease. */

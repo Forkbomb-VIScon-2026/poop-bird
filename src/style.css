@@ -119,6 +119,61 @@ canvas#game {
   opacity: 0.85;
 }
 
+.hud-toast {
+  position: absolute;
+  /* Centred without transform, so the pop animation's scale doesn't fight it. */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  bottom: 44px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-weight: 800;
+  font-size: 16px;
+  white-space: nowrap;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: pop 0.25s ease-out;
+}
+
+/* In-game overlay while the world is frozen for the puff calibration. */
+.puff-calib {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 32px));
+  text-align: center;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.puff-calib h2 {
+  font-size: clamp(30px, 6vw, 52px);
+  font-weight: 900;
+  color: #fff;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 5px 0 var(--ink);
+  margin: 0 0 6px;
+  animation: wobble 0.5s ease-out;
+}
+
+.puff-calib .hint {
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 2px 0 var(--ink);
+  margin: 0 0 8px;
+}
+
+.puff-calib .progress-fill {
+  background: #4cc9f0;
+}
+
 @keyframes pop {
   from {
     transform: scale(1.5);
@@ -737,7 +792,7 @@ body.debug-open #cam {
 
 .dbg-feature {
   display: grid;
-  grid-template-columns: 112px 1fr 40px;
+  grid-template-columns: 112px 1fr 78px;
   gap: 6px;
   align-items: center;
   margin: 2px 0;
@@ -840,6 +895,17 @@ body.debug-open #cam {
 
 .dbg-buttons button:hover {
   background: #3a3d5c;
+}
+
+.dbg-record {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #ef476f;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
 }
 
 @media (max-width: 600px) {

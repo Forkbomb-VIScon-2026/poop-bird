@@ -24,6 +24,14 @@
         <div class="hud-keys">
           <span id="hud-mode">⌨️ keyboard</span> · <span id="hud-mute">🔊</span> · P pause<span data-debug-only> · D debug</span>
         </div>
+        <div id="hud-toast" class="hud-toast hidden"></div>
+      </div>
+
+      <!-- In-game puff calibration (first dive in face mode; the world is frozen) -->
+      <div id="puff-calib" class="puff-calib hidden">
+        <h2>PUFF YOUR CHEEKS! 🐡</h2>
+        <p class="hint">Blow them up like a pufferfish and hold it.</p>
+        <div class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
       </div>
 
       <!-- Webcam preview (also used, enlarged, during calibration) -->
@@ -49,6 +57,7 @@
             <li><b>Strain</b> at your webcam (brows down, eyes squeezed, nose wrinkled, lips pressed) to charge. <b>Relax</b> to let go.</li>
             <li>Longer strain = bigger push. Hold full charge too long and… <i>accident</i>. Let go right before for a <b>perfect push</b>.</li>
             <li>Dodge buildings and signs. Hit cars, people and statues for bonus points and combos.</li>
+            <li>Fly through the <b>⚓ harbour gate</b> to dive: you become a <b>pufferfish</b>. <b>Puff your cheeks</b> to float up, relax to sink. Puff all the way to spike out and pop jellyfish, but not for too long!</li>
           </ul>
           <div class="buttons">
             <button id="btn-face" class="btn primary">😣 Play with face</button>
@@ -59,7 +68,7 @@
             Save my "finest strain" snapshot at the end of each run
           </label>
           <p class="privacy">🔒 Everything runs in your browser. Video and snapshots <b>never leave this device</b>.</p>
-          <p class="keys">Keyboard: hold <kbd>Space</kbd> (or mouse / touch) to strain · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>R</kbd> restart · <kbd>C</kbd> calibrate<span data-debug-only> · <kbd>D</kbd> debug</span></p>
+          <p class="keys">Keyboard: hold <kbd>Space</kbd> (or mouse / touch) to strain, or to puff up underwater · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>R</kbd> restart · <kbd>C</kbd> calibrate<span data-debug-only> · <kbd>D</kbd> debug</span></p>
           <div id="start-hof" class="hof"></div>
         </div>
       </section>

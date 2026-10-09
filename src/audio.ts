@@ -5,6 +5,7 @@ export class Sound {
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   private groan: { osc: OscillatorNode; osc2: OscillatorNode; lfo: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
+  private burble: { src: AudioBufferSourceNode; blub: OscillatorNode; lfo: OscillatorNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
   muted = false;
 
   /** Must be called from a user gesture (browsers block autoplay). */
@@ -101,6 +102,164 @@ export class Sound {
     g.filter.frequency.setTargetAtTime(350 + charge * 1100, t, 0.05);
     g.lfo.frequency.setTargetAtTime(stressed ? 14 : 5 + charge * 4, t, 0.05);
     g.gain.gain.setTargetAtTime(0.06 + charge * 0.1, t, 0.04);
+  }
+
+  /**
+   * Continuous underwater burble whose intensity follows the fish's puff
+   * (like the groan for charge). level <= 0 stops it.
+   */
+  setBurble(level: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    if (level <= 0) {
+      if (this.burble) {
+        const b = this.burble;
+        b.gain.gain.setTargetAtTime(0, t, 0.04);
+        const stopAt = t + 0.25;
+        b.src.stop(stopAt);
+        b.blub.stop(stopAt);
+        b.lfo.stop(stopAt);
+        this.burble = null;
+      }
+      return;
+    }
+    if (!this.burble) {
+      const src = this.noise();
+      if (!src) return;
+      const blub = ctx.createOscillator();
+      const blubGain = ctx.createGain();
+      const lfo = ctx.createOscillator();
+      const lfoDepth = ctx.createGain();
+      const am = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      // Noise through a resonant bandpass, chopped by a square LFO into bubbles,
+      // plus a sine "blub" whose pitch wobbles with the same LFO.
+      filter.type = "bandpass";
+      filter.Q.value = 5;
+      lfo.type = "square";
+      lfoDepth.gain.value = 0.5;
+      am.gain.value = 0.5;
+      lfo.connect(lfoDepth).connect(am.gain);
+      const pitchDepth = ctx.createGain();
+      pitchDepth.gain.value = 60;
+      lfo.connect(pitchDepth).connect(blub.frequency);
+      blub.type = "sine";
+      blub.frequency.value = 220;
+      blubGain.gain.value = 0.5;
+      src.connect(filter).connect(am);
+      blub.connect(blubGain).connect(am);
+      am.connect(gain).connect(this.master);
+      gain.gain.value = 0;
+      src.start(t, Math.random());
+      blub.start(t);
+      lfo.start(t);
+      this.burble = { src, blub, lfo, filter, gain };
+    }
+    const b = this.burble;
+    const x = Math.min(1, level);
+    b.filter.frequency.setTargetAtTime(300 + x * 900, t, 0.05);
+    b.blub.frequency.setTargetAtTime(170 + x * 160, t, 0.05);
+    b.lfo.frequency.setTargetAtTime(4 + x * 11, t, 0.05);
+    b.gain.gain.setTargetAtTime(0.03 + x * 0.09, t, 0.05);
+  }
+
+  /** Big splash into (or out of) the water. */
+  splash(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    // Thump
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(140, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.25);
+    g.gain.setValueAtTime(0.45, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.32);
+    // Sploosh + spray
+    this.noiseSweep(t, 0.6, 1400, 250, 0.4, "lowpass");
+    this.noiseBurst(t + 0.02, 0.35, 2400, 0.22, "bandpass");
+    // Trailing bubbles
+    for (let i = 0; i < 6; i++) this.blip(t + 0.15 + i * 0.07 + Math.random() * 0.04, 350 + Math.random() * 500, 0.08);
+  }
+
+  /** Spikes out: a metallic "shing". */
+  spike(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    [2093, 2637, 3322].forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f * 0.85, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.05);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.1 - i * 0.02, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      o.connect(g).connect(this.master!);
+      o.start(t);
+      o.stop(t + 0.47);
+    });
+    this.noiseBurst(t, 0.12, 6000, 0.12, "highpass");
+  }
+
+  /** A jellyfish popped on the spines. */
+  jellyPop(combo: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(950, t);
+    o.frequency.exponentialRampToValueAtTime(160, t + 0.09);
+    g.gain.setValueAtTime(0.4, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.13);
+    this.noiseBurst(t, 0.05, 2200, 0.2, "bandpass");
+    this.hit(combo);
+  }
+
+  /** Pop accident: the fish deflates with a long "pfffbbt". */
+  deflate(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    // "pfff": hiss falling in pitch
+    this.noiseSweep(t, 0.55, 3200, 700, 0.3, "bandpass");
+    // "bbbt": flapping lips, a buzzy saw with a fast wobble, sinking
+    const st = t + 0.35;
+    const dur = 0.55;
+    const osc = ctx.createOscillator();
+    const wob = ctx.createOscillator();
+    const wobGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(150, st);
+    osc.frequency.exponentialRampToValueAtTime(55, st + dur);
+    wob.frequency.setValueAtTime(34, st);
+    wob.frequency.linearRampToValueAtTime(14, st + dur);
+    wobGain.gain.value = 45;
+    wob.connect(wobGain).connect(osc.frequency);
+    filter.type = "lowpass";
+    filter.frequency.value = 1100;
+    g.gain.setValueAtTime(0.0001, st);
+    g.gain.exponentialRampToValueAtTime(0.3, st + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, st + dur);
+    osc.connect(filter).connect(g).connect(this.master);
+    osc.start(st);
+    wob.start(st);
+    osc.stop(st + dur + 0.02);
+    wob.stop(st + dur + 0.02);
   }
 
   /** Release sound: a "plop" for tiny charges, a fart that grows with charge. */
@@ -275,6 +434,41 @@ export class Sound {
       o.start(st);
       o.stop(st + 0.32);
     });
+  }
+
+  /** One short bubble "blip": a sine that slides up. */
+  private blip(t: number, freq: number, vol: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 1.8, t + 0.06);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.08);
+  }
+
+  /** Filtered noise whose filter frequency sweeps from `from` to `to`. */
+  private noiseSweep(t: number, dur: number, from: number, to: number, vol: number, type: BiquadFilterType): void {
+    const ctx = this.ctx;
+    const src = this.noise();
+    if (!ctx || !src || !this.master) return;
+    const filter = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    filter.type = type;
+    filter.Q.value = type === "bandpass" ? 1.5 : 0.7;
+    filter.frequency.setValueAtTime(from, t);
+    filter.frequency.exponentialRampToValueAtTime(to, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(filter).connect(g).connect(this.master);
+    src.start(t, Math.random());
+    src.stop(t + dur + 0.02);
   }
 
   private noiseBurst(t: number, dur: number, freq: number, vol: number, type: BiquadFilterType): void {
