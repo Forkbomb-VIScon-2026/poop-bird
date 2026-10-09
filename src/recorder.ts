@@ -11,6 +11,8 @@ export interface RecorderStep {
   prompt: string;
   /** Short label stored with each sample. */
   label: string;
+  /** Beep when the step starts (high for "strain"), for steps done with the eyes shut. */
+  cue?: "strain" | "relax";
 }
 
 /** Relaxed → puff and hold → relaxed → quick puffs. */
@@ -20,6 +22,29 @@ export const PUFF_SCRIPT: RecorderStep[] = [
   { seconds: 3, prompt: "Relax", label: "neutral2" },
   { seconds: 5, prompt: "Puff, release, puff, release…", label: "pulses" },
 ];
+
+/**
+ * Relaxed → strain like the calibration, then what matters in play: relaxing
+ * after a strain, quick strain/relax pulses, a long hold, and relaxed faces
+ * that aren't a calm stare (looking around, laughing). Every step beeps, since
+ * a strain squeezes the eyes shut.
+ */
+export const STRAIN_SCRIPT: RecorderStep[] = [
+  { seconds: 4, prompt: "Recording: relax your face", label: "neutral", cue: "relax" },
+  { seconds: 4, prompt: "STRAIN and hold", label: "strain", cue: "strain" },
+  { seconds: 4, prompt: "Relax", label: "relax", cue: "relax" },
+  ...[1, 2, 3, 4].flatMap((): RecorderStep[] => [
+    { seconds: 1.5, prompt: "STRAIN", label: "pulseStrain", cue: "strain" },
+    { seconds: 1.5, prompt: "Relax", label: "pulseRelax", cue: "relax" },
+  ]),
+  { seconds: 5, prompt: "STRAIN and HOLD", label: "longStrain", cue: "strain" },
+  { seconds: 4, prompt: "Relax", label: "relax2", cue: "relax" },
+  { seconds: 6, prompt: "Stay relaxed: look around the screen, tilt your head a little", label: "look", cue: "relax" },
+  { seconds: 6, prompt: "Smile, laugh, talk", label: "laugh", cue: "relax" },
+];
+
+export const RECORDER_SCRIPTS = { puff: PUFF_SCRIPT, strain: STRAIN_SCRIPT };
+export type RecorderKind = keyof typeof RECORDER_SCRIPTS;
 
 interface Sample {
   t: number;
@@ -36,11 +61,14 @@ export class FaceRecorder {
   private samples: Sample[] = [];
   private start = 0;
   private step = -1;
+  private script: RecorderStep[];
 
   constructor(
-    private script: RecorderStep[],
-    private onPrompt: (prompt: string, seconds: number) => void,
-  ) {}
+    private kind: RecorderKind,
+    private onStep: (step: RecorderStep) => void,
+  ) {
+    this.script = RECORDER_SCRIPTS[kind];
+  }
 
   /** Seconds the whole script takes. */
   get duration(): number {
@@ -63,7 +91,7 @@ export class FaceRecorder {
     if (index < 0) return false;
     if (index !== this.step) {
       this.step = index;
-      this.onPrompt(this.script[index].prompt, this.script[index].seconds);
+      this.onStep(this.script[index]);
     }
     const blendshapes: Record<string, number> = {};
     for (const [k, v] of Object.entries(frame.blendshapes)) blendshapes[k] = round(v);
@@ -82,11 +110,13 @@ export class FaceRecorder {
 
   /** The recording plus whatever context the caller adds, as a JSON download. */
   download(context: Record<string, unknown>): void {
-    const data = { recordedAt: new Date().toISOString(), script: this.script, ...context, samples: this.samples };
+    const data = {
+      recordedAt: new Date().toISOString(), kind: this.kind, script: this.script, ...context, samples: this.samples,
+    };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `poopbird-face-${data.recordedAt.replace(/[:.]/g, "-")}.json`;
+    a.download = `poopbird-face-${this.kind}-${data.recordedAt.replace(/[:.]/g, "-")}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
