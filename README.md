@@ -249,6 +249,8 @@ build is always the plain one:
   relax → puff and hold → relax → quick puffs, then downloads the raw
   features, all blendshapes and all landmarks as JSON, for tuning puff
   detection offline
+- **🗑 Forget calibration** deletes the saved strain and puff calibrations and
+  reloads, so you can test the first-time flow (scores and settings are kept)
 - each face feature (blendshapes and landmark geometry) as a bar, with neutral
   (blue) and strain (red) calibration markers and its share of the weight
   (features at 0% are greyed out). In the ocean the puff candidates show the
