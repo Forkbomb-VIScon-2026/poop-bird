@@ -1,0 +1,8 @@
+node_modules/
+dist/
+# Generated: copied from node_modules by `npm run copy-wasm` (runs on npm install)
+public/mediapipe/wasm/
+# Downloaded by `npm run fetch-model`
+public/mediapipe/face_landmarker.task
+*.log
+.DS_Store
