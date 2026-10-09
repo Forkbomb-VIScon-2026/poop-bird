@@ -5,6 +5,7 @@ import "./style.css";
 import { config } from "./config";
 import { Sound } from "./audio";
 import { DebugPanel } from "./debug";
+import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
 import { Game } from "./game";
 import { FaceRecorder, PUFF_SCRIPT } from "./recorder";
@@ -85,7 +86,10 @@ const game = new Game(renderer.resize());
 const sound = new Sound();
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
-const debug = new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace());
+const debug = DEBUG
+  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace())
+  : null;
+if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
 
 const CALIBRATION_KEY = "poopbird.calibration.v1";
 // v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
@@ -182,13 +186,13 @@ let faceRecorder: FaceRecorder | null = null;
 function recordFace(): void {
   if (faceRecorder) return;
   if (mode !== "face" || !tracker.ready) {
-    debug.setRecordPrompt("Start a face-mode game first");
-    window.setTimeout(() => !faceRecorder && debug.setRecordPrompt(null), 2500);
+    debug?.setRecordPrompt("Start a face-mode game first");
+    window.setTimeout(() => !faceRecorder && debug?.setRecordPrompt(null), 2500);
     return;
   }
   // Freeze the game so the clip doesn't cost a life.
   if (state === "playing") togglePause();
-  faceRecorder = new FaceRecorder(PUFF_SCRIPT, (prompt, seconds) => debug.setRecordPrompt(`${prompt} (${seconds} s)`));
+  faceRecorder = new FaceRecorder(PUFF_SCRIPT, (prompt, seconds) => debug?.setRecordPrompt(`${prompt} (${seconds} s)`));
 }
 
 function finishFaceRecording(): void {
@@ -202,8 +206,8 @@ function finishFaceRecording(): void {
     lastPuffAttempt,
     config,
   });
-  debug.setRecordPrompt("Saved: send me the downloaded JSON");
-  window.setTimeout(() => !faceRecorder && debug.setRecordPrompt(null), 4000);
+  debug?.setRecordPrompt("Saved: send me the downloaded JSON");
+  window.setTimeout(() => !faceRecorder && debug?.setRecordPrompt(null), 4000);
 }
 
 function updateStrainBars(): void {
@@ -662,7 +666,7 @@ function goToMenu(): void {
   calibSamples = null;
   calibFrames = null;
   faceRecorder = null;
-  debug.setRecordPrompt(null);
+  debug?.setRecordPrompt(null);
   tracker.stopCamera();
   state = "menu";
   sound.setGroan(-1, false);
@@ -864,7 +868,7 @@ function frame(now: number): void {
 
   updateHud();
   updateStrainBars();
-  debug.update({
+  debug?.update({
     fps,
     detectionRate: tracker.ready ? tracker.detectionRate : 0,
     delegate: tracker.delegate ?? "–",
@@ -976,15 +980,15 @@ window.addEventListener("keydown", (e) => {
       if (state === "gameover") void startCountdown();
       break;
     case "d":
-      debug.toggle();
+      debug?.toggle();
       break;
     case "g":
       // Debug shortcut: the next obstacle is the stage's gate.
-      if (debug.visible && state === "playing") game.spawnGateNow();
+      if (debug?.visible && state === "playing") game.spawnGateNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
-      if (debug.visible) startOceanRun();
+      if (debug?.visible) startOceanRun();
       break;
     case "c":
       void recalibrate();
@@ -1058,12 +1062,14 @@ goToMenu();
 requestAnimationFrame(frame);
 
 // Handy for tuning from the console.
-Object.assign(window, {
-  poopBird: {
-    game, config, tracker,
-    get calibration() { return calibration; },
-    get puffCalibration() { return puffCalibration; },
-    get lastPuffAttempt() { return lastPuffAttempt; },
-    recordFace,
-  },
-});
+if (DEBUG) {
+  Object.assign(window, {
+    poopBird: {
+      game, config, tracker,
+      get calibration() { return calibration; },
+      get puffCalibration() { return puffCalibration; },
+      get lastPuffAttempt() { return lastPuffAttempt; },
+      recordFace,
+    },
+  });
+}

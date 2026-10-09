@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:debug": "vite --mode debug",
     "build": "tsc --noEmit && vite build",
+    "build:debug": "tsc --noEmit && vite build --mode debug",
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -18,7 +20,9 @@
     "fetch-model": "node scripts/fetch-model.mjs",
     "postinstall": "node scripts/copy-wasm.mjs",
     "prebuild": "node scripts/copy-wasm.mjs",
-    "predev": "node scripts/copy-wasm.mjs"
+    "predev": "node scripts/copy-wasm.mjs",
+    "predev:debug": "node scripts/copy-wasm.mjs",
+    "prebuild:debug": "node scripts/copy-wasm.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.0"

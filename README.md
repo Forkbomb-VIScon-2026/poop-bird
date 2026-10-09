@@ -16,7 +16,8 @@ Needs Node 24 and npm.
 ```sh
 npm install          # also copies the MediaPipe WASM into public/mediapipe/wasm
 npm run fetch-model  # downloads face_landmarker.task into public/mediapipe/ (once)
-npm run dev          # http://localhost:5173
+npm run dev          # http://localhost:5173 (no debug tooling, same as production)
+npm run dev:debug    # same, with the debug panel (D), tuning sliders and window.poopBird
 ```
 
 Webcam access needs a secure context. `localhost` counts, so the dev server is
@@ -26,7 +27,8 @@ Other scripts:
 
 | Command | What it does |
 | --- | --- |
-| `npm run build` | Typecheck and build to `dist/` |
+| `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
+| `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
 | `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy) |
 | `npm run lint` | ESLint |
@@ -58,7 +60,7 @@ access on anything other than localhost, put it behind HTTPS.
 | **M** | Mute |
 | **R** | Restart from game over |
 | **C** | Re-run calibration |
-| **D** | Debug / tuning panel |
+| **D** | Debug / tuning panel (only with `npm run dev:debug`) |
 | **G** | With the debug panel open: spawn the next gate now |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Start after calibration |
@@ -206,7 +208,7 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
    touch inflates the key puff at `oceanKeyInflateRate`; releasing deflates it
    at `oceanKeyDeflateRate`.
 
-If the puff doesn't register, open the debug panel in the ocean: the feature
+If the puff doesn't register, open the debug panel (`npm run dev:debug`) in the ocean: the feature
 rows show the geometry values as numbers with the relaxed-face marker, and the
 stats line "puff source" names the features the calibration picked.
 `poopBird.lastPuffAttempt` in the console holds the last attempt, including
@@ -221,7 +223,10 @@ groups (stage lengths, buoyancy and drag, hitbox scale, ocean gaps and spacing,
 spike and pop timing, jellyfish, key puff rates, puff calibration and fallback
 range).
 
-Press **D** in game for the debug panel:
+Start the app with `npm run dev:debug` (or build with `npm run build:debug`),
+then press **D** in game for the debug panel. Plain `dev`/`build` leave the
+panel, the saved tuning overrides and `window.poopBird` out, and the deployed
+build is always the plain one:
 
 - FPS, detections per second, the delegate, and whether a face is visible
 - the current stage (and transition)

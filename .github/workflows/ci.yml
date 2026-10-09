@@ -22,6 +22,8 @@ jobs:
       - run: npm test
       # Includes the typecheck
       - run: npm run build
+      # The debug variant must keep compiling too, but is never deployed
+      - run: npm run build:debug
 
   docker:
     runs-on: ubuntu-latest

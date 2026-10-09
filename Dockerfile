@@ -10,6 +10,7 @@ COPY scripts ./scripts
 RUN npm ci
 COPY . .
 # Uses the model from the build context if present, otherwise downloads it once.
+# Plain build on purpose: the image must not ship the debug tooling.
 RUN npm run fetch-model && npm run build
 
 # --- Serve -----------------------------------------------------------------------
