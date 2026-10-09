@@ -384,23 +384,21 @@ export class Sound {
     this.noiseBurst(t + 0.02, 0.05, 400, 0.3, "lowpass");
   }
 
-  /** A paparazzo walked on: two quick camera-beeps. */
-  focusBeep(): void {
+  /** The paparazzo's countdown tick; rises in pitch as his timer fills (0..1). */
+  cameraBeep(timer: number): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
     const t = ctx.currentTime;
-    for (const dt of [0, 0.11]) {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = "square";
-      o.frequency.value = 2800;
-      g.gain.setValueAtTime(0.0001, t + dt);
-      g.gain.exponentialRampToValueAtTime(0.05, t + dt + 0.005);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.06);
-      o.connect(g).connect(this.master);
-      o.start(t + dt);
-      o.stop(t + dt + 0.07);
-    }
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "square";
+    o.frequency.value = 1800 + timer * 1400;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.03 + timer * 0.03, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.06);
   }
 
   /** Camera smashed: glass crunch and tinkle. */

@@ -1004,8 +1004,8 @@ function handleGameEvents(): void {
       case "jellyPopped":
         sound.jellyPop(e.combo);
         break;
-      case "paparazzoSpotted":
-        sound.focusBeep();
+      case "paparazzoBeep":
+        sound.cameraBeep(e.timer);
         break;
       case "photo":
         sound.shutter();
@@ -1013,8 +1013,6 @@ function handleGameEvents(): void {
         break;
       case "cameraSmashed":
         sound.smash();
-        break;
-      case "photoPublished":
         break;
     }
   }

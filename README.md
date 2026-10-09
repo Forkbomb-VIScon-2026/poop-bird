@@ -84,12 +84,12 @@ there's no countdown.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
-- **Paparazzi:** now and then a paparazzo on the sidewalk points his camera at
-  you. Strain in view for more than ~0.45 s (or have an accident) and he gets
-  the shot: flash, combo lost, and he runs off with it. Splat him before he's
-  off-screen to delete the photo; otherwise it's published as a tabloid front
-  page that hangs in your way, and on the game-over screen. Short pffts are
-  safe, and splatting him before the shot smashes the camera (×3).
+- **Paparazzi:** now and then a paparazzo walks on with his camera raised.
+  The ring over his head fills as he closes in; when it's full (just past the
+  bird) he takes your picture. Splat him first to smash the camera (×3).
+  Miss, and you get a flash, a polaroid, and your photo on a tabloid front
+  page hanging from the next obstacle (and on the game-over screen). The
+  run's first paparazzo walks slower and has a "SPLAT HIM!" arrow.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage

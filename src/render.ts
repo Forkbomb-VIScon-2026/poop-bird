@@ -85,7 +85,7 @@ export class Renderer {
     this.ctx = ctx;
   }
 
-  /** Keyboard-mode photo: a close-up of the bird as it looks right now (mid-strain), without HUD. */
+  /** Keyboard-mode photo: a close-up of the bird, always caught mid-strain (that's the joke), without HUD. */
   captureBird(game: Game): Photo | null {
     const out = document.createElement("canvas");
     out.width = 200;
@@ -102,11 +102,17 @@ export class Renderer {
     const zoom = 2.1;
     octx.setTransform(zoom, 0, 0, zoom, 100 - game.bird.x * zoom, 105 - game.bird.y * zoom);
     const main = this.ctx;
+    const charge = game.charge;
+    const relief = game.bird.relief;
     this.ctx = octx;
+    game.charge = { ...charge, charge: Math.max(charge.charge, 0.9) };
+    game.bird.relief = 0;
     try {
       this.drawBird(game);
     } finally {
       this.ctx = main;
+      game.charge = charge;
+      game.bird.relief = relief;
     }
     return out;
   }
@@ -141,6 +147,8 @@ export class Renderer {
     for (const t of game.targets) if (t.kind !== "car") this.drawTarget(t, game.time);
     for (const o of game.obstacles) this.drawObstacle(o, game.time);
     for (const t of game.targets) if (t.kind === "car") this.drawTarget(t, game.time);
+    // Over the buildings, so a paparazzo's timer is never hidden.
+    for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
     for (const j of game.jellies) this.drawJelly(j, game.time, game.spike.spiked);
     this.drawPoops(game);
     // During a transition the splash covers the creature, and particles fly over the splash.
@@ -152,10 +160,7 @@ export class Renderer {
       this.drawParticles(game);
     } else if (game.phase === "playing") {
       if (ocean) this.drawPuffMeter(game);
-      else {
-        this.drawChargeMeter(game);
-        this.drawViewfinder(game);
-      }
+      else this.drawChargeMeter(game);
     }
     this.drawFloaters(game);
     this.drawScreenSplats(game);
@@ -741,67 +746,74 @@ export class Renderer {
 
   // --- paparazzi ----------------------------------------------------------------
 
-  /** The camera's view on the bird: a sightline and corner brackets that close in as it focuses. */
-  private drawViewfinder(game: Game): void {
-    const t = game.watchingPaparazzo;
-    if (!t?.pap) return;
+  /**
+   * The paparazzo's timer: a ring with a camera that fills as he closes in,
+   * and on the run's first one a bouncing "SPLAT HIM!" arrow.
+   */
+  private drawPaparazzoTimer(t: Target, game: Game): void {
+    const p = t.pap;
+    if (!p || p.state !== "watching" || game.phase !== "playing") return;
     const ctx = this.ctx;
-    const b = game.bird;
-    const f = Math.min(1, t.pap.focus);
-    const camX = t.x + Math.cos(t.pap.aim) * 26;
-    const camY = t.y - t.h * 0.72 + Math.sin(t.pap.aim) * 26;
-    const red = f > 0.01;
-    const color = red ? `rgb(255,${Math.round(220 * (1 - f))},${Math.round(220 * (1 - f))})` : "#ffffff";
+    const urgent = p.timer > 0.7;
+    const pulse = urgent ? 1 + Math.max(0, Math.sin(game.time * 18)) * 0.12 : 1;
+    const r = 19 * pulse;
+    const x = t.x;
+    const y = t.y - t.h - 30;
 
-    // Sightline
-    ctx.save();
-    ctx.globalAlpha = 0.35 + f * 0.4;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 8]);
-    ctx.lineDashOffset = -game.time * 40;
-    ctx.beginPath();
-    ctx.moveTo(camX, camY);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    ctx.restore();
-
-    // Brackets
-    const s = 34 + (1 - f) * 34 + (red ? Math.sin(game.time * 30) * 1.5 : 0);
-    const arm = 12;
-    ctx.lineWidth = 4;
-    ctx.lineCap = "round";
-    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      const cx = b.x + sx * s;
-      const cy = b.y + sy * s;
-      for (const [stroke, w] of [[OUTLINE, 7], [color, 4]] as const) {
-        ctx.strokeStyle = stroke;
-        ctx.lineWidth = w;
-        ctx.beginPath();
-        ctx.moveTo(cx - sx * arm, cy);
-        ctx.lineTo(cx, cy);
-        ctx.lineTo(cx, cy - sy * arm);
-        ctx.stroke();
-      }
-    }
-    ctx.lineCap = "butt";
-
-    // REC tag
-    ctx.font = "900 14px 'Trebuchet MS', sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    const label = red ? "FOCUSING…" : "REC";
-    ctx.lineWidth = 4;
+    // Disc, then the remaining time as a shrinking wedge.
+    ctx.fillStyle = "#fff";
     ctx.strokeStyle = OUTLINE;
-    ctx.strokeText(label, b.x - s + 14, b.y - s - 12);
-    ctx.fillStyle = red ? color : "#fff";
-    ctx.fillText(label, b.x - s + 14, b.y - s - 12);
-    if (Math.sin(game.time * 8) > 0 || red) {
-      ctx.fillStyle = "#ff3b3b";
-      ctx.beginPath();
-      ctx.arc(b.x - s + 5, b.y - s - 12, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = urgent ? "#ff3b3b" : "#ff8fab";
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p.timer);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    // Camera icon
+    ctx.fillStyle = OUTLINE;
+    roundRect(ctx, x - 10, y - 6, 20, 14, 3);
+    ctx.fill();
+    ctx.fillRect(x - 4, y - 9, 8, 4);
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(x, y + 1, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = OUTLINE;
+    ctx.beginPath();
+    ctx.arc(x, y + 1, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (!p.tutorial) return;
+    const bob = Math.sin(game.time * 6) * 5;
+    const ay = y - r - 16 + bob;
+    ctx.fillStyle = "#ffd60a";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 9, ay - 14);
+    ctx.lineTo(x + 9, ay - 14);
+    ctx.lineTo(x + 9, ay - 4);
+    ctx.lineTo(x + 16, ay - 4);
+    ctx.lineTo(x, ay + 10);
+    ctx.lineTo(x - 16, ay - 4);
+    ctx.lineTo(x - 9, ay - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = "900 24px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 6;
+    ctx.strokeText("💩 SPLAT HIM!", x, ay - 34);
+    ctx.fillStyle = "#ffd60a";
+    ctx.fillText("💩 SPLAT HIM!", x, ay - 34);
   }
 
   /** The fresh shot pops up as a polaroid in the top corner. */
@@ -2044,10 +2056,12 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
   // Drawn a bit larger than a pedestrian so the camera reads at a glance.
   const k = 1.2;
   const h = t.h / k;
-  const fleeing = p.state === "fleeing" || p.state === "gone";
+  const snapped = p.state === "snapped";
   const smashed = p.state === "smashed";
-  const stride = fleeing ? Math.sin(time * 22 + t.seed) * 0.9 : 0;
-  const hop = fleeing ? Math.abs(Math.sin(time * 22 + t.seed)) * 4 : 0;
+  // Walking while he closes in (only the first one actually moves), a victory hop once he has the shot.
+  const walking = p.state === "watching" && t.speed !== 0;
+  const stride = walking ? Math.sin(time * 9 + t.seed) * 0.5 : 0;
+  const hop = snapped ? Math.abs(Math.sin(time * 10 + t.seed)) * 5 : 0;
   ctx.save();
   ctx.scale(k, k);
   ctx.translate(0, -hop);
@@ -2059,7 +2073,7 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
   for (const s of [1, -1]) {
     ctx.beginPath();
     ctx.moveTo(0, -h * 0.38);
-    ctx.lineTo(fleeing ? Math.sin(stride * s) * 13 : s * 6, 0);
+    ctx.lineTo(walking ? Math.sin(stride * s) * 10 : s * 6, 0);
     ctx.stroke();
   }
   // Trench coat
@@ -2119,8 +2133,8 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
     ctx.stroke();
   } else {
     ctx.fillRect(-7, headY - 2, 14, 4);
-    // Grin while running off with the shot
-    if (fleeing) {
+    // Grin once he has the shot
+    if (snapped) {
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, headY + 3, 3.5, 0.2, Math.PI - 0.2);
@@ -2128,10 +2142,10 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
     }
   }
 
-  // Camera: aimed at the bird while watching, held high while fleeing, drooping when smashed.
+  // Camera: aimed at the bird while watching, held up in triumph after the shot, drooping when smashed.
   const shoulderY = -h * 0.72;
-  const aim = smashed ? 1.3 : fleeing ? -Math.PI / 2 - 0.3 : p.aim;
-  const camDist = fleeing ? 14 : 8;
+  const aim = smashed ? 1.3 : snapped ? -Math.PI / 2 - 0.3 : p.aim;
+  const camDist = snapped ? 14 : 8;
   const camX = Math.cos(aim) * camDist;
   const camY = shoulderY + Math.sin(aim) * camDist;
   // Arms to the camera
@@ -2174,8 +2188,8 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
     ctx.lineTo(21, -3);
     ctx.stroke();
   }
-  // Focus light: red and blinking faster as it focuses
-  if (p.state === "watching" && p.focus > 0 && Math.sin(time * (10 + p.focus * 30)) > 0) {
+  // Red light, blinking faster as the timer fills
+  if (p.state === "watching" && Math.sin(time * (8 + p.timer * 30)) > 0) {
     ctx.fillStyle = "#ff3b3b";
     ctx.beginPath();
     ctx.arc(-4, -1, 2.5, 0, Math.PI * 2);
