@@ -128,9 +128,6 @@ let best = loadBest();
 let lastGameOverEntryDate: string | null = null;
 let currentSnapshotUrl: string | null = null;
 
-const snapshotCheckbox = $<HTMLInputElement>("opt-snapshot");
-snapshotCheckbox.checked = storageGet("poopbird.snapshot.v1") === "1";
-snapshotCheckbox.addEventListener("change", () => storageSet("poopbird.snapshot.v1", snapshotCheckbox.checked ? "1" : "0"));
 sound.setMuted(storageGet("poopbird.muted.v1") === "1");
 
 /** The single "is the player straining?" signal: face OR keyboard OR pointer. */
@@ -174,7 +171,7 @@ tracker.onFrame((frame) => {
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config);
   if (faceRecorder && !faceRecorder.push(frame)) finishFaceRecording();
-  if (state === "playing" && game.phase === "playing" && game.stage === "city" && snapshotCheckbox.checked) {
+  if (state === "playing" && game.phase === "playing" && game.stage === "city") {
     snapshot.offer(video, frame.box, strain.smoothed);
   }
 });
@@ -726,7 +723,7 @@ function onGameOver(): void {
   $("go-distance").textContent = `${Math.round(game.distance / 50)} m`;
   $("go-accidents").textContent = String(game.accidents);
 
-  currentSnapshotUrl = mode === "face" && snapshotCheckbox.checked ? snapshot.toDataURL() : null;
+  currentSnapshotUrl = mode === "face" ? snapshot.toDataURL() : null;
   show($("go-snapshot"), currentSnapshotUrl !== null);
   if (currentSnapshotUrl) $<HTMLImageElement>("go-snapshot-img").src = currentSnapshotUrl;
 

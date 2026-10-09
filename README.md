@@ -266,7 +266,7 @@ build is always the plain one:
 
 - Video frames go to MediaPipe running in the page (WASM/WebGL) and nowhere
   else.
-- The "finest strain" snapshot is **opt-in** (off by default). It's a 200 px
+- The "finest strain" snapshot is taken in every face-mode run. It's a 200 px
   JPEG of your face at peak strain, kept in memory, shown on the game-over
   screen, and saved only if you add the run to the local Hall of Fame
   (`localStorage`, top 5).
