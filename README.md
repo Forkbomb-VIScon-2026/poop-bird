@@ -58,14 +58,19 @@ access on anything other than localhost, put it behind HTTPS.
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Always works, also in face mode |
 | **P** / Esc | Pause |
 | **M** | Mute |
-| **R** | Restart from game over |
+| **R** | Play again from game over |
 | **C** | Re-run calibration |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
 | **G** | With the debug panel open: spawn the next gate now |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
-| **Enter** | Start after calibration |
+| **Enter** | Play after calibration |
 
 ## How it plays
+
+After calibration (each phase shows a sketch of the face to make), a strain
+check shows a live meter between a relaxed and a strained face sketch. Then the
+bird hovers until the player strains for the first time, which starts the run;
+there's no countdown.
 
 - Gravity pulls the bird down all the time. Fall speed is capped, and the bird
   falls slower while charging, because it tenses up.
@@ -243,13 +248,15 @@ build is always the plain one:
 - **G** spawns the next gate right away, so you can test the ocean without
   flying through the city first
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
-  into the ocean, with no countdown and no city. In face mode the dive runs
+  into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
   quick way to retry it. From the menu it starts in keyboard mode
 - **⏺ Record puff clip** (face mode) pauses the game and prompts 16 s of
   relax → puff and hold → relax → quick puffs, then downloads the raw
   features, all blendshapes and all landmarks as JSON, for tuning puff
   detection offline
+- **🗑 Forget calibration** deletes the saved strain and puff calibrations and
+  reloads, so you can test the first-time flow (scores and settings are kept)
 - each face feature (blendshapes and landmark geometry) as a bar, with neutral
   (blue) and strain (red) calibration markers and its share of the weight
   (features at 0% are greyed out). In the ocean the puff candidates show the
@@ -267,13 +274,12 @@ build is always the plain one:
 
 - Video frames go to MediaPipe running in the page (WASM/WebGL) and nowhere
   else.
-- The "finest strain" snapshot is **opt-in** (off by default). It's a 200 px
+- The "finest strain" snapshot is taken in every face-mode run. It's a 200 px
   JPEG of your face at peak strain, kept in memory, shown on the game-over
   screen, and saved only if you add the run to the local Hall of Fame
   (`localStorage`, top 5).
-- The same opt-in decides whether the paparazzi's photos show your face.
-  Without it they show the bird. Their photos stay in memory for the current
-  run and are never stored.
+- The paparazzi's photos show your face in face mode, and the bird with the
+  keyboard. They stay in memory for the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
 

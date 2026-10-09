@@ -67,6 +67,7 @@ export class DebugPanel {
     private onRecalibrate: () => void,
     private onStartOcean: () => void,
     private onRecordFace: () => void,
+    private onForgetCalibration: () => void,
   ) {
     this.el = el;
     this.build();
@@ -91,6 +92,7 @@ export class DebugPanel {
     const quick = div("dbg-buttons");
     quick.append(button("🐡 Start as pufferfish (O)", () => this.onStartOcean()));
     quick.append(button("⏺ Record puff clip", () => this.onRecordFace()));
+    quick.append(button("🗑 Forget calibration", () => this.onForgetCalibration()));
     el.append(quick);
     this.recordEl = div("dbg-record hidden");
     el.append(this.recordEl);

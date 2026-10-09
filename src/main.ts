@@ -58,7 +58,7 @@ const screens = {
   start: $("screen-start"),
   loading: $("screen-loading"),
   calibrate: $("screen-calibrate"),
-  countdown: $("screen-countdown"),
+  ready: $("screen-ready"),
   pause: $("screen-pause"),
   gameover: $("screen-gameover"),
 };
@@ -75,7 +75,8 @@ function showScreen(name: keyof typeof screens | null): void {
 
 // --- State ------------------------------------------------------------------------
 
-type AppState = "menu" | "loading" | "calibrating" | "calibrated" | "countdown" | "playing" | "paused" | "gameover";
+type AppState =
+  | "menu" | "loading" | "calibrating" | "calibrated" | "ready" | "playing" | "paused" | "gameover";
 type Mode = "face" | "keyboard";
 
 let state: AppState = "menu";
@@ -87,7 +88,7 @@ const sound = new Sound();
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
 const debug = DEBUG
-  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace())
+  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace(), forgetCalibration)
   : null;
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
 
@@ -110,7 +111,7 @@ let rejectedCalibration: Calibration | null = null;
 let calibrationFailed = false;
 /**
  * Bumped on every screen-flow transition. Async flows (camera startup,
- * calibration, countdown) capture it and bail out if it changed, so a stale
+ * calibration) capture it and bail out if it changed, so a stale
  * flow can never take over the screen.
  */
 let flow = 0;
@@ -127,9 +128,6 @@ let best = loadBest();
 let lastGameOverEntryDate: string | null = null;
 let currentSnapshotUrl: string | null = null;
 
-const snapshotCheckbox = $<HTMLInputElement>("opt-snapshot");
-snapshotCheckbox.checked = storageGet("poopbird.snapshot.v1") === "1";
-snapshotCheckbox.addEventListener("change", () => storageSet("poopbird.snapshot.v1", snapshotCheckbox.checked ? "1" : "0"));
 sound.setMuted(storageGet("poopbird.muted.v1") === "1");
 
 /** The single "is the player straining?" signal: face OR keyboard OR pointer. */
@@ -173,7 +171,7 @@ tracker.onFrame((frame) => {
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config);
   if (faceRecorder && !faceRecorder.push(frame)) finishFaceRecording();
-  if (state === "playing" && game.phase === "playing" && game.stage === "city" && snapshotCheckbox.checked) {
+  if (state === "playing" && game.phase === "playing" && game.stage === "city") {
     snapshot.offer(video, frame.box, strain.smoothed);
   }
 });
@@ -223,6 +221,20 @@ function updateStrainBars(): void {
   // Short grace period so a single dropped frame doesn't flash the warning.
   const lost = mode === "face" && tracker.ready && performance.now() - lastFaceSeen > 300;
   show($("cam-noface"), lost);
+  if (state === "calibrated") updateStrainCheck(value, active);
+}
+
+/** The "try it" checklist on the calibration result: strain once, then relax once. */
+const strainCheck = { strained: false, relaxed: false };
+
+function updateStrainCheck(value: number, active: boolean): void {
+  if (active) strainCheck.strained = true;
+  else if (strainCheck.strained && value < config.strainOff) strainCheck.relaxed = true;
+  $("check-strain").classList.toggle("done", strainCheck.strained);
+  $("check-relax").classList.toggle("done", strainCheck.relaxed);
+  $("meter-strained").classList.toggle("lit", active);
+  $("meter-relaxed").classList.toggle("lit", !active && value < config.strainOff);
+  $("btn-calib-play").classList.toggle("pulse", strainCheck.strained && strainCheck.relaxed);
 }
 
 async function startFaceMode(forceCalibrate = false): Promise<void> {
@@ -270,7 +282,7 @@ function startKeyboardMode(): void {
   updateModeLabel();
   tracker.stopCamera();
   show(cam, false);
-  void startCountdown();
+  startReady();
 }
 
 /** A face-mode startup finished after the player moved on: turn the camera back off. */
@@ -299,8 +311,8 @@ async function runCalibration(): Promise<void> {
   show(cam, true);
   cam.classList.add("large");
   show($("calib-result"), false);
-  for (const id of ["calib-count", "calib-hint"]) show($(id), true);
-  show($("calib-progress").parentElement!, true);
+  show($("btn-calib-keyboard"), false);
+  show($("calib-run"), true);
 
   const neutral = await calibrationPhase(token, 1, "Relax your face", "Neutral face. Look at the screen and relax completely.", false);
   if (token !== flow) return;
@@ -343,6 +355,7 @@ async function calibrationPhase(
   $("calib-step").textContent = `Calibration ${step}/2`;
   $("calib-prompt").textContent = step === 1 ? "Get ready to relax…" : "Get ready to STRAIN…";
   $("calib-hint").textContent = hint;
+  $("calib-face-use").setAttribute("href", strainPhase ? "#face-strained" : "#face-relaxed");
   card.classList.remove("strain");
   progress.style.width = "0%";
   for (let i = 2; i > 0; i--) {
@@ -417,25 +430,25 @@ function showCalibrationResult(quality: ReturnType<typeof assessCalibration> | n
   show(hud, false);
   show(cam, true);
   cam.classList.add("large");
-  for (const id of ["calib-count", "calib-hint"]) show($(id), false);
-  show($("calib-progress").parentElement!, false);
+  show($("calib-run"), false);
   show($("calib-result"), true);
+  show($("btn-calib-keyboard"), true);
+  strainCheck.strained = false;
+  strainCheck.relaxed = false;
   const text = $("calib-result-text");
   const playBtn = $<HTMLButtonElement>("btn-calib-play");
   const retryBtn = $<HTMLButtonElement>("btn-calib-retry");
   const card = screens.calibrate.querySelector(".calib")!;
   card.classList.remove("strain");
-  $("calib-step").textContent = "Calibration";
-
-  const top = topFeatureLabels;
+  $("calib-step").textContent = "Strain check";
 
   if (quality === null) {
     $("calib-prompt").textContent = "Welcome back!";
-    text.textContent = `Using your last calibration (watching your ${calibration ? top(calibration).join(", ") : "face"}). New player? Recalibrate.`;
+    text.textContent = "New player? Recalibrate.";
     setPrimary(playBtn, retryBtn);
   } else if (quality.ok) {
     $("calib-prompt").textContent = "Nice strain! 💪";
-    text.textContent = `I'll mostly watch your ${quality.topFeatures.map((f) => FEATURE_LABELS[f]).join(", ")}.`;
+    text.textContent = "";
     setPrimary(playBtn, retryBtn);
   } else {
     $("calib-prompt").textContent = "Hmm, that didn't work well";
@@ -466,6 +479,13 @@ function loadCalibration(key: string, required: readonly FeatureName[]): Calibra
   } catch {
     return null;
   }
+}
+
+/** Debug: delete both saved calibrations and reload, to test the first-time flow. */
+function forgetCalibration(): void {
+  storageRemove(CALIBRATION_KEY);
+  storageRemove(PUFF_CALIBRATION_KEY);
+  location.reload();
 }
 
 // --- Puff calibration (first dive, in game) ---------------------------------------------
@@ -583,18 +603,18 @@ function hideToast(): void {
   show($("hud-toast"), false);
 }
 
-// --- Countdown & run -----------------------------------------------------------------
+// --- Ready & run -----------------------------------------------------------------
 
 /** "Play anyway" after a failed calibration uses the rejected one for this session only. */
 function playAfterCalibration(): void {
   if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
-  if (calibration) void startCountdown();
+  if (calibration) startReady();
 }
 
 /**
- * Debug: a fresh run that dives straight into the ocean (no countdown, no
- * city). In face mode the dive runs the puff calibration if one is due. From
- * the menu it starts in keyboard mode; mid-calibration it does nothing.
+ * Debug: a fresh run that dives straight into the ocean (no city). In face
+ * mode the dive runs the puff calibration if one is due. From the menu it
+ * starts in keyboard mode; mid-calibration it does nothing.
  */
 function startOceanRun(): void {
   if (state === "loading" || state === "calibrating") return;
@@ -607,11 +627,21 @@ function startOceanRun(): void {
     if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
     if (!calibration) return;
   }
-  void startCountdown(true);
+  startReady(true);
 }
 
-async function startCountdown(ocean = false): Promise<void> {
-  const token = ++flow;
+/**
+ * Set once the player stops straining on the ready screen, so a strain held
+ * over from the previous screen doesn't start the run by itself.
+ */
+let readyArmed = false;
+
+/**
+ * The bird hovers until the player strains for the first time; that starts
+ * the run. `ocean` (debug) skips the wait and dives straight in.
+ */
+function startReady(ocean = false): void {
+  flow++;
   calibSamples = null;
   calibFrames = null;
   cam.classList.remove("large");
@@ -631,23 +661,23 @@ async function startCountdown(ocean = false): Promise<void> {
     game.diveNow();
     return;
   }
-  state = "countdown";
-  showScreen("countdown");
-  const n = $("countdown-n");
-  for (const label of ["3", "2", "1"]) {
-    n.textContent = label;
-    // Restart the pop animation.
-    n.style.animation = "none";
-    void n.offsetWidth;
-    n.style.animation = "";
-    sound.beep();
-    await wait(650);
-    if (token !== flow) return;
+  readyArmed = false;
+  state = "ready";
+  const face = mode === "face";
+  $("ready-text").textContent = face ? "Strain to take off!" : "Hold to take off!";
+  $("ready-sub").textContent = face ? "then relax to poop 💩" : "then let go to poop 💩";
+  show($("ready-face"), face);
+  show($("ready-key"), !face);
+  showScreen("ready");
+}
+
+function updateReady(): void {
+  if (!straining()) readyArmed = true;
+  else if (readyArmed) {
+    state = "playing";
+    showScreen(null);
+    sound.beep(true);
   }
-  if (state !== "countdown") return;
-  sound.beep(true);
-  showScreen(null);
-  state = "playing";
 }
 
 function togglePause(): void {
@@ -677,7 +707,6 @@ function goToMenu(): void {
   show(cam, false);
   show(hud, false);
   game.reset();
-  renderHallOfFame($("start-hof"), loadHallOfFame(), null);
   showScreen("start");
 }
 
@@ -718,7 +747,7 @@ function onGameOver(): void {
     }
   }
 
-  currentSnapshotUrl = mode === "face" && snapshotCheckbox.checked ? snapshot.toDataURL() : null;
+  currentSnapshotUrl = mode === "face" ? snapshot.toDataURL() : null;
   show($("go-snapshot"), currentSnapshotUrl !== null);
   if (currentSnapshotUrl) $<HTMLImageElement>("go-snapshot-img").src = currentSnapshotUrl;
 
@@ -853,6 +882,7 @@ function frame(now: number): void {
   lastTime = now;
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
+  if (state === "ready") updateReady();
   if (state === "playing") {
     accumulator += dt;
     while (accumulator >= STEP) {
@@ -919,13 +949,12 @@ function frame(now: number): void {
 }
 
 /**
- * The paparazzo's shot: the player's real face if they opted in to face
- * photos (the snapshot checkbox), otherwise the strained bird. Kept in memory
- * for this run only.
+ * The paparazzo's shot: the player's real face in face mode (like the
+ * finest-strain snapshot), otherwise the strained bird. Kept in memory for
+ * this run only.
  */
 function takePhoto(photoId: number): void {
-  const realFace = mode === "face" && snapshotCheckbox.checked && faceFresh();
-  const face = realFace ? captureFace(video, lastFace?.box ?? null) : null;
+  const face = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
   const photo = face ?? renderer.captureBird(game);
   if (photo) renderer.photos.set(photoId, photo);
 }
@@ -1018,7 +1047,7 @@ window.addEventListener("keydown", (e) => {
       updateModeLabel();
       break;
     case "r":
-      if (state === "gameover") void startCountdown();
+      if (state === "gameover") startReady();
       break;
     case "d":
       debug?.toggle();
@@ -1049,7 +1078,7 @@ window.addEventListener("keyup", (e) => {
 });
 
 canvas.addEventListener("pointerdown", (e) => {
-  if (state !== "playing") return;
+  if (state !== "playing" && state !== "ready") return;
   e.preventDefault();
   sound.unlock();
   pointerHeld = true;
@@ -1081,7 +1110,7 @@ on("btn-calib-keyboard", startKeyboardMode);
 on("btn-calib-cancel", goToMenu);
 on("btn-resume", togglePause);
 on("btn-pause-menu", goToMenu);
-on("btn-again", () => void startCountdown());
+on("btn-again", () => startReady());
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
 on("btn-download", () => {

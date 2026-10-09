@@ -1,4 +1,4 @@
-// Opt-in "finest strain" snapshot: keeps a cropped copy of the video frame at
+// "Finest strain" snapshot: keeps a cropped copy of the video frame at
 // the run's peak strain. The crop lives in an in-memory canvas and is only
 // encoded to JPEG at game over. Nothing is uploaded anywhere.
 //
