@@ -1,0 +1,69 @@
+name: Deploy
+
+# Deploys main to the team VM once CI has passed on it. The image is built here
+# and shipped over SSH, so the VM needs neither the source nor repo access.
+#
+# Repository secrets:
+#   DEPLOY_HOST         the VM's direct address, NN-direct.viscon-hackathon.ch
+#   DEPLOY_SSH_KEY      private key whose public half is in the VM's
+#                       ~viscon/.ssh/authorized_keys
+#   DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan NN-direct.viscon-hackathon.ch`
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Only after a successful CI run on a push to main (not on PRs from a
+    # branch named main), or when started by hand.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Build image
+        run: docker build -t "poop-bird:$SHA" .
+
+      - name: Set up SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "::error::Set the DEPLOY_HOST, DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS repository secrets first."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Ship image and restart the container
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          docker save "poop-bird:$SHA" | gzip | ssh "viscon@$DEPLOY_HOST" 'gunzip | docker load'
+          ssh "viscon@$DEPLOY_HOST" "
+            set -e
+            docker rm -f poop-bird 2>/dev/null || true
+            docker run -d --name poop-bird --restart unless-stopped \
+              -p 8080:8080 poop-bird:$SHA
+            # Drop older poop-bird images, keep the one now running
+            docker images poop-bird --format '{{.Repository}}:{{.Tag}}' \\
+              | grep -vx poop-bird:$SHA | xargs -r docker rmi >/dev/null || true
+          "
