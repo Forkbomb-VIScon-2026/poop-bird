@@ -5,7 +5,7 @@
 //   blendshape scores → extractFeatures (average L/R pairs)
 //   → rawStrain (normalize against the player's calibration, weighted mean)
 //   → smoothStrain (time-corrected EMA)
-//   → updateHysteresis (on/off thresholds → boolean "straining")
+//   → updateTrigger (on/off thresholds plus a relative release → boolean "straining")
 //
 // The ocean stage's puff signal (puff.ts) reuses the calibration machinery
 // here with its own feature subset, PUFF_FEATURES.
@@ -337,6 +337,44 @@ export function updateHysteresis(active: boolean, value: number, on: number, off
   return active ? value >= offT : value >= on;
 }
 
+export interface TriggerParams {
+  strainOn: number;
+  strainOff: number;
+  /** Also turn off once the signal falls this far below its peak (0 = off threshold only). */
+  strainReleaseDrop: number;
+}
+
+/**
+ * Hysteresis plus a relative release. While on, the signal also turns off
+ * once it falls `strainReleaseDrop` below its peak in this strain, so a
+ * release counts as soon as the face starts to relax, even when the relaxed
+ * face no longer gets below the off threshold (the relaxed baseline drifts
+ * with head pose and lighting during play). To turn on again it must also
+ * rise that far above its lowest point since, so the tail of the relax can't
+ * retrigger. `extreme` is the peak while on and the low point while off.
+ */
+export function updateTrigger(
+  active: boolean,
+  extreme: number,
+  value: number,
+  p: TriggerParams,
+): { active: boolean; extreme: number } {
+  if (active) {
+    const peak = Math.max(extreme, value);
+    return value >= releaseLevel(peak, p) ? { active: true, extreme: peak } : { active: false, extreme: value };
+  }
+  const low = Math.min(extreme, value);
+  const starts = updateHysteresis(false, value, p.strainOn, p.strainOff) && value >= low + Math.max(0, p.strainReleaseDrop);
+  return starts ? { active: true, extreme: value } : { active: false, extreme: low };
+}
+
+/** The level an active signal with this peak releases below: the off threshold or peak − drop, whichever is higher. */
+export function releaseLevel(peak: number, p: TriggerParams): number {
+  // Guard against a misconfigured off > on, as in updateHysteresis.
+  const off = Math.min(p.strainOff, p.strainOn);
+  return p.strainReleaseDrop > 0 ? Math.max(off, peak - p.strainReleaseDrop) : off;
+}
+
 // --- helpers -----------------------------------------------------------------
 
 export function clamp(x: number, lo: number, hi: number): number {
@@ -355,20 +393,20 @@ export interface StrainState {
   smoothed: number;
   raw: number;
   active: boolean;
+  /** Peak smoothed strain while active, the low point since the release while not (see updateTrigger). */
+  extreme: number;
   faceVisible: boolean;
   /** Seconds since the face was last seen (0 while visible). */
   missingFor: number;
 }
 
 export function initialStrainState(): StrainState {
-  return { smoothed: 0, raw: 0, active: false, faceVisible: false, missingFor: 0 };
+  return { smoothed: 0, raw: 0, active: false, extreme: 0, faceVisible: false, missingFor: 0 };
 }
 
-export interface StrainStepParams {
+export interface StrainStepParams extends TriggerParams {
   featureClampMax: number;
   emaAlpha: number;
-  strainOn: number;
-  strainOff: number;
   /** Seconds a lost face keeps its last strain state before dropping to 0. */
   faceLossGrace: number;
 }
@@ -392,10 +430,10 @@ export function stepStrain(
   if (features === null) {
     const missingFor = state.missingFor + Math.max(0, dtSeconds);
     if (missingFor <= p.faceLossGrace) return { ...state, faceVisible: false, missingFor };
-    return { smoothed: 0, raw: 0, active: false, faceVisible: false, missingFor };
+    return { ...initialStrainState(), missingFor };
   }
   const raw = calib ? rawStrain(features, calib, p.featureClampMax) : 0;
   const smoothed = smoothStrain(state.smoothed, raw, p.emaAlpha, dtSeconds);
-  const active = updateHysteresis(state.active, smoothed, p.strainOn, p.strainOff);
-  return { smoothed, raw, active, faceVisible: true, missingFor: 0 };
+  const { active, extreme } = updateTrigger(state.active, state.extreme, smoothed, p);
+  return { smoothed, raw, active, extreme, faceVisible: true, missingFor: 0 };
 }

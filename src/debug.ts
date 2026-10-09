@@ -23,6 +23,8 @@ export interface DebugData {
   rawStrain: number;
   strain: number;
   strainActive: boolean;
+  /** Level the smoothed face strain must fall below to release, while it is active. */
+  strainReleaseAt: number | null;
   straining: boolean;
   charge: number;
   fullHold: number;
@@ -54,7 +56,7 @@ export class DebugPanel {
   private featureRows = new Map<string, { row: HTMLElement; v: HTMLElement; n: HTMLElement; s: HTMLElement; w: HTMLElement }>();
   private sliders = new Map<ConfigKey, { range: HTMLInputElement; num: HTMLInputElement; wrap: HTMLElement }>();
   private chargeFill!: HTMLElement;
-  private history: { raw: number; strain: number; active: boolean; charge: number }[] = [];
+  private history: { raw: number; strain: number; active: boolean; charge: number; releaseAt: number | null }[] = [];
   private puffHistory: { raw: number; face: number; input: number; spiked: boolean }[] = [];
   private puffPlot!: HTMLCanvasElement;
   private puffSection!: HTMLElement;
@@ -106,7 +108,7 @@ export class DebugPanel {
     el.append(this.plot);
     const legend = div("dbg-legend");
     legend.innerHTML =
-      '<i style="background:#ffd166"></i>strain <i style="background:#666"></i>raw <i style="background:#ef476f"></i>on <i style="background:#3a86ff"></i>off <i style="background:#8ac926"></i>charge';
+      '<i style="background:#ffd166"></i>strain <i style="background:#666"></i>raw <i style="background:#ef476f"></i>on <i style="background:#3a86ff"></i>off / release <i style="background:#8ac926"></i>charge';
     el.append(legend);
 
     const chargeWrap = div("dbg-feature");
@@ -213,7 +215,9 @@ export class DebugPanel {
   }
 
   update(d: DebugData): void {
-    this.history.push({ raw: d.rawStrain, strain: d.strain, active: d.straining, charge: d.charge });
+    this.history.push({
+      raw: d.rawStrain, strain: d.strain, active: d.straining, charge: d.charge, releaseAt: d.strainReleaseAt,
+    });
     if (this.history.length > HISTORY) this.history.shift();
     this.puffHistory.push({ raw: d.rawPuff, face: d.facePuff, input: d.puffInput, spiked: d.spiked });
     if (this.puffHistory.length > HISTORY) this.puffHistory.shift();
@@ -363,6 +367,11 @@ export class DebugPanel {
     };
     line(config.strainOn, "#ef476f");
     line(config.strainOff, "#3a86ff");
+    // Moving release level (peak − release drop) while a face strain is active
+    ctx.fillStyle = "#3a86ff";
+    this.history.forEach((p, i) => {
+      if (p.releaseAt !== null) ctx.fillRect(i * dx, y(p.releaseAt) - 1, 2, 3);
+    });
     const series = (get: (p: (typeof this.history)[number]) => number, color: string, width: number) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = width;

@@ -51,6 +51,10 @@ export const CONFIG_SPEC = {
   // --- Strain detection ----------------------------------------------------
   strainOn: { value: 0.45, min: 0.05, max: 0.95, step: 0.01, group: "Strain", label: "On threshold" },
   strainOff: { value: 0.3, min: 0.02, max: 0.9, step: 0.01, group: "Strain", label: "Off threshold" },
+  strainReleaseDrop: {
+    value: 0.25, min: 0, max: 0.8, step: 0.01, group: "Strain", label: "Release drop",
+    hint: "also release once strain falls this far below its peak (0 = off threshold only)",
+  },
   emaAlpha: { value: 0.45, min: 0.05, max: 1, step: 0.01, group: "Strain", label: "EMA factor", hint: "per frame at 30 fps; 1 = no smoothing" },
   faceLossGrace: { value: 0.25, min: 0, max: 1.5, step: 0.05, group: "Strain", label: "Face-loss grace", hint: "s a lost face keeps its strain (bridges dropped frames)" },
   minFaceCoverage: { value: 0.6, min: 0, max: 1, step: 0.05, group: "Strain", label: "Min face coverage", hint: "calibration: fraction of frames per phase that must see a face" },
