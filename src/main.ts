@@ -5,6 +5,7 @@ import "./style.css";
 import { config } from "./config";
 import { Sound } from "./audio";
 import { DebugPanel } from "./debug";
+import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
 import { Game } from "./game";
 import { Renderer } from "./render";
@@ -73,7 +74,8 @@ const game = new Game(renderer.resize());
 const sound = new Sound();
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
-const debug = new DebugPanel($("debug"), () => void recalibrate());
+const debug = DEBUG ? new DebugPanel($("debug"), () => void recalibrate()) : null;
+if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
 
 let calibration: Calibration | null = loadCalibration();
 /** A calibration that failed the quality check; used only if the player picks "Play anyway". */
@@ -623,7 +625,7 @@ function frame(now: number): void {
 
   updateHud();
   updateStrainBars();
-  debug.update({
+  debug?.update({
     fps,
     detectionRate: tracker.ready ? tracker.detectionRate : 0,
     delegate: tracker.delegate ?? "–",
@@ -700,7 +702,7 @@ window.addEventListener("keydown", (e) => {
       if (state === "gameover") void startCountdown();
       break;
     case "d":
-      debug.toggle();
+      debug?.toggle();
       break;
     case "c":
       void recalibrate();
@@ -774,4 +776,4 @@ goToMenu();
 requestAnimationFrame(frame);
 
 // Handy for tuning from the console.
-Object.assign(window, { poopBird: { game, config, tracker, get calibration() { return calibration; } } });
+if (DEBUG) Object.assign(window, { poopBird: { game, config, tracker, get calibration() { return calibration; } } });
