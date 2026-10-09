@@ -919,11 +919,13 @@ function frame(now: number): void {
 }
 
 /**
- * The paparazzo's shot: the player's real face in face mode, otherwise the
- * bird as last drawn. Kept in memory for this run only.
+ * The paparazzo's shot: the player's real face if they opted in to face
+ * photos (the snapshot checkbox), otherwise the strained bird. Kept in memory
+ * for this run only.
  */
 function takePhoto(photoId: number): void {
-  const face = mode === "face" && faceFresh() && lastFace?.box ? captureFace(video, lastFace.box) : null;
+  const realFace = mode === "face" && snapshotCheckbox.checked && faceFresh();
+  const face = realFace ? captureFace(video, lastFace?.box ?? null) : null;
   const photo = face ?? renderer.captureBird(game);
   if (photo) renderer.photos.set(photoId, photo);
 }

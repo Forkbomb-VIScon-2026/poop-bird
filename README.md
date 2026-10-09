@@ -79,6 +79,12 @@ access on anything other than localhost, put it behind HTTPS.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
+- **Paparazzi:** now and then a paparazzo on the sidewalk points his camera at
+  you. Strain in view for more than ~0.45 s (or have an accident) and he gets
+  the shot: flash, combo lost, and he runs off with it. Splat him before he's
+  off-screen to delete the photo; otherwise it's published as a tabloid front
+  page that hangs in your way, and on the game-over screen. Short pffts are
+  safe, and splatting him before the shot smashes the camera (×3).
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage
@@ -265,6 +271,9 @@ build is always the plain one:
   JPEG of your face at peak strain, kept in memory, shown on the game-over
   screen, and saved only if you add the run to the local Hall of Fame
   (`localStorage`, top 5).
+- The same opt-in decides whether the paparazzi's photos show your face.
+  Without it they show the bird. Their photos stay in memory for the current
+  run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
 
@@ -282,7 +291,7 @@ src/
   render.ts     canvas drawing
   audio.ts      WebAudio synth sounds
   debug.ts      debug / tuning panel
-  snapshot.ts   peak-strain face crop
+  snapshot.ts   face crops: peak-strain snapshot, paparazzi photos
   storage.ts    safe localStorage, best score, Hall of Fame
   main.ts       screens, input, loops, calibration flow
 scripts/
