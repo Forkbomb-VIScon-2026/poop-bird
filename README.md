@@ -245,10 +245,15 @@ build is always the plain one:
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
   quick way to retry it. From the menu it starts in keyboard mode
-- **⏺ Record puff clip** (face mode) pauses the game and prompts 16 s of
-  relax → puff and hold → relax → quick puffs, then downloads the raw
-  features, all blendshapes and all landmarks as JSON, for tuning puff
-  detection offline
+- **⏺ Record strain clip** (face mode) pauses the game and prompts 45 s of
+  relax → strain and hold → relax → four 1.5 s strain/relax pulses → a long
+  strain → relax → relaxed while looking around → smiling, laughing and
+  talking. Every step beeps (high for strain), since you can't read prompts
+  with your eyes squeezed shut. Then it downloads the raw features, all
+  blendshapes and all landmarks as JSON (`poopbird-face-strain-*.json`), for
+  tuning strain detection offline. Each sample is labelled with its step
+- **⏺ Record puff clip** does the same with 16 s of relax → puff and hold →
+  relax → quick puffs, for tuning puff detection
 - **🗑 Forget calibration** deletes the saved strain and puff calibrations and
   reloads, so you can test the first-time flow (scores and settings are kept)
 - each face feature (blendshapes and landmark geometry) as a bar, with neutral
