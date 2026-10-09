@@ -1,0 +1,14 @@
+# Static file server for the built game. Camera access needs a secure context,
+# so put this behind HTTPS (a reverse proxy, or change the site address to a
+# domain and let Caddy get a certificate).
+:8080 {
+	root * /srv
+	encode zstd gzip
+	file_server
+
+	@wasm path *.wasm
+	header @wasm Content-Type application/wasm
+
+	@static path /assets/* /mediapipe/*
+	header @static Cache-Control "public, max-age=604800"
+}
