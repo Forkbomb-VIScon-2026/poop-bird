@@ -625,6 +625,13 @@ kbd {
   background: #000;
 }
 
+.go-frontpage {
+  width: 200px;
+  height: 240px;
+  transform: rotate(2deg);
+  filter: drop-shadow(0 5px 0 var(--ink));
+}
+
 .go-hof-form {
   margin-top: 14px;
   display: flex;

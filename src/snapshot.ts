@@ -1,6 +1,9 @@
 // Opt-in "finest strain" snapshot: keeps a cropped copy of the video frame at
 // the run's peak strain. The crop lives in an in-memory canvas and is only
 // encoded to JPEG at game over. Nothing is uploaded anywhere.
+//
+// captureFace() uses the same crop for the paparazzi's in-game photos, which
+// only ever live in memory for the current run.
 
 import type { FaceBox } from "./face";
 
@@ -23,28 +26,7 @@ export class StrainSnapshot {
   /** Call on every detection during a run. Grabs the frame when strain hits a new peak. */
   offer(video: HTMLVideoElement, box: FaceBox | null, strain: number): void {
     if (!box || strain <= this.peak + 0.01 || strain < 0.15) return;
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return;
-    // Pad the landmark box so the whole face (and some forehead) fits.
-    const padX = box.w * 0.25;
-    const padY = box.h * 0.3;
-    const sx = Math.max(0, (box.x - padX) * vw);
-    const sy = Math.max(0, (box.y - padY) * vh);
-    const sw = Math.min(vw - sx, (box.w + padX * 2) * vw);
-    const sh = Math.min(vh - sy, (box.h + padY * 2) * vh);
-    if (sw < 8 || sh < 8) return;
-    const height = Math.round((WIDTH * sh) / sw);
-    this.canvas.width = WIDTH;
-    this.canvas.height = height;
-    const ctx = this.canvas.getContext("2d");
-    if (!ctx) return;
-    // Mirror so it matches what the player saw in the preview.
-    ctx.save();
-    ctx.translate(WIDTH, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, WIDTH, height);
-    ctx.restore();
+    if (!cropFace(video, box, this.canvas, WIDTH)) return;
     this.peak = strain;
     this.has = true;
   }
@@ -58,4 +40,37 @@ export class StrainSnapshot {
       return null;
     }
   }
+}
+
+/** A fresh canvas holding the face crop of the current video frame (the paparazzi's photo), or null. */
+export function captureFace(video: HTMLVideoElement, box: FaceBox | null): HTMLCanvasElement | null {
+  const canvas = document.createElement("canvas");
+  return box && cropFace(video, box, canvas, WIDTH) ? canvas : null;
+}
+
+/** Draws the padded, mirrored face crop into `canvas` (resized to `width`). False if there's nothing to crop. */
+function cropFace(video: HTMLVideoElement, box: FaceBox, canvas: HTMLCanvasElement, width: number): boolean {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return false;
+  // Pad the landmark box so the whole face (and some forehead) fits.
+  const padX = box.w * 0.25;
+  const padY = box.h * 0.3;
+  const sx = Math.max(0, (box.x - padX) * vw);
+  const sy = Math.max(0, (box.y - padY) * vh);
+  const sw = Math.min(vw - sx, (box.w + padX * 2) * vw);
+  const sh = Math.min(vh - sy, (box.h + padY * 2) * vh);
+  if (sw < 8 || sh < 8) return false;
+  const height = Math.round((width * sh) / sw);
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return false;
+  // Mirror so it matches what the player saw in the preview.
+  ctx.save();
+  ctx.translate(width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+  ctx.restore();
+  return true;
 }

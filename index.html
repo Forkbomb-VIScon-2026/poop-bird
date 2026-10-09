@@ -57,6 +57,7 @@
             <li><b>Strain</b> at your webcam (brows down, eyes squeezed, nose wrinkled, lips pressed) to charge. <b>Relax</b> to let go.</li>
             <li>Longer strain = bigger push. Hold full charge too long and… <i>accident</i>. Let go right before for a <b>perfect push</b>.</li>
             <li>Dodge buildings and signs. Hit cars, people and statues for bonus points and combos.</li>
+            <li>📸 Paparazzi! Don't strain in front of their cameras, or splat them first.</li>
             <li>Fly through the <b>⚓ harbour gate</b> to dive: you become a <b>pufferfish</b>. <b>Puff your cheeks</b> to float up, relax to sink. Puff all the way to spike out and pop jellyfish, but not for too long!</li>
           </ul>
           <div class="buttons">
@@ -148,7 +149,13 @@
                 <tr><td>Best combo</td><td id="go-combo">0</td></tr>
                 <tr><td>Distance</td><td id="go-distance">0 m</td></tr>
                 <tr><td>Accidents</td><td id="go-accidents">0</td></tr>
+                <tr><td>Cameras smashed</td><td id="go-smashed">0</td></tr>
+                <tr><td>Front pages</td><td id="go-scandals">0</td></tr>
               </table>
+            </div>
+            <div id="go-frontpage" class="go-snapshot hidden">
+              <div class="go-snapshot-title">Tomorrow's front page</div>
+              <canvas id="go-frontpage-canvas" class="go-frontpage" width="400" height="480"></canvas>
             </div>
             <div id="go-snapshot" class="go-snapshot hidden">
               <div class="go-snapshot-title">Your finest strain</div>

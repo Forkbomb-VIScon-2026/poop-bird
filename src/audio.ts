@@ -363,6 +363,56 @@ export class Sound {
     });
   }
 
+  /** Paparazzo shot: flash whine, then the mirror slap and shutter click-clack. */
+  shutter(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(2500, t);
+    o.frequency.exponentialRampToValueAtTime(7000, t + 0.12);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.15);
+    this.noiseBurst(t + 0.02, 0.035, 3500, 0.5, "highpass");
+    this.noiseBurst(t + 0.09, 0.045, 2200, 0.4, "bandpass");
+    this.noiseBurst(t + 0.02, 0.05, 400, 0.3, "lowpass");
+  }
+
+  /** A paparazzo walked on: two quick camera-beeps. */
+  focusBeep(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    for (const dt of [0, 0.11]) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "square";
+      o.frequency.value = 2800;
+      g.gain.setValueAtTime(0.0001, t + dt);
+      g.gain.exponentialRampToValueAtTime(0.05, t + dt + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.06);
+      o.connect(g).connect(this.master);
+      o.start(t + dt);
+      o.stop(t + dt + 0.07);
+    }
+  }
+
+  /** Camera smashed: glass crunch and tinkle. */
+  smash(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(t, 0.12, 4000, 0.35, "highpass");
+    this.noiseBurst(t, 0.1, 900, 0.3, "bandpass");
+    for (let i = 0; i < 5; i++) this.blip(t + 0.05 + i * 0.045 + Math.random() * 0.03, 2400 + Math.random() * 2400, 0.04);
+  }
+
   beep(high = false): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
