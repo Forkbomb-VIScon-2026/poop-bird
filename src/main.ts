@@ -88,7 +88,7 @@ const sound = new Sound();
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
 const debug = DEBUG
-  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace())
+  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace(), forgetCalibration)
   : null;
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
 
@@ -482,6 +482,13 @@ function loadCalibration(key: string, required: readonly FeatureName[]): Calibra
   } catch {
     return null;
   }
+}
+
+/** Debug: delete both saved calibrations and reload, to test the first-time flow. */
+function forgetCalibration(): void {
+  storageRemove(CALIBRATION_KEY);
+  storageRemove(PUFF_CALIBRATION_KEY);
+  location.reload();
 }
 
 // --- Puff calibration (first dive, in game) ---------------------------------------------
