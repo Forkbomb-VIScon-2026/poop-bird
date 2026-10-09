@@ -18,6 +18,22 @@ build to the live VM. Green checks are all that stands between a PR and
 production, so run `npm run lint`, `npm test` and `npm run build` locally first,
 and actually try changes that the checks can't see (gameplay, camera, audio).
 
+## Preview the change
+
+When you finish implementing a change, leave a dev server running from your
+checkout and end your response with its URL, so the changed version can be
+opened right away.
+
+- Start it in the background (`npm run dev`, or `npm run dev:debug` when the
+  debug panel helps) so it outlives your turn.
+- Several agents run at once: pick a free port instead of 5173, and don't stop
+  dev servers you didn't start.
+- Bind to localhost only. `vite.config.ts` sets `host: true`, which listens on
+  all interfaces, so pass `--host 127.0.0.1` explicitly:
+  `npm run dev -- --host 127.0.0.1 --port <port>`.
+- Check that the URL actually responds before you post it.
+- Stop the dev server when you remove the checkout.
+
 ## Project
 
 Poop Bird: a hackathon browser game (Vite + TypeScript, no framework) where the player controls a Flappy-Bird-style bird by **straining their face** at the webcam. Face tracking runs locally via MediaPipe Face Landmarker blendshapes; nothing leaves the device. The project is still in the ideation phase, so gameplay concepts may change, but the core idea (facial-expression control tied to the game's story) is fixed. README.md is detailed and up to date on gameplay, controls and the detection algorithm; read it before changing detection or tuning.
