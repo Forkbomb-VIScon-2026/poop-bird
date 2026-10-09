@@ -16,6 +16,7 @@ import {
   smoothStrain,
   stepStrain,
   updateHysteresis,
+  updateTrigger,
   zeroFeatures,
   type Calibration,
   type FeatureVector,
@@ -272,11 +273,47 @@ describe("updateHysteresis", () => {
   });
 });
 
+describe("updateTrigger", () => {
+  const p = { strainOn: 0.45, strainOff: 0.3, strainReleaseDrop: 0.25 };
+
+  /** Runs a signal from the idle state; returns the active flag after each value. */
+  const run = (signal: number[], params = p) => {
+    let t = { active: false, extreme: 0 };
+    return signal.map((v) => (t = updateTrigger(t.active, t.extreme, v, params)).active);
+  };
+
+  it("releases once the signal falls the drop below its peak, above the off threshold", () => {
+    // The relaxed face settles at 0.4: never below off, but 0.5 below the peak.
+    expect(run([0.5, 0.9, 0.8, 0.7, 0.6, 0.4])).toEqual([true, true, true, true, false, false]);
+  });
+
+  it("behaves like plain hysteresis with a drop of 0", () => {
+    const signal = [0.5, 0.9, 0.6, 0.4, 0.35, 0.29];
+    expect(run(signal, { ...p, strainReleaseDrop: 0 })).toEqual([true, true, true, true, true, false]);
+  });
+
+  it("does not retrigger on the tail of a relax that stays above the on threshold", () => {
+    // Released at 0.6; wobbling around 0.5 is not a new strain, a rise of 0.25 from the low point is.
+    expect(run([0.9, 0.6, 0.55, 0.5, 0.6, 0.7, 0.76])).toEqual([true, false, false, false, false, false, true]);
+  });
+
+  it("still turns on from a low baseline at the on threshold", () => {
+    expect(run([0.1, 0.2, 0.44, 0.45])).toEqual([false, false, false, true]);
+  });
+
+  it("follows the peak up while held", () => {
+    // Peak 1.0, so 0.8 still holds but 0.74 releases.
+    expect(run([0.6, 1.0, 0.8, 0.74])).toEqual([true, true, true, false]);
+  });
+});
+
 describe("stepStrain", () => {
   const neutral = samples({ browDown: 0.05 }, 20);
   const strain = samples({ browDown: 0.8 }, 20);
   const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
-  const p = { featureClampMax: 1.3, emaAlpha: 1, strainOn: 0.45, strainOff: 0.3, faceLossGrace: 0.25 };
+  const p = {
+    featureClampMax: 1.3, emaAlpha: 1, strainOn: 0.45, strainOff: 0.3, strainReleaseDrop: 0.25, faceLossGrace: 0.25,
+  };
 
   it("activates on a strain face", () => {
     const s = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), calib, 1 / 30, p);

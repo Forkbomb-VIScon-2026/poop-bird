@@ -140,8 +140,14 @@ webcam), and the wiring in `src/main.ts`.
    − neutral)` and clamped to `0..featureClampMax`. We take the weighted mean,
    clamp it to 0..1, then smooth it with a frame-rate-independent EMA.
 5. **Hysteresis.** The signal turns on at `strainOn` and stays on until it
-   drops below `strainOff`. "Straining" is then face OR Space OR pointer, which
-   feeds the charge state machine in `src/charge.ts`.
+   drops below `strainOff`, or until it falls `strainReleaseDrop` (0.25) below
+   its peak in this strain. The relative release makes relaxing count as soon
+   as it starts, even when the relaxed face drifts away from the calibrated
+   neutral (head pose and lighting move `browDown` and `eyeSquint`) and no
+   longer gets below `strainOff`. To turn on again, the signal must also rise
+   `strainReleaseDrop` above its low point since, so the tail of a relax can't
+   retrigger. "Straining" is then face OR Space OR pointer, which feeds the
+   charge state machine in `src/charge.ts`.
 6. **Quality check.** After calibration, every calibration sample is scored. It
    fails if fewer than `minFaceCoverage` (60%) of a phase's frames had a face,
    if the summed weights are below
