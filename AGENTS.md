@@ -45,7 +45,7 @@ docker compose up --build              # Caddy serving dist/ on :8080
 
 ## Architecture
 
-`src/main.ts` is the orchestrator: it owns the app state machine (`menu → loading → calibrating → calibrated → countdown → playing ↔ paused → gameover`), input mode (`face` | `keyboard`), the calibration flow, DOM screens/HUD, and the render loop. Everything else is a module it wires together.
+`src/main.ts` is the orchestrator: it owns the app state machine (`menu → loading → calibrating → calibrated → ready → playing ↔ paused → gameover`), input mode (`face` | `keyboard`), the calibration flow, DOM screens/HUD, and the render loop. In `ready` the bird hovers and the first strain (or Space) starts the run. Everything else is a module it wires together.
 
 Input pipeline (face → bird):
 1. `face.ts` `FaceTracker` runs detection on `requestVideoFrameCallback` (decoupled from rendering) and emits `FaceFrame`s with blendshape features.
