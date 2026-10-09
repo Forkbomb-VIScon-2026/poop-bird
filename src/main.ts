@@ -76,6 +76,16 @@ const snapshot = new StrainSnapshot();
 const debug = new DebugPanel($("debug"), () => void recalibrate());
 
 let calibration: Calibration | null = loadCalibration();
+/** A calibration that failed the quality check; used only if the player picks "Play anyway". */
+let rejectedCalibration: Calibration | null = null;
+/** Whether the calibration result screen is showing a failed calibration. */
+let calibrationFailed = false;
+/**
+ * Bumped on every screen-flow transition. Async flows (camera startup,
+ * calibration, countdown) capture it and bail out if it changed, so a stale
+ * flow can never take over the screen.
+ */
+let flow = 0;
 let strain = initialStrainState();
 let lastFace: FaceFrame | null = null;
 let lastFaceTime = 0;
@@ -109,12 +119,15 @@ function faceVisible(): boolean {
 
 /** Samples collected during the current calibration phase. */
 let calibSamples: { t: number; f: FeatureVector }[] | null = null;
+/** Detection frames (with or without a face) during the current calibration phase. */
+let calibFrames: number[] | null = null;
 
 tracker.onFrame((frame) => {
   const dt = lastFaceTime ? Math.min(0.25, (frame.time - lastFaceTime) / 1000) : 1 / 30;
   lastFaceTime = frame.time;
   lastFace = frame;
   if (frame.features) lastFaceSeen = frame.time;
+  calibFrames?.push(frame.time);
   if (calibSamples && frame.features) calibSamples.push({ t: frame.time, f: frame.features });
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   if (state === "playing" && game.phase === "playing" && snapshotCheckbox.checked) {
@@ -138,6 +151,7 @@ function updateStrainBars(): void {
 }
 
 async function startFaceMode(forceCalibrate = false): Promise<void> {
+  const token = ++flow;
   sound.unlock();
   mode = "face";
   updateModeLabel();
@@ -152,11 +166,14 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
     try {
       // Ask for the camera first so the permission prompt appears right away.
       await tracker.startCamera();
+      if (token !== flow) return releaseCameraIfUnused();
       $("loading-text").textContent = "Camera on! Loading the face tracker…";
       await tracker.loadModel();
+      if (token !== flow) return releaseCameraIfUnused();
     } catch (err) {
       console.error(err);
-      tracker.dispose();
+      tracker.stopCamera();
+      if (token !== flow) return;
       $("loading-title").textContent = "No face tracking 😢";
       $("loading-error-text").textContent = `${describeCameraError(err)} You can still play with the keyboard.`;
       show($("loading-spinner"), false);
@@ -176,9 +193,14 @@ function startKeyboardMode(): void {
   sound.unlock();
   mode = "keyboard";
   updateModeLabel();
-  tracker.stop();
+  tracker.stopCamera();
   show(cam, false);
-  startCountdown();
+  void startCountdown();
+}
+
+/** A face-mode startup finished after the player moved on: turn the camera back off. */
+function releaseCameraIfUnused(): void {
+  if (mode !== "face" || state === "menu") tracker.stopCamera();
 }
 
 async function recalibrate(): Promise<void> {
@@ -188,14 +210,12 @@ async function recalibrate(): Promise<void> {
 
 // --- Calibration ---------------------------------------------------------------------
 
-let calibToken = 0;
-
 function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 async function runCalibration(): Promise<void> {
-  const token = ++calibToken;
+  const token = ++flow;
   state = "calibrating";
   showScreen("calibrate");
   show(hud, false);
@@ -206,27 +226,40 @@ async function runCalibration(): Promise<void> {
   show($("calib-progress").parentElement!, true);
 
   const neutral = await calibrationPhase(token, 1, "Relax your face", "Neutral face. Look at the screen and relax completely.", false);
-  if (token !== calibToken) return;
+  if (token !== flow) return;
   const strained = await calibrationPhase(
     token, 2, "STRAIN! Like you're really constipated 💩",
     "Brows down, eyes squeezed, nose wrinkled, lips pressed. Hold it!", true,
   );
-  if (token !== calibToken) return;
+  if (token !== flow) return;
 
-  const cal = buildCalibration(featureStats(neutral), featureStats(strained), config);
-  const quality = assessCalibration(cal, neutral, strained, config);
-  console.info("[calibration]", { cal, quality, neutralSamples: neutral.length, strainSamples: strained.length });
-  if (quality.totalChange > 0) {
+  const cal = buildCalibration(featureStats(neutral.samples), featureStats(strained.samples), config);
+  const quality = assessCalibration(cal, neutral.samples, strained.samples, config, {
+    neutral: neutral.coverage,
+    strain: strained.coverage,
+  });
+  console.info("[calibration]", { cal, quality, neutral, strained });
+  // Only a calibration that passed the check replaces the saved one.
+  if (quality.ok) {
     calibration = cal;
+    rejectedCalibration = null;
     saveCalibration(cal);
+  } else {
+    rejectedCalibration = quality.totalChange > 0 ? cal : null;
   }
   strain = initialStrainState();
   showCalibrationResult(quality);
 }
 
+interface PhaseResult {
+  samples: FeatureVector[];
+  /** Fraction of detection frames after the settle time that had a face. */
+  coverage: number;
+}
+
 async function calibrationPhase(
   token: number, step: number, prompt: string, hint: string, strainPhase: boolean,
-): Promise<FeatureVector[]> {
+): Promise<PhaseResult> {
   const card = screens.calibrate.querySelector(".calib")!;
   const count = $("calib-count");
   const progress = $("calib-progress");
@@ -239,7 +272,7 @@ async function calibrationPhase(
     count.textContent = String(i);
     sound.beep();
     await wait(600);
-    if (token !== calibToken) return [];
+    if (token !== flow) return { samples: [], coverage: 0 };
   }
 
   $("calib-prompt").textContent = prompt;
@@ -249,10 +282,13 @@ async function calibrationPhase(
   const settle = config.calibrationSettle * 1000;
   const start = performance.now();
   calibSamples = [];
+  calibFrames = [];
   while (performance.now() - start < total) {
-    if (token !== calibToken) {
+    if (token !== flow) {
       calibSamples = null;
-      return [];
+      calibFrames = null;
+      sound.setGroan(-1, false);
+      return { samples: [], coverage: 0 };
     }
     const elapsed = performance.now() - start;
     count.textContent = String(Math.ceil((total - elapsed) / 1000));
@@ -263,9 +299,11 @@ async function calibrationPhase(
   if (strainPhase) sound.setGroan(-1, false);
   progress.style.width = "100%";
   const samples = calibSamples.filter((s) => s.t - start >= settle).map((s) => s.f);
+  const frames = calibFrames.filter((t) => t - start >= settle).length;
   calibSamples = null;
+  calibFrames = null;
   card.classList.remove("strain");
-  return samples;
+  return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
 
 const FEATURE_LABELS: Record<FeatureName, string> = {
@@ -317,8 +355,10 @@ function showCalibrationResult(quality: ReturnType<typeof assessCalibration> | n
     text.textContent = quality.reason ?? "Try again.";
     setPrimary(retryBtn, playBtn);
   }
-  playBtn.innerHTML = quality && !quality.ok ? "Play anyway" : "Play! <small>(Enter)</small>";
-  playBtn.disabled = !calibration;
+  const anyway = quality !== null && !quality.ok;
+  calibrationFailed = anyway;
+  playBtn.innerHTML = anyway ? "Play anyway" : "Play! <small>(Enter)</small>";
+  playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);
 }
 
 function setPrimary(primary: HTMLElement, secondary: HTMLElement): void {
@@ -345,11 +385,16 @@ function loadCalibration(): Calibration | null {
 
 // --- Countdown & run -----------------------------------------------------------------
 
-let countdownToken = 0;
+/** "Play anyway" after a failed calibration uses the rejected one for this session only. */
+function playAfterCalibration(): void {
+  if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
+  if (calibration) void startCountdown();
+}
 
 async function startCountdown(): Promise<void> {
-  const token = ++countdownToken;
-  calibToken++;
+  const token = ++flow;
+  calibSamples = null;
+  calibFrames = null;
   cam.classList.remove("large");
   show(cam, mode === "face");
   game.reset();
@@ -368,8 +413,9 @@ async function startCountdown(): Promise<void> {
     n.style.animation = "";
     sound.beep();
     await wait(650);
-    if (token !== countdownToken) return;
+    if (token !== flow) return;
   }
+  if (state !== "countdown") return;
   sound.beep(true);
   showScreen(null);
   state = "playing";
@@ -387,9 +433,10 @@ function togglePause(): void {
 }
 
 function goToMenu(): void {
-  countdownToken++;
-  calibToken++;
+  flow++;
   calibSamples = null;
+  calibFrames = null;
+  tracker.stopCamera();
   state = "menu";
   sound.setGroan(-1, false);
   cam.classList.remove("large");
@@ -443,9 +490,15 @@ function saveHallOfFameEntry(): void {
     ...(currentSnapshotUrl ? { snapshot: currentSnapshotUrl } : {}),
   };
   lastGameOverEntryDate = entry.date;
-  const list = addToHallOfFame(entry);
+  const { list, saved } = addToHallOfFame(entry);
   show($("go-hof-form"), false);
   renderHallOfFame($("go-hof"), list, lastGameOverEntryDate);
+  if (!saved) {
+    const warn = document.createElement("p");
+    warn.className = "error";
+    warn.textContent = "Couldn't save: this browser's storage is blocked or full. Your score is shown but won't be kept.";
+    $("go-hof").append(warn);
+  }
 }
 
 function renderHallOfFame(container: HTMLElement, list: HallOfFameEntry[], highlightDate: string | null): void {
@@ -644,7 +697,7 @@ window.addEventListener("keydown", (e) => {
       updateModeLabel();
       break;
     case "r":
-      if (state === "gameover") startCountdown();
+      if (state === "gameover") void startCountdown();
       break;
     case "d":
       debug.toggle();
@@ -653,7 +706,7 @@ window.addEventListener("keydown", (e) => {
       void recalibrate();
       break;
     case "enter":
-      if (state === "calibrated" && calibration) startCountdown();
+      if (state === "calibrated") playAfterCalibration();
       break;
   }
 });
@@ -689,7 +742,7 @@ on("btn-face", () => void startFaceMode());
 on("btn-keyboard", startKeyboardMode);
 on("btn-loading-retry", () => void startFaceMode());
 on("btn-loading-keyboard", startKeyboardMode);
-on("btn-calib-play", () => void startCountdown());
+on("btn-calib-play", playAfterCalibration);
 on("btn-calib-retry", () => void runCalibration());
 on("btn-calib-keyboard", startKeyboardMode);
 on("btn-calib-cancel", goToMenu);

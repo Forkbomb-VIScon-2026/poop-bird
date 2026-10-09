@@ -51,6 +51,8 @@ export const CONFIG_SPEC = {
   strainOn: { value: 0.45, min: 0.05, max: 0.95, step: 0.01, group: "Strain", label: "On threshold" },
   strainOff: { value: 0.3, min: 0.02, max: 0.9, step: 0.01, group: "Strain", label: "Off threshold" },
   emaAlpha: { value: 0.45, min: 0.05, max: 1, step: 0.01, group: "Strain", label: "EMA factor", hint: "per frame at 30 fps; 1 = no smoothing" },
+  faceLossGrace: { value: 0.25, min: 0, max: 1.5, step: 0.05, group: "Strain", label: "Face-loss grace", hint: "s a lost face keeps its strain (bridges dropped frames)" },
+  minFaceCoverage: { value: 0.6, min: 0, max: 1, step: 0.05, group: "Strain", label: "Min face coverage", hint: "calibration: fraction of frames per phase that must see a face" },
   featureClampMax: { value: 1.3, min: 1, max: 3, step: 0.05, group: "Strain", label: "Feature clamp max", hint: "normalized features are clamped to 0..this" },
   minFeatureDelta: { value: 0.04, min: 0, max: 0.3, step: 0.01, group: "Strain", label: "Min feature change", hint: "calibration change below this gets zero weight" },
   minCalibrationChange: { value: 0.25, min: 0, max: 2, step: 0.01, group: "Strain", label: "Min total change", hint: "calibration quality: summed weights must exceed this" },

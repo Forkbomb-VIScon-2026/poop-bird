@@ -84,16 +84,17 @@ export function qualifiesForHallOfFame(score: number, list = loadHallOfFame()): 
   return list.length < HALL_OF_FAME_SIZE || score > list[list.length - 1].score;
 }
 
-/** Inserts the entry and returns the new list. Drops snapshots if storage is full. */
-export function addToHallOfFame(entry: HallOfFameEntry): HallOfFameEntry[] {
+/**
+ * Inserts the entry and returns the new list. If storage is full it retries
+ * without snapshots; `saved` is false if nothing could be persisted.
+ */
+export function addToHallOfFame(entry: HallOfFameEntry): { list: HallOfFameEntry[]; saved: boolean } {
   const list = [...loadHallOfFame(), entry].sort((a, b) => b.score - a.score).slice(0, HALL_OF_FAME_SIZE);
-  if (!storageSet(HOF_KEY, JSON.stringify(list))) {
-    // Probably quota: retry without images.
-    const slim = list.map(({ snapshot: _snapshot, ...rest }) => rest);
-    storageSet(HOF_KEY, JSON.stringify(slim));
-    return slim;
-  }
-  return list;
+  if (storageSet(HOF_KEY, JSON.stringify(list))) return { list, saved: true };
+  // Probably quota: retry without images.
+  const slim = list.map(({ snapshot: _snapshot, ...rest }) => rest);
+  if (storageSet(HOF_KEY, JSON.stringify(slim))) return { list: slim, saved: true };
+  return { list, saved: false };
 }
 
 export function clearHallOfFame(): void {

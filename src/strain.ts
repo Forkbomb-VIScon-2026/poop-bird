@@ -147,6 +147,14 @@ export interface QualityParams extends CalibrationParams {
   strainOn: number;
   strainOff: number;
   minSamples?: number;
+  /** Minimum fraction of detection frames in each phase that must contain a face. */
+  minFaceCoverage?: number;
+}
+
+/** Fraction of detection frames (0..1) in each phase that had a face. */
+export interface PhaseCoverage {
+  neutral: number;
+  strain: number;
 }
 
 /**
@@ -159,8 +167,10 @@ export function assessCalibration(
   neutralSamples: readonly FeatureVector[],
   strainSamples: readonly FeatureVector[],
   params: QualityParams,
+  coverage: PhaseCoverage = { neutral: 1, strain: 1 },
 ): CalibrationQuality {
   const minSamples = params.minSamples ?? 8;
+  const minCoverage = params.minFaceCoverage ?? 0.6;
   const totalChange = FEATURE_NAMES.reduce((s, f) => s + calib.weights[f], 0);
   const topFeatures = FEATURE_NAMES.filter((f) => calib.weights[f] > 0)
     .sort((a, b) => calib.weights[b] - calib.weights[a])
@@ -170,7 +180,12 @@ export function assessCalibration(
   const neutralFalseRate = fraction(neutralSamples, (s) => score(s) > params.strainOff);
   const base = { totalChange, strainHitRate, neutralFalseRate, topFeatures };
 
-  if (neutralSamples.length < minSamples || strainSamples.length < minSamples) {
+  if (
+    neutralSamples.length < minSamples ||
+    strainSamples.length < minSamples ||
+    coverage.neutral < minCoverage ||
+    coverage.strain < minCoverage
+  ) {
     return { ...base, ok: false, reason: "I couldn't see your face for long enough. Check the lighting and stay in frame." };
   }
   if (totalChange < params.minCalibrationChange) {
@@ -225,10 +240,12 @@ export interface StrainState {
   raw: number;
   active: boolean;
   faceVisible: boolean;
+  /** Seconds since the face was last seen (0 while visible). */
+  missingFor: number;
 }
 
 export function initialStrainState(): StrainState {
-  return { smoothed: 0, raw: 0, active: false, faceVisible: false };
+  return { smoothed: 0, raw: 0, active: false, faceVisible: false, missingFor: 0 };
 }
 
 export interface StrainStepParams {
@@ -236,9 +253,19 @@ export interface StrainStepParams {
   emaAlpha: number;
   strainOn: number;
   strainOff: number;
+  /** Seconds a lost face keeps its last strain state before dropping to 0. */
+  faceLossGrace: number;
 }
 
-/** One detection frame. `features === null` means no face: strain decays toward 0. */
+/**
+ * One detection frame. `features === null` means no face in this frame.
+ *
+ * Short dropouts (MediaPipe often misses a frame or two, especially on an
+ * extreme grimace) hold the previous state so they don't cause an involuntary
+ * release. Once the face has been gone longer than `faceLossGrace`, strain
+ * drops straight to 0, so a player leaving the frame releases and can't
+ * trigger an accident.
+ */
 export function stepStrain(
   state: StrainState,
   features: FeatureVector | null,
@@ -246,11 +273,13 @@ export function stepStrain(
   dtSeconds: number,
   p: StrainStepParams,
 ): StrainState {
-  const faceVisible = features !== null;
-  const raw = features && calib ? rawStrain(features, calib, p.featureClampMax) : 0;
-  // No face → treat as 0 immediately rather than slowly decaying, so a player
-  // leaving the frame mid-strain releases (and can't trigger an accident).
-  const smoothed = faceVisible ? smoothStrain(state.smoothed, raw, p.emaAlpha, dtSeconds) : 0;
+  if (features === null) {
+    const missingFor = state.missingFor + Math.max(0, dtSeconds);
+    if (missingFor <= p.faceLossGrace) return { ...state, faceVisible: false, missingFor };
+    return { smoothed: 0, raw: 0, active: false, faceVisible: false, missingFor };
+  }
+  const raw = calib ? rawStrain(features, calib, p.featureClampMax) : 0;
+  const smoothed = smoothStrain(state.smoothed, raw, p.emaAlpha, dtSeconds);
   const active = updateHysteresis(state.active, smoothed, p.strainOn, p.strainOff);
-  return { smoothed, raw, active, faceVisible };
+  return { smoothed, raw, active, faceVisible: true, missingFor: 0 };
 }

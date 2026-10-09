@@ -36,6 +36,7 @@ export class FaceTracker {
   readonly video: HTMLVideoElement;
   private landmarker: FaceLandmarker | null = null;
   private stream: MediaStream | null = null;
+  private starting: Promise<void> | null = null;
   private running = false;
   private lastVideoTime = -1;
   private lastTimestamp = 0;
@@ -86,15 +87,22 @@ export class FaceTracker {
   }
 
   /** Asks for the camera. Throws if permission is denied or no camera exists. */
-  async startCamera(): Promise<void> {
-    if (this.stream) return;
+  startCamera(): Promise<void> {
+    if (this.stream) return Promise.resolve();
+    // Concurrent callers share one request, so we never open two streams.
+    this.starting ??= this.openCamera().finally(() => (this.starting = null));
+    return this.starting;
+  }
+
+  private async openCamera(): Promise<void> {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("This browser can't access the camera here (needs HTTPS or localhost).");
     }
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user", frameRate: { ideal: 30 } },
       audio: false,
     });
+    this.stream = stream;
     this.video.srcObject = this.stream;
     this.video.muted = true;
     this.video.playsInline = true;
@@ -111,10 +119,17 @@ export class FaceTracker {
     this.running = false;
   }
 
-  dispose(): void {
+  /** Stops detection and releases the webcam. The loaded model is kept for next time. */
+  stopCamera(): void {
     this.stop();
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
+    this.video.pause();
+    this.video.srcObject = null;
+  }
+
+  dispose(): void {
+    this.stopCamera();
     this.landmarker?.close();
     this.landmarker = null;
   }

@@ -100,13 +100,17 @@ webcam), and the wiring in `src/main.ts`.
    drops below `strainOff`. "Straining" is then face OR Space OR pointer, which
    feeds the charge state machine in `src/charge.ts`.
 6. **Quality check.** After calibration, every calibration sample is scored. It
-   fails if too few frames had a face, if the summed weights are below
+   fails if fewer than `minFaceCoverage` (60%) of a phase's frames had a face,
+   if the summed weights are below
    `minCalibrationChange`, if fewer than 60% of strain frames would cross the
    on threshold, or if more than 25% of neutral frames would stay above the
    off threshold. The player sees why and can retry, play anyway or switch to
-   keyboard.
-7. **No face** shows "Can't see you" over the preview, and the strain is set to
-   0 at once, so leaving the frame releases.
+   keyboard. Only a calibration that passes replaces the saved one. "Play
+   anyway" uses a failed one for this session only.
+7. **No face.** Short dropouts (up to `faceLossGrace`, 0.25 s) keep the last
+   strain state, so a missed frame mid-grimace doesn't cause a release. After
+   that, the strain drops to 0 (leaving the frame releases) and the preview
+   shows "Can't see you".
 8. **Decoupled loops.** Detection runs on `requestVideoFrameCallback` (or rAF
    with a `currentTime` check), so only when there's a new video frame. Physics
    runs on a fixed 120 Hz timestep in the render loop.

@@ -150,6 +150,15 @@ describe("assessCalibration", () => {
     expect(q.reason).toMatch(/strain harder/i);
   });
 
+  it("rejects when the face was visible for only part of a phase", () => {
+    const neutral = samples({ browDown: 0.05, eyeSquint: 0.1, noseSneer: 0.02 }, 40);
+    const strain = samples({ browDown: 0.7, eyeSquint: 0.6, noseSneer: 0.4 }, 40);
+    const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
+    const q = assessCalibration(calib, neutral, strain, PARAMS, { neutral: 1, strain: 0.3 });
+    expect(q.ok).toBe(false);
+    expect(q.reason).toMatch(/couldn't see your face/i);
+  });
+
   it("rejects when too few samples were captured (no face)", () => {
     const neutral = samples({ browDown: 0.05 }, 3);
     const strain = samples({ browDown: 0.8 }, 3);
@@ -221,7 +230,7 @@ describe("stepStrain", () => {
   const neutral = samples({ browDown: 0.05 }, 20);
   const strain = samples({ browDown: 0.8 }, 20);
   const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
-  const p = { featureClampMax: 1.3, emaAlpha: 1, strainOn: 0.45, strainOff: 0.3 };
+  const p = { featureClampMax: 1.3, emaAlpha: 1, strainOn: 0.45, strainOff: 0.3, faceLossGrace: 0.25 };
 
   it("activates on a strain face", () => {
     const s = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), calib, 1 / 30, p);
@@ -229,12 +238,22 @@ describe("stepStrain", () => {
     expect(s.faceVisible).toBe(true);
   });
 
-  it("treats a missing face as zero strain", () => {
+  it("holds the strain through a short detection dropout", () => {
     const on = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), calib, 1 / 30, p);
-    const lost = stepStrain(on, null, calib, 1 / 30, p);
-    expect(lost.faceVisible).toBe(false);
-    expect(lost.smoothed).toBe(0);
-    expect(lost.active).toBe(false);
+    const blip = stepStrain(stepStrain(on, null, calib, 1 / 30, p), null, calib, 1 / 30, p);
+    expect(blip.faceVisible).toBe(false);
+    expect(blip.active).toBe(true);
+    const back = stepStrain(blip, fv({ browDown: 0.8 }), calib, 1 / 30, p);
+    expect(back.active).toBe(true);
+    expect(back.missingFor).toBe(0);
+  });
+
+  it("treats a face missing for longer than the grace period as zero strain", () => {
+    let s = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), calib, 1 / 30, p);
+    for (let i = 0; i < 9; i++) s = stepStrain(s, null, calib, 1 / 30, p);
+    expect(s.faceVisible).toBe(false);
+    expect(s.smoothed).toBe(0);
+    expect(s.active).toBe(false);
   });
 
   it("returns zero strain without a calibration", () => {
