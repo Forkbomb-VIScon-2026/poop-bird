@@ -1,7 +1,8 @@
-# syntax=docker/dockerfile:1
+# Base images come from Google's Docker Hub mirror: Docker Hub rate-limits
+# anonymous pulls, which breaks builds on shared CI runners.
 
 # --- Build ---------------------------------------------------------------------
-FROM node:24-alpine AS build
+FROM mirror.gcr.io/library/node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY scripts ./scripts
@@ -12,7 +13,7 @@ COPY . .
 RUN npm run fetch-model && npm run build
 
 # --- Serve -----------------------------------------------------------------------
-FROM caddy:2-alpine
+FROM mirror.gcr.io/library/caddy:2-alpine
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/dist /srv
 EXPOSE 8080
