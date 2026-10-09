@@ -6,6 +6,7 @@
 // it is decoupled from the game's fixed-timestep physics.
 
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { faceGeometry, type LandmarkPoint } from "./puff";
 import { extractFeatures, type FeatureVector } from "./strain";
 
 const BASE = import.meta.env.BASE_URL;
@@ -26,6 +27,8 @@ export interface FaceFrame {
   /** All raw blendshape scores by name (for the debug panel). */
   blendshapes: Record<string, number>;
   box: FaceBox | null;
+  /** The 478 normalized landmarks (for the debug recorder). */
+  landmarks: readonly LandmarkPoint[] | null;
   /** performance.now() of the detection. */
   time: number;
 }
@@ -184,13 +187,17 @@ export class FaceTracker {
         if (p.y > maxY) maxY = p.y;
       }
       frame = {
-        features: extractFeatures(blendshapes),
+        features: extractFeatures(
+          blendshapes,
+          faceGeometry(landmarks, this.video.videoHeight ? this.video.videoWidth / this.video.videoHeight : 4 / 3),
+        ),
         blendshapes,
         box: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
+        landmarks,
         time: now,
       };
     } else {
-      frame = { features: null, blendshapes: {}, box: null, time: now };
+      frame = { features: null, blendshapes: {}, box: null, landmarks: null, time: now };
     }
     for (const fn of this.listeners) fn(frame);
   }

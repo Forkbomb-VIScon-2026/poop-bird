@@ -3,6 +3,8 @@
 A browser game you control by **straining your face**. The bird keeps falling;
 the only way up is to poop. Make a constipated face at your webcam to charge,
 relax to let go. Dodge the city, splat the cars, people and statues below.
+Then dive into the harbour, where the bird becomes a pufferfish that you steer
+by **puffing your cheeks**.
 
 Everything runs in the browser: face tracking runs locally with MediaPipe, and
 no video, snapshot or score leaves the device.
@@ -26,7 +28,7 @@ Other scripts:
 | --- | --- |
 | `npm run build` | Typecheck and build to `dist/` |
 | `npm run preview` | Serve the build locally |
-| `npm test` | Vitest unit tests (strain math, charge logic) |
+| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy) |
 | `npm run lint` | ESLint |
 | `npx tsc --noEmit` | Typecheck only |
 | `npm run copy-wasm` | Re-copy the WASM from `node_modules` (also runs before `dev`/`build`) |
@@ -49,13 +51,16 @@ access on anything other than localhost, put it behind HTTPS.
 
 | Input | Action |
 | --- | --- |
-| Strain face (webcam) | Charge; relax to poop |
-| Hold **Space** / mouse / touch | Same as straining (always works, also in face mode) |
+| Strain face (webcam) | City: charge; relax to poop |
+| Puff cheeks (webcam) | Ocean: inflate (more puff = rise, less = sink) |
+| Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Always works, also in face mode |
 | **P** / Esc | Pause |
 | **M** | Mute |
 | **R** | Restart from game over |
 | **C** | Re-run calibration |
 | **D** | Debug / tuning panel |
+| **G** | With the debug panel open: spawn the next gate now |
+| **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Start after calibration |
 
 ## How it plays
@@ -72,7 +77,38 @@ access on anything other than localhost, put it behind HTTPS.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
-- **Score** = distance + target bonuses.
+- **Score** = distance + target bonuses. It carries straight across stages.
+
+### The ocean stage
+
+A run alternates city → ocean → city → … and difficulty keeps ramping with
+total distance.
+
+- **Harbour gate.** After `cityObstaclesBeforeGate` (6) city obstacles comes a
+  harbour building whose door is full of sea. Fly through it to dive in; its
+  walls kill like any other obstacle.
+- **Transformation.** A splash, and the bird becomes a pufferfish. On the first
+  dive in face mode the world freezes for ~2.5 s with "PUFF YOUR CHEEKS!": that
+  is the puff calibration (see below). Later dives, and keyboard mode, get a
+  ~1 s transform instead. Keyboard mode shows "Hold SPACE to puff up".
+- **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
+  and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
+  toward the target with water drag, so it's floaty, never snappy. The sea
+  floor kills; the surface is a soft ceiling you bump against.
+- **Size is the tradeoff.** The fish, and its hitbox, grow with puff. Rising
+  makes you bigger.
+- **Spike-out.** At ~85% puff the spines come out. Spiked, you pop jellyfish
+  for `targetPoints × 1.5 × combo`; unspiked, a jellyfish kills you. Stay
+  spiked longer than ~1.5 s and you **pop**: a comic deflate, shake, and a
+  stun during which you sink without control. The meter flashes "DEFLATE!" in
+  the last ~0.3 s.
+- **No poop underwater.** Charge, poops and city targets are off in the ocean.
+- **Exit gate.** After `oceanObstacles` (8) ocean obstacles, a reef arch with a
+  bubble ring leads up to the surface. Swim through and you're a bird again.
+  A strain held while surfacing doesn't fire: you have to relax first.
+- With Space alone: hold to inflate (rise), let go to deflate (sink), and tap to
+  hover. The puff meter next to the fish marks the hover level (blue) and the
+  spike threshold (red).
 
 ## How the strain detection works
 
@@ -118,27 +154,96 @@ webcam), and the wiring in `src/main.ts`.
 The last calibration is saved in `localStorage`. Press **C** (or click
 "Recalibrate") when a new player sits down.
 
+### Puff detection (ocean)
+
+Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
+`src/strain.ts`.
+
+1. **Features.** MediaPipe's `cheekPuff` blendshape stays near 0 however hard
+   you puff ([google-ai-edge/mediapipe#4436](https://github.com/google-ai-edge/mediapipe/issues/4436)),
+   so puff is read mostly from the face **landmarks** (`faceGeometry`), all
+   divided by the outer-eye-corner distance so face size and camera distance
+   don't matter:
+   - `cheekWidth`: face width at mouth level (puffed cheeks widen it)
+   - `cheekBulge`: how far the cheek surface sits in front of the eye corners
+   - `mouthWidth`: mouth-corner distance (pursed lips narrow it)
+
+   It also uses mouth blendshapes that come with puffing: `mouthPucker`,
+   `mouthFunnel`, `mouthPress`, `mouthRollLower`/`Upper` (and `cheekPuff`, in
+   case a future model fixes it). The strain calibration only weights its own
+   features, so the new ones get strain weight 0 and strain detection is
+   unchanged.
+2. **Neutral** comes from the main calibration's relaxed phase, which also
+   stores each feature's standard deviation.
+3. **Puff phase.** On the first dive in face mode, with the world frozen, we
+   collect `oceanCalibrationSeconds` (2.5 s) of full puff and drop the first
+   `calibrationSettle`. Pausing restarts the phase; going to the menu or
+   recalibrating abandons it.
+4. **Weights.** Geometry moves by a few hundredths while blendshapes move by
+   tenths, so the puff weights are scale-free: a feature counts once its change
+   exceeds `oceanPuffMinSeparation` (1.5) times its noise, with full weight at
+   twice that. Whatever moves for *you* gets picked. The score is the same
+   weighted normalized mean and EMA as strain, but with **no hysteresis**: the
+   fish needs the analog value.
+5. **Quality check.** It fails on low face coverage, summed puff weights below
+   `oceanMinPuffChange` (0.5, i.e. at least half a feature that clearly moved),
+   or fewer than 60% of puff samples scoring above the hover point. A failure
+   never blocks the game: puff falls back to `max(mouthPucker, cheekPuff)`
+   mapped through `oceanFallbackMin`..`oceanFallbackMax`, with a toast. A
+   calibration saved before these features existed has no neutral stats for
+   them, so the fish uses the fallback until you recalibrate with **C**.
+6. A passing puff calibration is saved like the main one, and the toast says
+   which features it watches. **C** clears it, so the next dive samples again.
+   After the face-loss grace, puff drops to 0 and the fish sinks.
+7. **Input.** The fish gets `max(face puff, key puff)`. Holding Space, mouse or
+   touch inflates the key puff at `oceanKeyInflateRate`; releasing deflates it
+   at `oceanKeyDeflateRate`.
+
+If the puff doesn't register, open the debug panel in the ocean: the feature
+rows show the geometry values as numbers with the relaxed-face marker, and the
+stats line "puff source" names the features the calibration picked.
+`poopBird.lastPuffAttempt` in the console holds the last attempt, including
+one that failed.
+
 ## Tuning
 
 **Every tunable is in [`src/config.ts`](src/config.ts)**: physics, charge and
 overstrain timing, thresholds, EMA, calibration, world scroll, gaps and
-spacing, difficulty ramp, targets and scoring.
+spacing, difficulty ramp, targets and scoring, and the "Ocean" and "Ocean puff"
+groups (stage lengths, buoyancy and drag, hitbox scale, ocean gaps and spacing,
+spike and pop timing, jellyfish, key puff rates, puff calibration and fallback
+range).
 
 Press **D** in game for the debug panel:
 
 - FPS, detections per second, the delegate, and whether a face is visible
+- the current stage (and transition)
 - a live plot of raw and smoothed strain, the on/off threshold lines, the
   charge, and the windows where "straining" was on
-- each blendshape feature as a bar, with neutral (blue) and strain (red)
-  calibration markers and its share of the weight (features at 0% are greyed
-  out)
+- in the ocean: a live plot of raw and smoothed face puff and the combined
+  puff input, with hover and spike threshold lines and the spiked windows
+- **G** spawns the next gate right away, so you can test the ocean without
+  flying through the city first
+- **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
+  into the ocean, with no countdown and no city. In face mode the dive runs
+  the puff calibration if one is due, so **C** followed by this button is a
+  quick way to retry it. From the menu it starts in keyboard mode
+- **⏺ Record puff clip** (face mode) pauses the game and prompts 16 s of
+  relax → puff and hold → relax → quick puffs, then downloads the raw
+  features, all blendshapes and all landmarks as JSON, for tuning puff
+  detection offline
+- each face feature (blendshapes and landmark geometry) as a bar, with neutral
+  (blue) and strain (red) calibration markers and its share of the weight
+  (features at 0% are greyed out). In the ocean the puff candidates show the
+  puff calibration's markers and weights instead, and geometry values are also
+  shown as numbers
 - a slider and number field for every tunable. Changes apply live and persist
   in `localStorage`, changed values are highlighted, and there are "Reset to
   defaults" and "Copy config JSON" buttons. When you find good values, paste
   them back into `config.ts`.
 
-`window.poopBird` exposes `game`, `config`, `tracker` and `calibration` in the
-console.
+`window.poopBird` exposes `game`, `config`, `tracker`, `calibration` and
+`puffCalibration` in the console.
 
 ## Privacy
 
@@ -158,6 +263,8 @@ src/
   config.ts     all tunables, persisted overrides
   strain.ts     blendshapes → strain (pure)        strain.test.ts
   charge.ts     charge / release / overstrain (pure) charge.test.ts
+  puff.ts       blendshapes / Space → puff (pure)  puff.test.ts
+  swim.ts       buoyancy, drag, spike / pop (pure) swim.test.ts
   face.ts       MediaPipe + webcam, detection loop
   game.ts       simulation (fixed timestep)
   render.ts     canvas drawing

@@ -76,6 +76,40 @@ export const CONFIG_SPEC = {
   comboStep: { value: 0.5, min: 0, max: 2, step: 0.05, group: "Targets", label: "Combo step", hint: "multiplier added per consecutive hit" },
   comboMax: { value: 5, min: 1, max: 20, step: 0.5, group: "Targets", label: "Combo max", hint: "multiplier cap" },
   distancePerPoint: { value: 10, min: 1, max: 100, step: 1, group: "Targets", label: "Distance per point", hint: "px of travel per score point" },
+
+  // --- Ocean stage ---------------------------------------------------------
+  cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before gate", hint: "then the harbour gate appears" },
+  oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the exit gate appears" },
+  oceanTransformTime: { value: 1.0, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Transform time", hint: "s of splash + transform (without calibration)" },
+  oceanScrollScale: { value: 0.85, min: 0.3, max: 1.5, step: 0.05, group: "Ocean", label: "Scroll speed scale", hint: "× the city scroll speed" },
+  oceanMaxSink: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max sink speed", hint: "px/s at puff 0" },
+  oceanMaxRise: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max rise speed", hint: "px/s at puff 1" },
+  oceanHoverPuff: { value: 0.4, min: 0.05, max: 0.95, step: 0.01, group: "Ocean", label: "Hover puff", hint: "puff level that neither sinks nor rises" },
+  oceanDragTime: { value: 0.35, min: 0.02, max: 2, step: 0.01, group: "Ocean", label: "Water drag time", hint: "s for speed to cover ~63% of the way to its target" },
+  oceanSurfaceBump: { value: 60, min: 0, max: 300, step: 5, group: "Ocean", label: "Surface bump", hint: "px/s pushed back down when hitting the surface" },
+  oceanHitboxMin: { value: 0.75, min: 0.3, max: 2, step: 0.05, group: "Ocean", label: "Hitbox (deflated)", hint: "× bird hit radius at puff 0 (drawn size follows)" },
+  oceanHitboxMax: { value: 1.6, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Hitbox (puffed)", hint: "× bird hit radius at puff 1" },
+  oceanGap: { value: 280, min: 100, max: 500, step: 5, group: "Ocean", label: "Gap (start)", hint: "px" },
+  oceanGapMin: { value: 205, min: 80, max: 500, step: 5, group: "Ocean", label: "Gap (hardest)", hint: "px" },
+  oceanSpacing: { value: 540, min: 150, max: 1200, step: 10, group: "Ocean", label: "Spacing (start)", hint: "px between obstacles" },
+  oceanSpacingMin: { value: 400, min: 150, max: 1200, step: 10, group: "Ocean", label: "Spacing (hardest)", hint: "px" },
+  oceanGapJump: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max gap jump", hint: "px the gap centre may move between obstacles" },
+  oceanFirstObstacleDelay: { value: 600, min: 0, max: 3000, step: 50, group: "Ocean", label: "First obstacle after", hint: "px after each stage change" },
+  oceanSpikeThreshold: { value: 0.85, min: 0.3, max: 1, step: 0.01, group: "Ocean", label: "Spike threshold", hint: "puff level that spikes the fish out" },
+  oceanSpikeRelease: { value: 0.05, min: 0, max: 0.3, step: 0.01, group: "Ocean", label: "Spike release margin", hint: "spikes retract below threshold − this (no flicker)" },
+  oceanSpikeMaxHold: { value: 1.5, min: 0.2, max: 5, step: 0.05, group: "Ocean", label: "Max spiked time", hint: "s spiked before a pop accident" },
+  oceanPopWarnTime: { value: 0.3, min: 0, max: 2, step: 0.05, group: "Ocean", label: "Pop warning", hint: "s of flashing warning before the pop" },
+  oceanJellyRate: { value: 0.35, min: 0, max: 3, step: 0.05, group: "Ocean", label: "Jellyfish rate", hint: "jellyfish per second, in open water" },
+  oceanJellyMultiplier: { value: 1.5, min: 0, max: 5, step: 0.1, group: "Ocean", label: "Jellyfish points", hint: "× points per hit (× combo)" },
+  oceanKeyInflateRate: { value: 1.1, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key inflate rate", hint: "puff/s while holding Space / pointer" },
+  oceanKeyDeflateRate: { value: 0.9, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key deflate rate", hint: "puff/s after letting go" },
+
+  // --- Ocean puff detection ------------------------------------------------
+  oceanCalibrationSeconds: { value: 2.5, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Puff calibration", hint: "s of the puff phase at the first dive (first calibrationSettle s ignored)" },
+  oceanPuffMinSeparation: { value: 1.5, min: 0.2, max: 6, step: 0.1, group: "Ocean puff", label: "Min separation", hint: "a puff feature counts once its change exceeds this many noise units (full weight at 2×)" },
+  oceanMinPuffChange: { value: 0.5, min: 0, max: 5, step: 0.05, group: "Ocean puff", label: "Min puff change", hint: "calibration quality: summed puff weights must exceed this (1 = one clearly separated feature)" },
+  oceanFallbackMin: { value: 0.1, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: relaxed", hint: "max(mouthPucker, cheekPuff) mapped to puff 0 without a calibration" },
+  oceanFallbackMax: { value: 0.5, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: full puff", hint: "max(mouthPucker, cheekPuff) mapped to puff 1 without a calibration" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;

@@ -6,3 +6,5 @@ public/mediapipe/wasm/
 public/mediapipe/face_landmarker.task
 *.log
 .DS_Store
+# Face recordings from the debug recorder (personal face data)
+poopbird-face-*.json
