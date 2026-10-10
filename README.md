@@ -251,7 +251,7 @@ city by city (the debug panel's "Progression" group).
   Tunables are in the debug panel's "Fisherman" group.
 - **Sharks:** most ocean stages (`sharkChance`) have a shark, a few obstacles
   in (`sharkSlot`), in open water. It glides in from ahead at the fish's depth
-  (a "dun-dun" announces it), stops, opens its jaws and a "!" pops over it,
+  (its two-note "dun-dun… dun-dun" theme speeds up and swells as it closes in), stops, opens its jaws and a "!" pops over it,
   and "SPIKE UP!" flashes by the fish. Then it lunges, homing on the fish:
   it can't be outswum, the only defence is to be spiked when it bites (the
   spines reach a bit further than its bite). Spiked, it yelps, turns tail

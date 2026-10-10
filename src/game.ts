@@ -214,6 +214,9 @@ export interface Shark {
   heading: number;
   /** 0..1 how far the jaws are open. */
   jaw: number;
+  /** Seconds to the next note of its two-note theme, and how many it's played. */
+  beat: number;
+  beats: number;
   seed: number;
 }
 
@@ -520,7 +523,7 @@ export interface ScreenSplat {
 }
 
 export type GameEvent =
-  | { type: "sharkSpotted" }
+  | { type: "sharkNote"; high: boolean; volume: number }
   | { type: "sharkWindup" }
   | { type: "sharkSpiked"; points: number; combo: number }
   | { type: "chomp" }
@@ -1527,9 +1530,8 @@ export class Game {
     const y = Math.max(SURFACE_Y + 60, Math.min(GROUND_Y - 60, this.bird.y));
     this.shark = {
       state: "stalking", t: 0, x: this.width + 140, y, vx: 0, vy: 0,
-      heading: Math.PI, jaw: 0, seed: Math.random() * 1000,
+      heading: Math.PI, jaw: 0, beat: 0, beats: 0, seed: Math.random() * 1000,
     };
-    this.events.push({ type: "sharkSpotted" });
     return SHARK_ROOM;
   }
 
@@ -1576,6 +1578,19 @@ export class Game {
     const keepInWater = (): void => {
       s.y = Math.max(SURFACE_Y + 34, Math.min(GROUND_Y - 30, s.y));
     };
+
+    // Its theme: low, high, low, high… slow and soft far off, faster and louder
+    // as it closes in, fastest through the windup; silent once it lunges.
+    if (s.state === "stalking" || s.state === "windup") {
+      s.beat -= dt;
+      if (s.beat <= 0) {
+        const far = this.sharkNose(s).x - b.x - config.sharkLungeRange;
+        const close = s.state === "windup" ? 1 : Math.max(0, Math.min(1, 1 - far / 550));
+        s.beat = s.state === "windup" ? 0.13 : 0.55 - 0.33 * close;
+        this.events.push({ type: "sharkNote", high: s.beats % 2 === 1, volume: 0.45 + 0.55 * close });
+        s.beats++;
+      }
+    }
 
     switch (s.state) {
       case "stalking": {

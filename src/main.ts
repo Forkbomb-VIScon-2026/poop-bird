@@ -1456,8 +1456,8 @@ function handleGameEvents(): void {
         sound.lineSnap();
         buzz(60);
         break;
-      case "sharkSpotted":
-        sound.sharkSpotted();
+      case "sharkNote":
+        sound.sharkNote(e.high, e.volume);
         break;
       case "sharkWindup":
         break;
