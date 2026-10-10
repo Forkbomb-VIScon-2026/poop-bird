@@ -2,10 +2,18 @@
 // Runs at a fixed timestep (see main.ts). Rendering lives in render.ts.
 // The simulation pushes GameEvents that main.ts turns into sound and UI.
 //
-// A run alternates between stages: city → ocean → city → … A gate obstacle
-// ends each stage; flying through it starts a StageTransition (splash +
-// transform) during which the world is frozen. In the ocean the bird is a
-// pufferfish driven by `puffInput` instead of `straining`.
+// A run alternates between stages: city → ocean → city → … Each stage ends at
+// the waterfront (a Shore). In the city the street ends at a quay and the bird
+// dives into the harbour by falling in; at the end of the ocean the far quay
+// comes up and the fish breaks through the surface. Both start a
+// StageTransition: the camera pans between the city and the sea below it
+// while the creature changes. In the ocean the bird is a pufferfish driven by
+// `puffInput` instead of `straining`.
+//
+// Coordinates: the city and the ocean each have their own y (0 = top of the
+// screen while playing that stage). The ocean sits OCEAN_DEPTH below the city:
+// ocean y + OCEAN_DEPTH = city y, so the ocean's surface is the harbour's
+// water level. `cameraY` is the top of the view in city coordinates.
 //
 // In the city, some obstacle slots become power lines instead of buildings:
 // poles with sagging wires. Touching a wire zaps the bird; pigeons sitting on
@@ -44,22 +52,54 @@ export const BIRD_RADIUS = 22;
 const BIRD_HIT_RADIUS = 16;
 /** Ocean: the water surface (a soft ceiling). The sea floor is GROUND_Y. */
 export const SURFACE_Y = 36;
+/** City: the harbour's water level, a step below the quay (GROUND_Y). */
+export const WATER_Y = GROUND_Y + 16;
+/** How far the ocean sits below the city: ocean y + OCEAN_DEPTH = city y. */
+export const OCEAN_DEPTH = WATER_Y - SURFACE_Y;
+/** Ocean y where the fish settles after the dive. */
+const DIVE_DEPTH = 240;
+/** How far past the quay's edge the bird is when the game takes over and dives it in. */
+const DIVE_TAKEOVER = 60;
+/** How far ahead the far quay is when the game takes over and leaps the fish out. */
+const EXIT_TAKEOVER = 320;
+/** City y the leaping bird glides to and holds until it's over the street. */
+const LEAP_HEIGHT = 230;
 
 export type Stage = "city" | "ocean";
 
 /**
- * Splash + transform between stages. `t` runs from 0 to `duration`; the stage
- * swaps (bird ↔ fish, obstacles cleared) at SWAP_AT under full splash cover.
- * While `Game.holdTransition` is set (puff calibration), `t` stops at HOLD_AT.
+ * The waterfront that ends a stage. "dive" (city): the quay ends at `x` and
+ * the harbour begins, so land is left of `x` and water right of it; falling
+ * into the water dives in. "exit" (ocean): the far quay begins at `x`, so
+ * water is left of it and land right. The game takes over at each: it dives
+ * the bird in once it's over the water, and leaps the fish out before the
+ * wall. A shore stays around after its transition until it scrolls off, so the
+ * quay wall is still there under water, and the bird leaps out over water.
+ */
+export interface Shore {
+  x: number;
+  kind: "dive" | "exit";
+}
+
+/**
+ * The change between stages, animated by the game (no player control). Dive:
+ * the bird hops and plunges through the surface, becomes a deflated fish
+ * under water (`swapped`) and inflates while the camera follows it down.
+ * Breach: the fish shoots up, becomes the bird as it breaks the surface and
+ * leaps up to a safe height, gliding until it's over the street. While
+ * `Game.holdTransition` is set (puff calibration) the dive doesn't finish.
  */
 export interface StageTransition {
   to: Stage;
+  /** Seconds since the transition began. */
   t: number;
-  duration: number;
+  /** The bird has hit the water (dive). */
+  entered: boolean;
+  /** The creature has changed and the stage switched. */
   swapped: boolean;
+  /** Seconds since the swap. */
+  sinceSwap: number;
 }
-export const TRANSITION_SWAP_AT = 0.4;
-export const TRANSITION_HOLD_AT = 0.75;
 
 export interface Rect {
   x: number;
@@ -68,9 +108,7 @@ export interface Rect {
   h: number;
 }
 
-export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "harbour" | "coral" | "rock" | "reef";
-/** Only the stage gates have a top: a solid block from the top of the screen down to the gap. */
-export type TopKind = "harbourArch" | "reefArch";
+export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "coral" | "rock";
 
 export interface Splat {
   dx: number;
@@ -85,13 +123,10 @@ export interface Obstacle {
   gapTop: number;
   gapBottom: number;
   bottom: BottomKind;
-  top: TopKind | null;
   color: string;
   seed: number;
   passed: boolean;
   splats: Splat[];
-  /** Set on the gate that ends a stage: flying through its gap starts the transition to `gate`. */
-  gate: Stage | null;
   /** Set when `bottom` is "billboard": the published front page it shows. */
   tabloid: Tabloid | null;
 }
@@ -348,6 +383,8 @@ export type GameEvent =
   | { type: "zap" }
   | { type: "gameover" }
   | { type: "gateEntered"; to: Stage }
+  | { type: "submerged" }
+  | { type: "breached" }
   | { type: "transformed" }
   | { type: "surfaced" }
   | { type: "spike" }
@@ -478,8 +515,12 @@ export class Game {
 
   stage: Stage = "city";
   transition: StageTransition | null = null;
-  /** Set by main.ts while the puff calibration runs: the transition waits at HOLD_AT. */
+  /** Set by main.ts while the puff calibration runs: the dive doesn't finish, and the world holds still. */
   holdTransition = false;
+  /** The waterfront at the end (or just behind the start) of the stage. */
+  shore: Shore | null = null;
+  /** Top of the view in city coordinates: 0 in the city, OCEAN_DEPTH in the ocean, in between while diving or leaping. */
+  cameraY = 0;
   /** Puff 0..1 fed in each step by main.ts (face OR key), like `straining`. */
   puffInput = 0;
   fish = {
@@ -580,6 +621,8 @@ export class Game {
     this.stage = "city";
     this.transition = null;
     this.holdTransition = false;
+    this.shore = null;
+    this.cameraY = 0;
     this.puffInput = 0;
     Object.assign(this.fish, { puff: 0, spikes: 0, flare: 0 });
     this.spike = initialSpikeState();
@@ -682,10 +725,21 @@ export class Game {
     return popProgress(this.spike, config);
   }
 
-  /** 0..1 progress of the current stage transition. */
-  get transitionProgress(): number {
-    const tr = this.transition;
-    return tr ? Math.min(1, tr.t / tr.duration) : 0;
+  /** Offset of the current stage's y in city coordinates (0 in the city, OCEAN_DEPTH in the ocean). */
+  get stageOffset(): number {
+    return this.stage === "ocean" ? OCEAN_DEPTH : 0;
+  }
+
+  /** Where the city's ground is harbour water rather than quay and street. */
+  overWater(x: number): boolean {
+    const s = this.shore;
+    if (!s) return false;
+    return s.kind === "dive" ? x > s.x : x < s.x;
+  }
+
+  /** What the bird lands on at its x: the water or the street (the sea floor in the ocean). */
+  private floorY(): number {
+    return this.stage === "city" && this.overWater(this.bird.x) ? WATER_Y : GROUND_Y;
   }
 
   get sweetSpot(): boolean {
@@ -714,10 +768,9 @@ export class Game {
       this.updateEffects(dt, 0);
       return;
     }
-    // Stage transitions freeze the world.
     if (this.transition && this.phase === "playing") {
       this.updateTransition(dt);
-      this.updateEffects(dt, 0);
+      this.updateEffects(dt, this.speed);
       return;
     }
     const alive = this.phase === "playing";
@@ -736,6 +789,7 @@ export class Game {
       if (alive) this.updateCharge(dt);
       this.updateBird(dt);
     }
+    this.updateShore(dt, speed);
     this.updateObstacles(dt, speed);
     this.updatePowerLines(dt, speed);
     this.updateTargets(dt, speed);
@@ -748,7 +802,7 @@ export class Game {
 
     if (this.phase === "dying") {
       this.dyingTime += dt;
-      if (this.dyingTime > 1.3 && this.bird.y >= GROUND_Y - this.bodyRadius - 1) {
+      if (this.dyingTime > 1.3 && this.bird.y >= this.floorY() - this.bodyRadius - 1) {
         this.phase = "over";
         this.events.push({ type: "gameover" });
       }
@@ -858,8 +912,16 @@ export class Game {
       b.rot = wound + (targetRot - wound) * Math.min(1, dt * 10);
     }
 
-    if (b.y + BIRD_RADIUS >= GROUND_Y) {
-      b.y = GROUND_Y - BIRD_RADIUS;
+    // Over the harbour: the game takes over and dives the bird in (right away if it touches the water).
+    const s = this.shore;
+    const touches = this.overWater(b.x) && b.y + BIRD_RADIUS >= WATER_Y;
+    if (this.phase === "playing" && s?.kind === "dive" && (b.x - s.x >= DIVE_TAKEOVER || touches)) {
+      this.startTransition("ocean");
+      return;
+    }
+    const floor = this.floorY();
+    if (b.y + BIRD_RADIUS >= floor) {
+      b.y = floor - BIRD_RADIUS;
       if (b.vy > 0) b.vy = 0;
       if (this.phase === "playing") this.crash();
     }
@@ -998,8 +1060,18 @@ export class Game {
     b.vy = applyWaterDrag(b.vy, target, dt, Math.max(0.02, config.oceanDragTime));
     b.y += b.vy * dt;
 
-    // The surface is a soft ceiling: clamp and bump back down.
     const r = this.bodyRadius;
+    // The far quay is coming up: once the last obstacle is behind (or the wall
+    // is close regardless), the game takes over and leaps the fish out.
+    const s = this.shore;
+    if (s?.kind === "exit" && !dying) {
+      const ahead = s.x - b.x;
+      if ((ahead < EXIT_TAKEOVER && this.obstacles.every((o) => o.passed)) || ahead < r + 60) {
+        this.startTransition("city");
+        return;
+      }
+    }
+    // The surface is a soft ceiling: clamp and bump back down.
     if (b.y - r < SURFACE_Y) {
       b.y = SURFACE_Y + r;
       if (b.vy < 0) {
@@ -1077,6 +1149,7 @@ export class Game {
       // (it spawns at the same x) far enough behind that it can't land on top.
       const sx = this.width + 50;
       const clear =
+        this.shore?.kind !== "exit" &&
         this.obstacles.every((o) => o.x > sx + 70 || o.x + o.w < sx - 70) &&
         (this.gateSpawned || this.nextObstacleAt - this.distance > 220);
       if (clear) {
@@ -1116,62 +1189,164 @@ export class Game {
 
   private startTransition(to: Stage): void {
     const b = this.bird;
-    this.transition = { to, t: 0, duration: Math.max(0.3, config.oceanTransformTime), swapped: false };
+    this.transition = { to, t: 0, entered: false, swapped: false, sinceSwap: 0 };
     // Nothing from the old stage may fire during or after the transition.
     this.charge = initialChargeState();
     this.spike = initialSpikeState();
-    b.vy = to === "ocean" ? 160 : -380;
-    b.stretchV += 10;
-    this.splash(b.x, to === "ocean" ? b.y + 10 : b.y - 10, to === "ocean" ? 1 : -1);
+    this.pebbles = [];
+    if (to === "ocean") {
+      // A little hop, then the plunge.
+      b.vy = Math.min(b.vy, -220);
+      b.stretchV += 8;
+      b.flap = 0.35;
+    } else {
+      b.vy = Math.min(b.vy, -300);
+      b.stretchV += 10;
+    }
     this.events.push({ type: "gateEntered", to });
   }
 
-  private splash(x: number, y: number, dir: 1 | -1): void {
-    for (let i = 0; i < 40; i++) {
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+  /** Water thrown up where something hits the surface; `dir` -1 throws it lower and wider. */
+  private splash(x: number, y: number, dir: 1 | -1, n = 40): void {
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * (dir === 1 ? 1.6 : 2.4);
       const s = 150 + Math.random() * 380;
       this.particles.push({
         x: x + (Math.random() - 0.5) * 30, y,
         vx: Math.cos(a) * s, vy: Math.sin(a) * s * (dir === 1 ? 1 : 0.6),
         life: 0.5 + Math.random() * 0.5, maxLife: 1, size: 3 + Math.random() * 6,
-        color: Math.random() < 0.5 ? "#caf0f8" : "#ffffff", gravity: 900, world: false,
+        color: Math.random() < 0.5 ? "#caf0f8" : "#ffffff", gravity: 900, world: true,
       });
     }
+  }
+
+  /** A trail of bubbles behind the bird or fish while it moves under water. */
+  private bubbleTrail(dt: number, rate: number): void {
+    const b = this.bird;
+    if (Math.random() > dt * rate) return;
+    this.particles.push({
+      x: b.x + (Math.random() - 0.5) * 20, y: b.y + (Math.random() - 0.5) * 20,
+      vx: (Math.random() - 0.5) * 40, vy: -40 - Math.random() * 60,
+      life: 0.6 + Math.random() * 0.6, maxLife: 1.2, size: 2 + Math.random() * 4,
+      color: Math.random() < 0.6 ? "#e0fbfc" : "#a8dadc", gravity: -120, world: true,
+    });
   }
 
   private updateTransition(dt: number): void {
     const tr = this.transition!;
     const b = this.bird;
-    // While held (puff calibration) time stops at HOLD_AT; the fish keeps bobbing in place.
-    const holdT = tr.duration * TRANSITION_HOLD_AT;
-    tr.t = this.holdTransition ? Math.max(tr.t, Math.min(holdT, tr.t + dt)) : tr.t + dt;
+    const held = this.holdTransition;
+    tr.t += dt;
+    if (tr.swapped) tr.sinceSwap += dt;
+    // The world drifts on, so the dive doesn't stop dead (but holds still for the puff calibration).
+    const speed = held ? 0 : this.scrollSpeed * (this.stage === "ocean" ? config.oceanScrollScale : 1);
+    this.speed = speed;
+    this.distance += speed * dt;
+    this.scrollWorld(dt, speed);
 
-    if (!tr.swapped && tr.t >= tr.duration * TRANSITION_SWAP_AT) this.swapStage(tr.to);
-
-    if (!tr.swapped) {
-      // Plunge down into the harbour, or shoot up to the surface.
-      b.vy += (tr.to === "ocean" ? 1400 : -900) * dt;
-      b.y += b.vy * dt;
-      b.rot += ((tr.to === "ocean" ? 1.2 : -0.9) - b.rot) * Math.min(1, dt * 8);
-    } else {
-      b.y += (240 - b.y) * Math.min(1, dt * 5);
-      b.rot += (0 - b.rot) * Math.min(1, dt * 8);
-    }
+    if (tr.to === "ocean") this.updateDive(tr, dt);
+    else this.updateBreach(tr, dt);
     this.updateSpring(dt);
     b.flap = Math.max(0, b.flap - dt);
 
-    if (tr.t >= tr.duration) {
+    // The camera follows the creature through the surface, then settles on the new stage.
+    const end = tr.to === "ocean" ? OCEAN_DEPTH : 0;
+    const follow = Math.min(OCEAN_DEPTH, Math.max(0, b.y + this.stageOffset - VIEW_H * 0.42));
+    const target = tr.swapped ? end : follow;
+    this.cameraY += (target - this.cameraY) * (1 - Math.exp(-dt * (tr.swapped ? 8 : 6)));
+    const arrived = Math.abs(this.cameraY - end) < 2;
+
+    const done = tr.to === "ocean"
+      ? tr.swapped && !held && arrived && tr.sinceSwap >= Math.max(0.5, config.oceanTransformTime)
+      : tr.swapped && arrived && tr.sinceSwap >= 0.6 && !this.overWater(b.x);
+    if (done) {
       this.transition = null;
-      b.vy = tr.to === "city" ? -200 : 0;
-      b.flap = tr.to === "city" ? 0.4 : 0;
+      this.cameraY = end;
+      if (tr.to === "city") b.flap = 0.4;
       this.events.push({ type: tr.to === "ocean" ? "transformed" : "surfaced" });
     }
   }
 
-  /** Under full splash cover: switch bird ↔ fish and clear the old stage's world. */
+  /**
+   * City → ocean. Before the swap (city y): fall to the water, plunge in and
+   * slow down. Once deep enough the bird becomes a deflated fish, which sinks
+   * to cruising depth and inflates: to the hover puff, or while the puff
+   * calibration holds the dive, to however much the player puffs.
+   */
+  private updateDive(tr: StageTransition, dt: number): void {
+    const b = this.bird;
+    if (!tr.swapped) {
+      const under = b.y > WATER_Y;
+      if (under && !tr.entered) {
+        tr.entered = true;
+        this.splash(b.x, WATER_Y, 1);
+        b.stretchV -= 10;
+      }
+      b.vy = under ? applyWaterDrag(b.vy, 240, dt, 0.25) : Math.min(b.vy + 1400 * dt, 900);
+      b.y += b.vy * dt;
+      b.rot += ((under ? 0.8 : 1.2) - b.rot) * Math.min(1, dt * 8);
+      if (under) this.bubbleTrail(dt, 40);
+      if (b.y >= WATER_Y + 80) this.swapStage("ocean");
+      return;
+    }
+    const sink = Math.min(240, Math.max(-160, (DIVE_DEPTH - b.y) * 3));
+    b.vy = applyWaterDrag(b.vy, sink, dt, 0.3);
+    b.y += b.vy * dt;
+    b.rot += (0 - b.rot) * Math.min(1, dt * 5);
+    const f = this.fish;
+    const goal = this.holdTransition
+      ? Math.min(1, Math.max(0, this.puffInput))
+      : tr.sinceSwap > 0.25 ? config.oceanHoverPuff : 0;
+    f.puff += (goal - f.puff) * (1 - Math.exp(-dt / 0.12));
+    this.bubbleTrail(dt, 12);
+  }
+
+  /**
+   * Ocean → city. Before the swap (ocean y): the fish shoots up. As it breaks
+   * the surface it becomes the bird (city y), which leaps out under gravity.
+   */
+  private updateBreach(tr: StageTransition, dt: number): void {
+    const b = this.bird;
+    const f = this.fish;
+    if (!tr.swapped) {
+      b.vy = applyWaterDrag(b.vy, -560, dt, 0.15);
+      b.y += b.vy * dt;
+      b.rot += (-0.5 - b.rot) * Math.min(1, dt * 8);
+      f.puff += (0.85 - f.puff) * Math.min(1, dt * 8);
+      this.bubbleTrail(dt, 50);
+      if (b.y < SURFACE_Y) this.swapStage("city");
+      return;
+    }
+    // The leap eases into a glide at a safe height, held until the street is below.
+    const glide = Math.max(-400, Math.min(400, (LEAP_HEIGHT - b.y) * 4));
+    b.vy += (glide - b.vy) * Math.min(1, dt * 2.5);
+    b.y += b.vy * dt;
+    const targetRot = Math.max(-0.5, Math.min(0.7, b.vy / 700));
+    b.rot += (targetRot - b.rot) * Math.min(1, dt * 6);
+    if (b.flap <= 0 && b.vy > -150) b.flap = 0.3;
+  }
+
+  /** Moves everything with the scroll during a transition (nothing spawns, nothing collides). */
+  private scrollWorld(dt: number, speed: number): void {
+    const dx = speed * dt;
+    if (this.shore) this.shore.x -= dx;
+    for (const o of this.obstacles) o.x -= dx;
+    for (const l of this.powerLines) l.x -= dx;
+    for (const t of this.targets) t.x -= dx;
+    for (const j of this.jellies) j.x -= dx;
+    for (const p of this.poops) p.x -= dx;
+    for (const d of this.doves) d.x -= dx;
+    if (this.bouquet) this.bouquet.x -= dx;
+  }
+
+  /**
+   * The creature changes under the splash or bubbles: switch bird ↔ fish,
+   * clear the old stage's world and move everything to the new stage's y.
+   */
   private swapStage(to: Stage): void {
     const tr = this.transition!;
     tr.swapped = true;
+    const shift = to === "ocean" ? -OCEAN_DEPTH : OCEAN_DEPTH;
     this.stage = to;
     this.stageTime = 0;
     this.stageObstacles = 0;
@@ -1193,45 +1368,61 @@ export class Game {
     this.jellySpawnAcc = 0;
     this.targetSpawnAcc = 0.6;
     this.nextObstacleAt = this.distance + (to === "ocean" ? config.oceanFirstObstacleDelay : config.firstObstacleDelay);
+    for (const p of this.particles) p.y += shift;
+    for (const f of this.floaters) f.y += shift;
     const b = this.bird;
-    b.y = to === "ocean" ? SURFACE_Y + 60 : VIEW_H * 0.7;
-    b.vy = 0;
-    b.rot = 0;
+    b.y += shift;
     b.stretchV += 14;
-    this.fish.puff = to === "ocean" ? config.oceanHoverPuff : 0;
     this.fish.spikes = 0;
     this.spike = initialSpikeState();
     // A strain held through the ocean must not fire the moment we're back in the city.
     this.charge = to === "city" ? { ...initialChargeState(), needsRelease: true } : initialChargeState();
-    // Transform poof
-    for (let i = 0; i < 26; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 40 + Math.random() * 160;
-      this.particles.push({
-        x: b.x, y: 260, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40,
-        life: 0.5 + Math.random() * 0.6, maxLife: 1.1, size: 2 + Math.random() * 5,
-        color: Math.random() < 0.6 ? "#e0fbfc" : "#ffffff", gravity: to === "ocean" ? -220 : 300, world: false,
-      });
+    if (to === "ocean") {
+      // The bird gulps water and turns into a deflated fish: feathers float off in a burst of bubbles.
+      this.fish.puff = 0;
+      for (let i = 0; i < 30; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 40 + Math.random() * 160;
+        const feather = i < 10;
+        this.particles.push({
+          x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40,
+          life: 0.6 + Math.random() * 0.7, maxLife: 1.3, size: feather ? 3 + Math.random() * 3 : 2 + Math.random() * 5,
+          color: feather ? "#ffd166" : Math.random() < 0.6 ? "#e0fbfc" : "#ffffff",
+          gravity: feather ? -60 : -220, world: true,
+        });
+      }
+      this.events.push({ type: "submerged" });
+    } else {
+      // Out of the water and back to a bird, mid-leap.
+      b.vy = -950;
+      b.flap = 0.5;
+      this.splash(b.x, WATER_Y, 1, 50);
+      this.events.push({ type: "breached" });
     }
   }
 
-  /** Debug: dive into the ocean right away, skipping the city (same transition as the harbour gate). */
+  /** Debug: dive into the ocean right away, skipping the city: the harbour opens up under the bird. */
   diveNow(): void {
     if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
+    this.shore = { x: this.bird.x - DIVE_TAKEOVER, kind: "dive" };
+    this.obstacles = [];
+    this.powerLines = [];
+    this.targets = this.targets.filter((t) => t.x + t.w / 2 < this.shore!.x);
     this.startTransition("ocean");
   }
 
-  /** Debug: make the next obstacle the stage's gate, right now. */
-  spawnGateNow(): void {
+  /** Debug: the stage's waterfront comes next, right now. */
+  spawnShoreNow(): void {
     if (this.phase !== "playing" || this.transition || this.gateSpawned) return;
     this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
-    this.spawnGate();
+    this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < this.width - 260);
+    this.spawnShore();
   }
 
   /** Debug: spawn a power line right now (city only). */
   spawnPowerLineNow(): void {
     if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 150 || o.gate);
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 150);
     const length = this.spawnPowerLine();
     this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + length + config.obstacleSpacingMin);
   }
@@ -1248,24 +1439,16 @@ export class Game {
 
     if (this.phase !== "playing") return;
 
-    // Made it through a gate's gap (the walls would have crashed us): change stage.
-    const gate = this.obstacles.find((o) => o.gate && this.bird.x >= o.x + o.w / 2);
-    if (gate?.gate) {
-      gate.gate = null;
-      this.startTransition(this.stage === "city" ? "ocean" : "city");
-      return;
-    }
-
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
       const before = Math.round(ocean ? config.oceanObstacles : config.cityObstaclesBeforeGate);
-      // The harbour waits until a paparazzo's front page has hung in the city.
+      // The waterfront waits until a paparazzo's front page has hung in the city.
       const holdGate = !ocean && (this.pendingTabloids.length > 0 || this.targets.some((t) => t.pap?.state === "watching"));
       // A power line takes up more room: the next obstacle waits until it's past.
       // A pending front page always gets the next slot.
       const powerLine = this.stageObstacles > 0 && this.pendingTabloids.length === 0 && Math.random() < config.powerLineChance;
       let extra = 0;
-      if (this.stageObstacles >= before && !holdGate) this.spawnGate();
+      if (this.stageObstacles >= before && !holdGate) this.spawnShore();
       else if (ocean) this.spawnOceanObstacle();
       else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();
@@ -1301,8 +1484,8 @@ export class Game {
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom, top: null, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], gate: null, tabloid,
+      bottom, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
+      passed: false, splats: [], tabloid,
     });
   }
 
@@ -1313,26 +1496,27 @@ export class Game {
     const w = bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
     this.obstacles.push({
       x: this.width + 40, w, gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom, top: null, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], gate: null, tabloid: null,
+      bottom, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
+      passed: false, splats: [], tabloid: null,
     });
   }
 
-  /** The stage's last obstacle: the harbour gate (city → ocean) or the reef exit (ocean → city). */
-  private spawnGate(): void {
-    const ocean = this.stage === "ocean";
-    const gap = ocean ? ramp(config.oceanGap, config.oceanGapMin, this.difficulty) : ramp(config.obstacleGap, config.obstacleGapMin, this.difficulty);
-    const center = ocean
-      ? this.pickGapCenter(gap, SURFACE_Y, 40, config.oceanGapJump)
-      : this.pickGapCenter(gap, 0, 50, 140 + 140 * this.difficulty);
+  /** The stage ends at the waterfront: the quay's edge (city) or the far quay (ocean) scrolls in. */
+  private spawnShore(): void {
     this.gateSpawned = true;
-    this.obstacles.push({
-      x: this.width + 40, w: ocean ? 110 : 140,
-      gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom: ocean ? "reef" : "harbour", top: ocean ? "reefArch" : "harbourArch",
-      color: ocean ? "#5f6f7a" : "#3d5a80", seed: Math.random() * 1000,
-      passed: false, splats: [], gate: ocean ? "city" : "ocean", tabloid: null,
-    });
+    const x = this.width + 40;
+    this.shore = { x, kind: this.stage === "city" ? "dive" : "exit" };
+    // Nothing waits on the street beyond the edge (all off screen).
+    if (this.stage === "city") this.targets = this.targets.filter((t) => t.x - t.w / 2 < x);
+  }
+
+  /** Scrolls the waterfront; it goes once the stage it ended is behind us and it's off screen. */
+  private updateShore(dt: number, speed: number): void {
+    const s = this.shore;
+    if (!s) return;
+    s.x -= speed * dt;
+    const behind = s.kind === "dive" ? this.stage === "ocean" : this.stage === "city";
+    if (behind && s.x < -40) this.shore = null;
   }
 
   // --- power lines -------------------------------------------------------------
@@ -1427,12 +1611,18 @@ export class Game {
   private updateTargets(dt: number, speed: number): void {
     for (const t of this.targets) {
       t.x += (t.speed - speed) * dt;
+      // Nobody walks or drives off the quay: they stop at its edge.
+      const s = this.shore;
+      if (s && this.stage === "city") {
+        if (s.kind === "dive") t.x = Math.min(t.x, s.x - t.w / 2 - 6);
+        else t.x = Math.max(t.x, s.x + t.w / 2 + 6);
+      }
       t.hitFlash = Math.max(0, t.hitFlash - dt);
       if (t.pap) this.updatePaparazzo(t, dt);
       if (t.kid) this.updateKid(t, dt);
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
-    if (this.phase !== "playing" || this.stage !== "city") return;
+    if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
     this.targetSpawnAcc += dt * config.targetSpawnRate;
     if (this.targetSpawnAcc >= 1) {
       this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
@@ -1885,8 +2075,8 @@ export class Game {
     const churchX = this.width + 330;
     const church: Obstacle = {
       x: churchX, w: CHURCH_W, gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom: "church", top: null, color: "#f4ecdc", seed: Math.random() * 1000,
-      passed: false, splats: [], gate: null, tabloid: null,
+      bottom: "church", color: "#f4ecdc", seed: Math.random() * 1000,
+      passed: false, splats: [], tabloid: null,
     };
     this.obstacles.push(church);
 
@@ -1925,7 +2115,7 @@ export class Game {
   /** Debug: a wedding right now (city only). */
   spawnWeddingNow(): void {
     if (this.phase !== "playing" || this.transition || this.stage !== "city" || this.wedding) return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 280 || o.gate);
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 280);
     this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < this.width - 280);
     this.targets = this.targets.filter((t) => t.kind === "car" || t.x < this.width - 280);
     const extra = this.spawnWedding();
@@ -2233,6 +2423,16 @@ export class Game {
         return true;
       }
     }
+    // Harbour water: a plop and a ring of spray, nothing to splat.
+    if (this.overWater(p.x) && p.y >= WATER_Y + 4) {
+      this.splash(p.x, WATER_Y, -1, 6 + Math.round(p.r));
+      if (this.combo > 1 && this.phase === "playing") {
+        this.floaters.push({ x: p.x, y: WATER_Y - 30, text: "combo lost", color: "#ffd6d6", size: 16, life: 0.8, maxLife: 0.8 });
+      }
+      this.combo = 0;
+      this.events.push({ type: "splat", big: false });
+      return true;
+    }
     // Ground: poops land mid-road, below every target's top edge, so a poop
     // over a target always reaches the target first.
     const groundHit = GROUND_Y + 55;
@@ -2358,8 +2558,6 @@ export function obstacleRects(o: Obstacle): Rect[] {
   // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).
   const billboard = o.bottom === "billboard";
   rects.push({ x: o.x, y: o.gapBottom, w: o.w, h: billboard ? BILLBOARD_H : GROUND_Y - o.gapBottom });
-  // A gate's top hangs down to the gap.
-  if (o.top) rects.push({ x: o.x - 6, y: 0, w: o.w + 12, h: o.gapTop });
   if (billboard) {
     const inset = o.w * BILLBOARD_LEGS_INSET;
     const legsTop = o.gapBottom + BILLBOARD_H;

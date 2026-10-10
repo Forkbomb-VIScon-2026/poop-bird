@@ -135,9 +135,9 @@ export const CONFIG_SPEC = {
   weddingBouquetKnock: { value: 260, min: 0, max: 800, step: 10, group: "Wedding", label: "Bouquet knock", hint: "px/s downward speed when her bouquet hits the bird" },
 
   // --- Ocean stage ---------------------------------------------------------
-  cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before gate", hint: "then the harbour gate appears" },
-  oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the exit gate appears" },
-  oceanTransformTime: { value: 1.0, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Transform time", hint: "s of splash + transform (without calibration)" },
+  cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before harbour", hint: "then the street ends at the harbour" },
+  oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the far quay comes up and the surface opens" },
+  oceanTransformTime: { value: 0.8, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Transform time", hint: "s the new fish takes to inflate after the dive (without calibration)" },
   oceanScrollScale: { value: 0.85, min: 0.3, max: 1.5, step: 0.05, group: "Ocean", label: "Scroll speed scale", hint: "× the city scroll speed" },
   oceanMaxSink: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max sink speed", hint: "px/s at puff 0" },
   oceanMaxRise: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max rise speed", hint: "px/s at puff 1" },

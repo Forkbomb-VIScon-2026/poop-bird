@@ -61,7 +61,7 @@ access on anything other than localhost, put it behind HTTPS.
 | **R** | Play again from game over |
 | **C** | Re-run calibration |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
-| **G** | With the debug panel open: spawn the next gate now |
+| **G** | With the debug panel open: the stage's waterfront comes next |
 | **L** | With the debug panel open: spawn a power line now |
 | **K** | With the debug panel open: a slingshot kid walks on |
 | **W** | With the debug panel open: a wedding right now |
@@ -99,7 +99,7 @@ there's no countdown.
   The ring over his head fills as he closes in; when it's full (just past the
   bird) he takes your picture. Splat him first to smash the camera (×3).
   Miss, and you get a flash, a polaroid, and your photo on a roadside
-  billboard as the next obstacle, always before the harbour gate (and on the
+  billboard as the next obstacle, always before the harbour (and on the
   game-over screen). The run's first paparazzo walks slower and has a
   "SPLAT HIM!" arrow.
 - **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
@@ -146,13 +146,18 @@ there's no countdown.
 A run alternates city → ocean → city → … and difficulty keeps ramping with
 total distance.
 
-- **Harbour gate.** After `cityObstaclesBeforeGate` (6) city obstacles comes a
-  harbour building whose door is full of sea. Fly through it to dive in; its
-  walls kill like any other obstacle.
-- **Transformation.** A splash, and the bird becomes a pufferfish. On the first
-  dive in face mode the world freezes for ~2.5 s with "PUFF YOUR CHEEKS!": that
-  is the puff calibration (see below). Later dives, and keyboard mode, get a
-  ~1 s transform instead. Keyboard mode shows "Hold SPACE to puff up".
+- **The harbour.** After `cityObstaclesBeforeGate` (6) city obstacles the street
+  ends at a quay (bollard, ladder, stone wall) and the harbour opens up below.
+  Poops that land in the water just plop.
+- **Dive and transformation.** Once the bird is over the water the game takes
+  the controls: a little hop, and it plunges through the surface while the
+  camera follows it down past the quay wall into the sea. Under water it
+  gulps, loses its feathers in a burst of bubbles and becomes a deflated
+  pufferfish, which then inflates. On the first dive in face mode, inflating
+  *is* the puff calibration: the world holds still with "PUFF YOUR CHEEKS!"
+  and the fish puffs up as you do (see below). Otherwise it inflates by itself
+  over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
+  shows "Hold SPACE to puff up".
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
@@ -165,9 +170,13 @@ total distance.
   stun during which you sink without control. The meter flashes "DEFLATE!" in
   the last ~0.3 s.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
-- **Exit gate.** After `oceanObstacles` (8) ocean obstacles, a reef arch with a
-  bubble ring leads up to the surface. Swim through and you're a bird again.
-  A strain held while surfacing doesn't fire: you have to relax first.
+- **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
+  wall comes up ahead. Once the last obstacle is behind you and the wall is
+  close, the game takes the controls: the fish shoots up, breaks the surface
+  and becomes a bird again mid-leap, with the camera following it up to the
+  street. The bird glides at a safe height until the street is below it, then
+  the controls are yours again, so the wall can't get you. A strain held while
+  surfacing doesn't fire: you have to relax first.
 - With Space alone: hold to inflate (rise), let go to deflate (sink), and tap to
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
@@ -311,8 +320,9 @@ build is always the plain one:
   charge, and the windows where "straining" was on
 - in the ocean: a live plot of raw and smoothed face puff and the combined
   puff input, with hover and spike threshold lines and the spiked windows
-- **G** spawns the next gate right away, so you can test the ocean without
-  flying through the city first
+- **G** brings the stage's waterfront next (the harbour in the city, the far
+  quay in the ocean), so you can test both transitions without playing a whole
+  stage first
 - **L** spawns a power line right away (city only)
 - **K** sends a slingshot kid on right away (city only)
 - **W** starts a wedding right away (city only)

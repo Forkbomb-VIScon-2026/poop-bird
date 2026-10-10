@@ -602,8 +602,9 @@ function needsPuffCalibration(): boolean {
 }
 
 /**
- * Runs while the dive transition is held: the world is frozen and an overlay
- * asks for a full puff. Belongs to the current run's flow token, so going to
+ * Runs while the dive transition is held, right after the bird turned into a
+ * deflated fish: the world holds still, an overlay asks for a full puff and
+ * the fish inflates as the player puffs. Belongs to the current run's flow token, so going to
  * the menu or recalibrating mid-dive abandons it (the next run resets the
  * game). Never blocks the game: a failed check falls back to the fixed range.
  */
@@ -1042,7 +1043,9 @@ function frame(now: number): void {
     scrollSpeed: game.speed,
     difficulty: game.difficulty,
     birdVy: game.bird.vy,
-    stage: game.transition ? `${game.stage} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}` : game.stage,
+    stage: game.transition
+      ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`
+      : game.stage,
     puffCalibration,
     puffSource: puffCalibration ? `calibrated (${topFeatureLabels(puffCalibration).join(", ")})` : "fallback range",
     rawPuff: mode === "face" && faceFresh() ? puffSignal.raw : 0,
@@ -1096,15 +1099,21 @@ function handleGameEvents(): void {
         onGameOver();
         break;
       case "gateEntered":
-        sound.splash();
         if (e.to === "ocean") {
+          sound.splash();
           // Keyboard players start at the hover point; in face mode the face decides.
           keyPuff = mode === "keyboard" ? config.oceanHoverPuff : 0;
-          if (needsPuffCalibration()) void runPuffCalibration();
-          else if (mode === "keyboard") showToast("Hold SPACE to puff up 🐡");
         } else {
           keyPuff = 0;
         }
+        break;
+      case "submerged":
+        // The bird just turned into a deflated fish: puffing up is the rest of the transformation.
+        if (needsPuffCalibration()) void runPuffCalibration();
+        else if (mode === "keyboard") showToast("Hold SPACE to puff up 🐡");
+        break;
+      case "breached":
+        sound.splash();
         break;
       case "transformed":
       case "surfaced":
@@ -1217,8 +1226,8 @@ window.addEventListener("keydown", (e) => {
       debug?.toggle();
       break;
     case "g":
-      // Debug shortcut: the next obstacle is the stage's gate.
-      if (debug?.visible && state === "playing") game.spawnGateNow();
+      // Debug shortcut: the stage's waterfront comes next.
+      if (debug?.visible && state === "playing") game.spawnShoreNow();
       break;
     case "l":
       // Debug shortcut: a power line right now.
