@@ -1200,7 +1200,9 @@ export class Game {
     for (const j of this.jellies) {
       const dx = j.x - x;
       const dy = j.y - y;
-      const reach = r + j.r * 0.8;
+      // Stings use a tight hitbox to feel fair; spikes pop from further out.
+      const sting = r + j.r * 0.8;
+      const reach = this.spike.spiked ? sting * config.oceanJellyPopReach : sting;
       if (dx * dx + dy * dy >= reach * reach) continue;
       if (this.spike.spiked) {
         this.popJelly(j);

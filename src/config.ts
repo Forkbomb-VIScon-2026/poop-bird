@@ -175,6 +175,7 @@ export const CONFIG_SPEC = {
   oceanSpikeMaxHold: { value: 1.5, min: 0.2, max: 5, step: 0.05, group: "Ocean", label: "Max spiked time", hint: "s spiked before a pop accident" },
   oceanPopWarnTime: { value: 0.3, min: 0, max: 2, step: 0.05, group: "Ocean", label: "Pop warning", hint: "s of flashing warning before the pop" },
   oceanJellyRate: { value: 0.35, min: 0, max: 3, step: 0.05, group: "Ocean", label: "Jellyfish rate", hint: "jellyfish per second, in open water" },
+  oceanJellyPopReach: { value: 1.6, min: 1, max: 3, step: 0.05, group: "Ocean", label: "Jellyfish pop reach", hint: "× sting hitbox when spiked (popping is more forgiving)" },
   oceanJellyMultiplier: { value: 1.5, min: 0, max: 5, step: 0.1, group: "Ocean", label: "Jellyfish points", hint: "× points per hit (× combo)" },
   oceanKeyInflateRate: { value: 1.1, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key inflate rate", hint: "puff/s while holding Space / pointer" },
   oceanKeyDeflateRate: { value: 0.9, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key deflate rate", hint: "puff/s after letting go" },
