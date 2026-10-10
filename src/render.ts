@@ -13,6 +13,7 @@ import {
   CHURCH_TOWER_W,
   WEDDING_WINDUP,
   churchGeometry,
+  weddingX,
   TRANSITION_SWAP_AT,
   VIEW_H,
   PEBBLE_R,
@@ -1184,7 +1185,7 @@ export class Renderer {
    */
   private drawWeddingCue(w: Wedding, game: Game): void {
     const ctx = this.ctx;
-    const x = (w.bride.x + w.groom.x) / 2;
+    const x = weddingX(w);
     if (x < -80 || x > this.width + 80) return;
     const y = GROUND_Y - 185;
     const playing = game.phase === "playing";
@@ -1268,7 +1269,7 @@ export class Renderer {
 
     // World → photo: the couple slightly left of centre, the church on the right.
     const s = 1.6;
-    const focusX = (w.bride.x + w.groom.x) / 2 + 12;
+    const focusX = weddingX(w) + 12;
     const feet = GROUND_Y + 20;
     const groundY = 228;
     const toWorld = (px: number, py: number) => ({ x: focusX + (px - W / 2) / s, y: feet + (py - groundY) / s });
@@ -3635,7 +3636,7 @@ function drawChurch(ctx: CanvasRenderingContext2D, o: Obstacle, time: number): v
 
 /** On the sidewalk in front of the church: the red carpet, and the flower arch with the couple's names. */
 function drawWeddingBackdrop(ctx: CanvasRenderingContext2D, w: Wedding, time: number): void {
-  const x = (w.bride.x + w.groom.x) / 2;
+  const x = weddingX(w);
   if (x < -120) return;
   const ground = GROUND_Y + 20;
   const { cx: doorX } = churchGeometry(w.church);

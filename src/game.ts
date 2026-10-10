@@ -1888,7 +1888,7 @@ export class Game {
     };
     this.obstacles.push(church);
 
-    const coupleX = churchX - 105;
+    const coupleX = churchX - WEDDING_COUPLE_DX;
     const person = (kind: TargetKind, dx: number, w: number, h: number, color: string, facing: 1 | -1): Target => ({
       x: coupleX + dx, y: GROUND_Y + 20, w, h, kind, speed: 0, color, seed: Math.random() * 1000,
       splats: [], hitFlash: 0, facing, pap: null, kid: null,
@@ -1947,11 +1947,12 @@ export class Game {
     if (!w) return;
     w.t += dt;
     w.flash = Math.max(0, w.flash - dt);
-    const x = (w.bride.x + w.groom.x) / 2;
-    if (x < -260) {
+    // Over once the church has scrolled off (its party members get culled before that).
+    if (w.church.x + w.church.w < -40) {
       this.wedding = null;
       return;
     }
+    const x = weddingX(w);
     if (this.phase !== "playing") return;
     if (!w.announced && x < this.width - 20) {
       w.announced = true;
@@ -2015,7 +2016,7 @@ export class Game {
     this.weddingsRuined++;
     this.shake = Math.max(this.shake, 14);
     this.message = { text: pick(RUIN_MESSAGES), life: 2.2 };
-    const x = (w.bride.x + w.groom.x) / 2;
+    const x = weddingX(w);
     // The veil and the groom's top hat fly off.
     for (let i = 0; i < 18; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 2;
@@ -2034,7 +2035,7 @@ export class Game {
   private marry(w: Wedding): void {
     w.outcome = "married";
     this.setWeddingPhase(w, "after");
-    const x = (w.bride.x + w.groom.x) / 2;
+    const x = weddingX(w);
     const y = w.bride.y - w.bride.h;
     this.floaters.push({ x, y: y - 60, text: "♥ JUST MARRIED ♥", color: "#ffb3c6", size: 24, life: 1.6, maxLife: 1.6 });
     for (let i = 0; i < 70; i++) {
@@ -2322,6 +2323,17 @@ export const WEDDING_WINDUP = 0.9;
 export function churchGeometry(o: Obstacle): { cx: number; towerTop: number; naveTop: number } {
   const towerTop = o.gapBottom + CHURCH_SPIRE_H;
   return { cx: o.x + o.w / 2, towerTop, naveTop: Math.max(towerTop + 40, GROUND_Y - 150) };
+}
+
+/** The couple stands this far left of the church. */
+const WEDDING_COUPLE_DX = 105;
+
+/**
+ * Screen x of the couple's centre. Derived from the church, which stays in
+ * play until it's off-screen, while the party members get culled earlier.
+ */
+export function weddingX(w: Wedding): number {
+  return w.church.x - WEDDING_COUPLE_DX;
 }
 
 /** Where the bride holds her bouquet (the throw starts here). */
