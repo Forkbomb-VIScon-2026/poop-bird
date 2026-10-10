@@ -8,12 +8,23 @@
 // session.ts it has no runtime imports and only erasable TypeScript.
 
 export const NAME_MAX_LENGTH = 16;
-/** Each board keeps this many runs (per pool, see `debug`); a run on neither board isn't stored. */
-export const BOARD_KEEP = 100;
-/** How many runs a board shows by default. */
+/**
+ * Each board keeps this many runs (per pool, see `debug`); a run on neither
+ * board isn't stored. Far more than anyone sees, so a flood of fake runs
+ * can't push the real ones out for good: removing the fakes
+ * (`npm run leaderboard`) brings them back.
+ */
+export const BOARD_KEEP = 500;
+/** How many runs a board shows by default, and at most. */
 export const BOARD_SHOW = 10;
-/** The face is a ~200 px JPEG (snapshot.ts), usually 10–25 kB. */
+export const BOARD_LIST_MAX = 100;
+/** The face is a ~200 px wide JPEG (snapshot.ts), usually 10–25 kB. */
 export const MAX_FACE_BYTES = 120_000;
+/** Pixel size limits for a face, so a tiny file can't claim a huge image (and stall every viewer's browser). */
+export const MAX_FACE_WIDTH = 400;
+export const MAX_FACE_HEIGHT = 800;
+/** Where the collector serves a run's face; the page shows nothing else as one. */
+export const FACE_URL_RE = /^\/api\/leaderboard\/[0-9a-f]{16}\.jpg$/;
 export const MAX_SCORE = 10_000_000;
 
 export interface RunStats {
@@ -68,10 +79,19 @@ export interface SubmitResult {
   rank: { score: number | null; face: number | null };
 }
 
-/** Trims, collapses whitespace and drops control characters. null if nothing is left or it's too long. */
+/**
+ * Trims, collapses whitespace, drops control and format characters (bidi
+ * overrides, zero-width) and stacks of combining marks ("Zalgo" text that
+ * spills over the rows around it). null if nothing is left or it's too long.
+ */
 export function cleanName(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const name = raw.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "").replace(/\s+/g, " ").trim();
+  const name = raw
+    .normalize("NFC")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "")
+    .replace(/(\p{M}{2})\p{M}+/gu, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
   return name.length > 0 && [...name].length <= NAME_MAX_LENGTH ? name : null;
 }
 

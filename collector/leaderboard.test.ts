@@ -1,15 +1,20 @@
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BOARD_KEEP, type Boards, type Submission } from "../src/leaderboard.ts";
+import { BOARD_KEEP, BOARD_LIST_MAX, type Boards, type Submission } from "../src/leaderboard.ts";
+import { jpegSize } from "./leaderboard.ts";
 import { createCollector } from "./server.ts";
 
 const TOKEN = "dev-secret";
-/** The smallest thing that passes for a JPEG: start and end markers. */
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]);
+/** The smallest thing that passes for a JPEG: start and end markers, an APP0, a frame header (SOF0) declaring its size, then "image data". */
+function jpeg(width = 200, height = 240): Buffer {
+  const sof = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1];
+  return Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x4a, 0x46, ...sof, 0xff, 0xda, 0x00, 0x02, 1, 2, 3, 0xff, 0xd9]);
+}
+const JPEG = jpeg();
 
 let dir: string;
 let server: Server;
@@ -20,7 +25,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "leaderboard-"));
   clock = Date.UTC(2026, 9, 11, 12);
   server = createCollector({
-    dataDir: dir, collectionCode: "code", devToken: TOKEN, leaderboardSubmitsPerHour: 500, now: () => clock++,
+    dataDir: dir, collectionCode: "code", devToken: TOKEN, leaderboardSubmitsPerHour: 10_000, now: () => clock++,
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/leaderboard`;
@@ -86,10 +91,15 @@ describe("leaderboard", () => {
     expect((await (await submit(withFace(5, 0.3))).json()).rank).toEqual({ score: null, face: 1 });
     // A better score pushes the lowest face-less run out, files and all.
     await submit(run(5000));
+    const files = await readdir(join(dir, "leaderboard"));
+    expect(files).toHaveLength(BOARD_KEEP + 1 + 1); // runs + the face run's .jpg
+    const scores = await Promise.all(files.filter((f) => f.endsWith(".json")).map(async (f) =>
+      (JSON.parse(await readFile(join(dir, "leaderboard", f), "utf8")) as { entry: { score: number; face: string | null } }).entry));
+    expect(Math.min(...scores.filter((e) => !e.face).map((e) => e.score))).toBe(1001);
+    // Lists stop at BOARD_LIST_MAX, however many are kept.
     const top = await boards(`?limit=${BOARD_KEEP}`);
-    expect(top.scores).toHaveLength(BOARD_KEEP);
-    expect(top.scores.at(-1)!.score).toBe(1001);
-    expect(await readdir(join(dir, "leaderboard"))).toHaveLength(BOARD_KEEP + 1 + 1); // runs + the face run's .jpg
+    expect(top.scores).toHaveLength(BOARD_LIST_MAX);
+    expect(top.scores[0].score).toBe(5000);
   });
 
   it("survives a restart", async () => {
@@ -138,6 +148,43 @@ describe("leaderboard", () => {
     expect(await readdir(join(dir, "leaderboard"))).toEqual([]);
   });
 
+  it("only takes JSON, so other sites can't submit through a visitor's browser", async () => {
+    const res = await fetch(base, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(run(10)) });
+    expect(res.status).toBe(415);
+    expect(await boards()).toEqual({ scores: [], faces: [] });
+  });
+
+  it("serves faces so they can't run anything, even opened directly", async () => {
+    const { id } = await (await submit(withFace(10, 0.5))).json();
+    const img = await fetch(`${base}/${id}.jpg`);
+    expect(img.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(img.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox");
+  });
+
+  it("turns away faces that claim a huge size, or have no frame header", async () => {
+    expect(jpegSize(jpeg(200, 240))).toEqual({ width: 200, height: 240 });
+    const face = (b: Buffer) => run(10, { face: { jpeg: b.toString("base64"), strain: 0.5 } });
+    expect((await submit(face(jpeg(30_000, 30_000)))).status).toBe(400);
+    expect((await submit(face(jpeg(401, 200)))).status).toBe(400);
+    expect((await submit(face(jpeg(0, 200)))).status).toBe(400);
+    expect((await submit(face(Buffer.from([0xff, 0xd8, 0xff, 0xda, 0, 2, 0xff, 0xd9])))).status).toBe(400);
+    expect((await submit(face(jpeg(400, 800)))).status).toBe(201);
+  });
+
+  it("tames names: no bidi tricks, no towers of combining marks", async () => {
+    await submit(run(10, { name: "Z\u0301\u0302\u0303\u0304\u0305\u0306al\u202Egog" }));
+    expect((await boards()).scores[0].name).toBe("\u0179\u0302\u0303algog");
+  });
+
+  it("lists every stored run, both pools, for the team only", async () => {
+    await submit(run(10, { name: "Pub" }));
+    await submit(run(20, { name: "Dbg", debug: true }));
+    expect((await fetch(`${base}/runs`)).status).toBe(401);
+    expect((await fetch(`${base}/runs`, { headers: { Authorization: "Bearer nope" } })).status).toBe(401);
+    const all = await (await fetch(`${base}/runs`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
+    expect(all.map((r: { name: string; debug: boolean }) => [r.name, r.debug])).toEqual([["Dbg", true], ["Pub", false]]);
+  });
+
   it("turns away keyboard runs", async () => {
     const res = await submit({ ...run(5000), mode: "keyboard" });
     expect(res.status).toBe(400);
@@ -159,9 +206,9 @@ describe("leaderboard", () => {
       run(10, { face: { jpeg: "not base64!", strain: 0.5 } }),
     ];
     for (const body of bad) expect((await submit(body)).status, JSON.stringify(body)).toBe(400);
-    const notJson = await fetch(base, { method: "POST", body: "{" });
+    const notJson = await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{" });
     expect(notJson.status).toBe(400);
-    expect((await fetch(base, { method: "POST", body: "x".repeat(300_000) })).status).toBe(413);
+    expect((await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: "x".repeat(300_000) })).status).toBe(413);
     expect((await fetch(`${base}/../recordings`)).status).not.toBe(200);
     expect((await fetch(`${base}/abc.jpg`)).status).toBe(404);
     expect(await boards()).toEqual({ scores: [], faces: [] });

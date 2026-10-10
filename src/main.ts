@@ -11,7 +11,7 @@ import { BIRD_RADIUS, GROUND_Y, Game, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
-import { strainPercent, type RunStats } from "./leaderboard";
+import { BOARD_KEEP, strainPercent, type RunStats } from "./leaderboard";
 import { showBoards, submitRun } from "./leaderboard-view";
 import {
   assessPuffCalibration,
@@ -1628,7 +1628,7 @@ async function submitToLeaderboard(): Promise<void> {
     ].filter(Boolean);
     status.textContent = places.length
       ? `You're ${places.join(" and ")}! 🎉`
-      : "Not in the top 100 this time. Strain harder! 💩";
+      : `Not in the top ${BOARD_KEEP} this time. Strain harder! 💩`;
     void showBoards($("go-lb"), { highlight: result.id });
   } catch (err) {
     if (lastRun !== run) return;
