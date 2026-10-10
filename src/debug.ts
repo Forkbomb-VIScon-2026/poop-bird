@@ -2,7 +2,6 @@
 // every tunable in config.ts.
 
 import { CONFIG_SPEC, config, defaultConfig, resetConfig, setConfigValue, type ConfigKey } from "./config";
-import type { RecorderKind } from "./recorder";
 import { storageGet, storageSet } from "./storage";
 import {
   FEATURE_NAMES,
@@ -61,7 +60,6 @@ export class DebugPanel {
   private puffPlot!: HTMLCanvasElement;
   private puffSection!: HTMLElement;
   private lastText = 0;
-  private recordEl!: HTMLElement;
   visible = false;
   /** Outline the locked face and the detection crop on the webcam preview. */
   showFaceLock = storageGet(FACE_LOCK_KEY) === "1";
@@ -70,17 +68,11 @@ export class DebugPanel {
     el: HTMLElement,
     private onRecalibrate: () => void,
     private onStartOcean: () => void,
-    private onRecordFace: (kind: RecorderKind) => void,
+    private onOpenRecorder: () => void,
     private onForgetCalibration: () => void,
   ) {
     this.el = el;
     this.build();
-  }
-
-  /** Big instruction line for the face recorder; null hides it. */
-  setRecordPrompt(text: string | null): void {
-    this.recordEl.textContent = text ?? "";
-    this.recordEl.classList.toggle("hidden", text === null);
   }
 
   toggle(): void {
@@ -95,8 +87,7 @@ export class DebugPanel {
     // Shortcut buttons first, so they don't need scrolling past the sliders.
     const quick = div("dbg-buttons");
     quick.append(button("🐡 Start as pufferfish (O)", () => this.onStartOcean()));
-    quick.append(button("⏺ Record strain clip", () => this.onRecordFace("strain")));
-    quick.append(button("⏺ Record puff clip", () => this.onRecordFace("puff")));
+    quick.append(button("⏺ Record a dataset session", () => this.onOpenRecorder()));
     quick.append(button("🗑 Forget calibration", () => this.onForgetCalibration()));
     const faceLock = button("", () => {
       this.showFaceLock = !this.showFaceLock;
@@ -107,8 +98,6 @@ export class DebugPanel {
     label();
     quick.append(faceLock);
     el.append(quick);
-    this.recordEl = div("dbg-record hidden");
-    el.append(this.recordEl);
     el.append(h3("Stats"));
     this.statsEl = div("dbg-stats");
     el.append(this.statsEl);
@@ -148,7 +137,7 @@ export class DebugPanel {
     el.append(this.puffSection);
 
     const keys = div("dbg-legend");
-    keys.textContent = "With this panel open: G spawns the next gate, L a power line, F a paparazzo, K a slingshot kid, O starts a run as the pufferfish";
+    keys.textContent = "With this panel open: G brings the waterfront next, L a power line, F a paparazzo, K a slingshot kid, B a balloon, O starts a run as the pufferfish";
     el.append(keys);
 
     el.append(h3("Face features (value · neutral | strain/puff · weight)"));

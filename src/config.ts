@@ -95,6 +95,16 @@ export const CONFIG_SPEC = {
   pigeonsPerSpan: { value: 1.3, min: 0, max: 4, step: 0.1, group: "Power lines", label: "Pigeons per span", hint: "average pigeons sitting on the wires between two poles" },
   pigeonMultiplier: { value: 2, min: 0, max: 10, step: 0.5, group: "Power lines", label: "Pigeon points", hint: "× points per hit (× combo)" },
 
+  // --- Balloons ------------------------------------------------------------
+  balloonChance: { value: 0.2, min: 0, max: 1, step: 0.05, group: "Balloons", label: "Chance", hint: "chance a city obstacle is a hot-air balloon (rolled after the power line chance)" },
+  balloonDrift: { value: 20, min: 0, max: 120, step: 5, group: "Balloons", label: "Wind drift", hint: "px/s the balloon drifts forward" },
+  balloonPopMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Balloons", label: "Pop points", hint: "× points for popping the envelope (× combo)" },
+  balloonLift: { value: 340, min: 0, max: 1000, step: 10, group: "Balloons", label: "Hot-air lift", hint: "upward px/s the bird gets when it pops the envelope itself" },
+  balloonPassengerMultiplier: { value: 2, min: 0, max: 10, step: 0.5, group: "Balloons", label: "Parachutist points", hint: "× points per hit on a bailed-out passenger (× combo)" },
+  balloonChuteWind: { value: 0.8, min: 0, max: 1.2, step: 0.05, group: "Balloons", label: "Parachute wind", hint: "× scroll speed the parachutists are carried forward at (1 = they stay put on screen)" },
+  balloonChuteFall: { value: 55, min: 10, max: 300, step: 5, group: "Balloons", label: "Parachute fall", hint: "px/s under an open canopy" },
+  balloonThreadMultiplier: { value: 6, min: 0, max: 20, step: 0.5, group: "Balloons", label: "Thread bonus", hint: "× points for slipping between envelope and basket untouched" },
+
   // --- Targets & score -----------------------------------------------------
   poopGravity: { value: 1000, min: 100, max: 3000, step: 50, group: "Targets", label: "Poop gravity", hint: "px/s² (separate from the bird so aiming stays the same)" },
   targetSpawnRate: { value: 0.55, min: 0, max: 3, step: 0.05, group: "Targets", label: "Spawn rate", hint: "targets per second" },
@@ -129,10 +139,23 @@ export const CONFIG_SPEC = {
   kidMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Disarm points", hint: "× points for splatting him while he can still shoot (× combo)" },
   kidParryMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Intercept points", hint: "× points for shooting a pebble down with a poop (× combo)" },
 
+  // --- Wedding -------------------------------------------------------------
+  weddingChance: { value: 0.25, min: 0, max: 1, step: 0.05, group: "Wedding", label: "Chance", hint: "chance a city stage has a wedding" },
+  weddingSlot: { value: 2, min: 0, max: 10, step: 1, group: "Wedding", label: "Church slot", hint: "city obstacles before the church (it waits if a paparazzo or kid is busy)" },
+  weddingKissLead: { value: 90, min: 0, max: 400, step: 5, group: "Wedding", label: "Kiss point", hint: "px ahead of the bird where the couple starts kissing (a poop takes a moment to fall)" },
+  weddingKissTime: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Wedding", label: "Kiss length", hint: "s the kiss lasts (the jackpot window)" },
+  weddingBeat: { value: 0.55, min: 0.2, max: 1.5, step: 0.05, group: "Wedding", label: "Countdown beat", hint: "s per 3… 2… 1… beat before the kiss" },
+  weddingKissMultiplier: { value: 10, min: 0, max: 30, step: 0.5, group: "Wedding", label: "Ruined kiss points", hint: "× points for splatting the couple mid-kiss (× combo)" },
+  weddingCoupleMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Wedding", label: "Couple points", hint: "× points for splatting the couple outside the kiss" },
+  weddingBouquetMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Wedding", label: "Bouquet catch", hint: "× points for catching the bride's bouquet" },
+  weddingBouquetGravity: { value: 600, min: 100, max: 2000, step: 50, group: "Wedding", label: "Bouquet gravity", hint: "px/s²" },
+  weddingThrowTime: { value: 0.8, min: 0.3, max: 2, step: 0.05, group: "Wedding", label: "Angry throw time", hint: "s the furious bride's bouquet takes to reach the bird" },
+  weddingBouquetKnock: { value: 260, min: 0, max: 800, step: 10, group: "Wedding", label: "Bouquet knock", hint: "px/s downward speed when her bouquet hits the bird" },
+
   // --- Ocean stage ---------------------------------------------------------
-  cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before gate", hint: "then the harbour gate appears" },
-  oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the exit gate appears" },
-  oceanTransformTime: { value: 1.0, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Transform time", hint: "s of splash + transform (without calibration)" },
+  cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before harbour", hint: "then the street ends at the harbour" },
+  oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the far quay comes up and the surface opens" },
+  oceanTransformTime: { value: 0.8, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Transform time", hint: "s the new fish takes to inflate after the dive (without calibration)" },
   oceanScrollScale: { value: 0.85, min: 0.3, max: 1.5, step: 0.05, group: "Ocean", label: "Scroll speed scale", hint: "× the city scroll speed" },
   oceanMaxSink: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max sink speed", hint: "px/s at puff 0" },
   oceanMaxRise: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max rise speed", hint: "px/s at puff 1" },

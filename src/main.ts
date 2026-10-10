@@ -8,8 +8,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { Game } from "./game";
-import { FaceRecorder, type RecorderKind } from "./recorder";
-import { Renderer, drawFrontPage } from "./render";
+import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
@@ -19,6 +18,8 @@ import {
   stepPuff,
 } from "./puff";
 import {
+  CALIBRATION_KEY,
+  PUFF_CALIBRATION_KEY,
   addToHallOfFame,
   loadBest,
   loadHallOfFame,
@@ -92,13 +93,9 @@ const sound = new Sound();
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
 const debug = DEBUG
-  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), recordFace, forgetCalibration)
+  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), openDatasetRecorder, forgetCalibration)
   : null;
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
-
-const CALIBRATION_KEY = "poopbird.calibration.v1";
-// v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
-const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v2";
 
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
 /** `calibration` is the default one, fitted to a quick relaxed-face read and never saved. */
@@ -184,7 +181,6 @@ tracker.onFrame((frame) => {
   if (calibSamples && frame.features) calibSamples.push({ t: frame.time, f: frame.features });
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config);
-  if (faceRecorder && !faceRecorder.push(frame)) finishFaceRecording();
   if (debug) {
     // Debug panel toggle: outline the locked face and the crop detection runs on.
     placeCamBox($("cam-lock"), debug.showFaceLock ? frame.box : null);
@@ -235,39 +231,10 @@ async function switchFace(): Promise<void> {
   showToast(found ? "🔄 Tracking another face" : "Only one face in view", 1500);
 }
 
-// --- Debug face recorder -------------------------------------------------------------
-
-let faceRecorder: FaceRecorder | null = null;
-
-/** Records a scripted puff or strain clip (raw features + landmarks) and downloads it for offline tuning. */
-function recordFace(kind: RecorderKind = "puff"): void {
-  if (faceRecorder) return;
-  if (mode !== "face" || !tracker.ready) {
-    debug?.setRecordPrompt("Start a face-mode game first");
-    window.setTimeout(() => !faceRecorder && debug?.setRecordPrompt(null), 2500);
-    return;
-  }
-  // Freeze the game so the clip doesn't cost a life.
+/** Debug: opens the face dataset recorder (collect.html) in a new tab, pausing a running game. */
+function openDatasetRecorder(): void {
   if (state === "playing") togglePause();
-  faceRecorder = new FaceRecorder(kind, (step) => {
-    debug?.setRecordPrompt(`${step.prompt} (${step.seconds} s)`);
-    if (step.cue) sound.beep(step.cue === "strain");
-  });
-}
-
-function finishFaceRecording(): void {
-  const rec = faceRecorder;
-  if (!rec) return;
-  faceRecorder = null;
-  rec.download({
-    video: { width: tracker.video.videoWidth, height: tracker.video.videoHeight },
-    calibration,
-    puffCalibration,
-    lastPuffAttempt,
-    config,
-  });
-  debug?.setRecordPrompt("Saved: send me the downloaded JSON");
-  window.setTimeout(() => !faceRecorder && debug?.setRecordPrompt(null), 4000);
+  window.open(`${import.meta.env.BASE_URL}collect.html`, "_blank");
 }
 
 function updateStrainBars(): void {
@@ -660,8 +627,9 @@ function needsPuffCalibration(): boolean {
 }
 
 /**
- * Runs while the dive transition is held: the world is frozen and an overlay
- * asks for a full puff. Belongs to the current run's flow token, so going to
+ * Runs while the dive transition is held, right after the bird turned into a
+ * deflated fish: the world holds still, an overlay asks for a full puff and
+ * the fish inflates as the player puffs. Belongs to the current run's flow token, so going to
  * the menu or recalibrating mid-dive abandons it (the next run resets the
  * game). Never blocks the game: a failed check falls back to the fixed range.
  */
@@ -860,8 +828,6 @@ function goToMenu(): void {
   flow++;
   calibSamples = null;
   calibFrames = null;
-  faceRecorder = null;
-  debug?.setRecordPrompt(null);
   tracker.stopCamera();
   state = "menu";
   sound.setGroan(-1, false);
@@ -897,6 +863,22 @@ function onGameOver(): void {
   $("go-smashed").textContent = String(game.camerasSmashed);
   $("go-scandals").textContent = String(game.frontPages.length);
   $("go-kids").textContent = String(game.kidsDisarmed + game.pebblesShot);
+  $("go-weddings").textContent = String(game.weddingsRuined);
+
+  // The wedding album: the last ruined wedding if there was one (that's the good one).
+  const wedding = game.weddingPhotos.filter((p) => p.ruined).at(-1) ?? game.weddingPhotos.at(-1) ?? null;
+  show($("go-wedding"), wedding !== null);
+  if (wedding) {
+    const wc = $<HTMLCanvasElement>("go-wedding-canvas");
+    const wctx = wc.getContext("2d");
+    if (wctx) {
+      wctx.setTransform(1, 0, 0, 1, 0, 0);
+      wctx.clearRect(0, 0, wc.width, wc.height);
+      wctx.scale(wc.width / 250, wc.width / 250);
+      drawWeddingPrint(wctx, 2, 2, 240, wedding, renderer.photos.get(wedding.photoId));
+    }
+  }
+  $("go-balloons").textContent = String(game.balloonsPopped);
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -1093,7 +1075,9 @@ function frame(now: number): void {
     scrollSpeed: game.speed,
     difficulty: game.difficulty,
     birdVy: game.bird.vy,
-    stage: game.transition ? `${game.stage} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}` : game.stage,
+    stage: game.transition
+      ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`
+      : game.stage,
     puffCalibration,
     puffSource: puffCalibration ? `calibrated (${topFeatureLabels(puffCalibration).join(", ")})` : "fallback range",
     rawPuff: mode === "face" && faceFresh() ? puffSignal.raw : 0,
@@ -1118,6 +1102,9 @@ function takePhoto(photoId: number): void {
   const photo = face ?? renderer.captureBird(game);
   if (photo) renderer.photos.set(photoId, photo);
 }
+
+/** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
+let weddingFace: Photo | null = null;
 
 function handleGameEvents(): void {
   for (const e of game.events) {
@@ -1144,15 +1131,21 @@ function handleGameEvents(): void {
         onGameOver();
         break;
       case "gateEntered":
-        sound.splash();
         if (e.to === "ocean") {
+          sound.splash();
           // Keyboard players start at the hover point; in face mode the face decides.
           keyPuff = mode === "keyboard" ? config.oceanHoverPuff : 0;
-          if (needsPuffCalibration()) void runPuffCalibration();
-          else if (mode === "keyboard") showToast("Hold SPACE to puff up 🐡");
         } else {
           keyPuff = 0;
         }
+        break;
+      case "submerged":
+        // The bird just turned into a deflated fish: puffing up is the rest of the transformation.
+        if (needsPuffCalibration()) void runPuffCalibration();
+        else if (mode === "keyboard") showToast("Hold SPACE to puff up 🐡");
+        break;
+      case "breached":
+        sound.splash();
         break;
       case "transformed":
       case "surfaced":
@@ -1195,6 +1188,55 @@ function handleGameEvents(): void {
       case "kidCried":
         sound.kidCry();
         break;
+      case "weddingArrived":
+        sound.weddingArrived();
+        break;
+      case "weddingBeat":
+        sound.weddingBeat(e.count);
+        break;
+      case "weddingKiss":
+        sound.weddingKiss();
+        // Grab the face now: a player who's on it is straining hardest right at "KISS!".
+        weddingFace = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
+        break;
+      case "weddingRuined":
+        sound.weddingRuined();
+        break;
+      case "weddingMarried":
+        sound.weddingMarried();
+        break;
+      case "weddingPhoto": {
+        sound.shutter();
+        const photo = renderer.captureWedding(game, weddingFace);
+        if (photo) renderer.photos.set(e.photoId, photo);
+        weddingFace = null;
+        break;
+      }
+      case "bouquetThrown":
+        sound.bouquetThrown(e.angry);
+        break;
+      case "bouquetCaught":
+        sound.bouquetCaught();
+        break;
+      case "bouquetHit":
+        sound.bouquetHit();
+        break;
+      case "balloonPop":
+        sound.balloonPop();
+        sound.hit(e.combo);
+        break;
+      case "chuteOpen":
+        sound.chuteOpen();
+        break;
+      case "basketLanded":
+        sound.basketLanded();
+        break;
+      case "burner":
+        sound.burner();
+        break;
+      case "threaded":
+        sound.hit(4);
+        break;
     }
   }
   game.events.length = 0;
@@ -1232,8 +1274,8 @@ window.addEventListener("keydown", (e) => {
       debug?.toggle();
       break;
     case "g":
-      // Debug shortcut: the next obstacle is the stage's gate.
-      if (debug?.visible && state === "playing") game.spawnGateNow();
+      // Debug shortcut: the stage's waterfront comes next.
+      if (debug?.visible && state === "playing") game.spawnShoreNow();
       break;
     case "l":
       // Debug shortcut: a power line right now.
@@ -1246,6 +1288,14 @@ window.addEventListener("keydown", (e) => {
     case "k":
       // Debug shortcut: a slingshot kid walks on.
       if (debug?.visible && state === "playing") game.spawnKidNow();
+      break;
+    case "w":
+      // Debug shortcut: a wedding right now.
+      if (debug?.visible && state === "playing") game.spawnWeddingNow();
+      break;
+    case "b":
+      // Debug shortcut: a hot-air balloon floats in.
+      if (debug?.visible && state === "playing") game.spawnBalloonNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
@@ -1328,11 +1378,11 @@ requestAnimationFrame(frame);
 if (DEBUG) {
   Object.assign(window, {
     poopBird: {
-      game, config, tracker,
+      game, config, tracker, renderer,
       get calibration() { return calibration; },
       get puffCalibration() { return puffCalibration; },
       get lastPuffAttempt() { return lastPuffAttempt; },
-      recordFace,
+      openDatasetRecorder,
     },
   });
 }

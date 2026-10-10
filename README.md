@@ -30,9 +30,12 @@ Other scripts:
 | `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
-| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy) |
+| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector) |
 | `npm run lint` | ESLint |
-| `npx tsc --noEmit` | Typecheck only |
+| `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
+| `npm run data:pull` / `data:purge` | Copy the face dataset from the team VM into `data/` / delete that copy (see [Face dataset](#face-dataset)) |
+| `npm run eval` | Score face detection against every recording in `data/` |
+| `npm run collector` | Run the dataset collector locally (needs `COLLECTION_CODE`, `DEV_TOKEN`, `DATA_DIR`; set `HOST=127.0.0.1`) |
 | `npm run copy-wasm` | Re-copy the WASM from `node_modules` (also runs before `dev`/`build`) |
 | `npm run fetch-model -- --force` | Re-download the model |
 
@@ -47,7 +50,9 @@ docker compose up --build   # serves dist/ with Caddy on http://localhost:8080
 ```
 
 The image builds the game and serves it with Caddy on port 8080. For camera
-access on anything other than localhost, put it behind HTTPS.
+access on anything other than localhost, put it behind HTTPS. Compose also
+starts the face dataset collector (local credentials `local` /
+`local-dev-token`), which Caddy serves under `/api/`.
 
 ## Controls
 
@@ -62,9 +67,11 @@ access on anything other than localhost, put it behind HTTPS.
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
-| **G** | With the debug panel open: spawn the next gate now |
+| **G** | With the debug panel open: the stage's waterfront comes next |
 | **L** | With the debug panel open: spawn a power line now |
 | **K** | With the debug panel open: a slingshot kid walks on |
+| **W** | With the debug panel open: a wedding right now |
+| **B** | With the debug panel open: a hot-air balloon floats in |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration |
 
@@ -99,7 +106,7 @@ there's no countdown.
   The ring over his head fills as he closes in; when it's full (just past the
   bird) he takes your picture. Splat him first to smash the camera (×3).
   Miss, and you get a flash, a polaroid, and your photo on a roadside
-  billboard as the next obstacle, always before the harbour gate (and on the
+  billboard as the next obstacle, always before the harbour (and on the
   game-over screen). The run's first paparazzo walks slower and has a
   "SPLAT HIM!" arrow.
 - **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
@@ -113,6 +120,41 @@ there's no countdown.
   the pebble down with a falling poop ("INTERCEPTED!", ×4), or splat the kid
   while he's still armed ("DISARMED!", ×3) and he runs off crying. Later
   kids fire twice. Tunables are in the debug panel's "Slingshot kids" group.
+- **The wedding:** now and then (`weddingChance`, about one city stage in
+  four) a church takes the place of one building, with a wedding on the
+  sidewalk in front: the couple under a flower arch with their names on it,
+  guests, a getaway car and a photographer with an old plate camera. Bells ring and the organ plays
+  "Here comes the bride". As the couple comes up to the bird the
+  photographer counts down in a heart over them, *3… 2… 1…*, and then they
+  **KISS!** for about a second (a ring around the heart runs out). That's the
+  timing puzzle: start straining on the countdown, let go on "KISS!".
+  - Splat the bride or groom mid-kiss and the wedding is **ruined**
+    ("OBJECTION!", ×10): a record scratch, the bride shrieks, the groom
+    faints, the guests gasp and the heart breaks. A moment later she throws
+    her bouquet at the bird ("!" over her head first). It knocks the bird
+    down but doesn't stun it.
+  - Let the kiss go through and they're **married**: confetti, a flight of
+    doves, a fanfare, and the bride tosses her bouquet high over the bird.
+    Fly into it as it comes down to catch it ("YOU'RE NEXT!", ×4).
+  - Splatting the couple before the kiss (×3), the guests, the photographer
+    (his lens gets smudged, and so does the photo) or the car scores like a
+    normal target.
+  - Either way the photographer's flash goes off, and **the official
+    wedding photo** pops up in the corner as a framed print: the couple, the
+    guests and the bird photobombing from the corner, blissfully relieved if
+    it just ruined everything. In face mode the bird has the player's face,
+    grabbed at "KISS!" (when they should be straining hardest). The game-over
+    screen shows the run's last ruined wedding (or the last wedding).
+  Tunables are in the debug panel's "Wedding" group.
+- **Hot-air balloons:** some city obstacles are a balloon drifting along with
+  the wind (`balloonChance`). Fly through the envelope (or poop on it) and it
+  pops (×4): fly through it yourself and the escaping hot air gives you a free
+  lift. The basket drops to the street and the passengers bail out, tumbling
+  until their parachutes open; while they drift down they're targets (×2),
+  and once they land they walk off as pedestrians. The basket is solid:
+  flying into it, hanging or falling, ends the run. Slip between the envelope
+  and the basket without touching either for a "THREADED IT!" bonus (×6).
+  Tunables are in the "Balloons" group.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage
@@ -120,13 +162,18 @@ there's no countdown.
 A run alternates city → ocean → city → … and difficulty keeps ramping with
 total distance.
 
-- **Harbour gate.** After `cityObstaclesBeforeGate` (6) city obstacles comes a
-  harbour building whose door is full of sea. Fly through it to dive in; its
-  walls kill like any other obstacle.
-- **Transformation.** A splash, and the bird becomes a pufferfish. On the first
-  dive in face mode the world freezes for ~2.5 s with "PUFF YOUR CHEEKS!": that
-  is the puff calibration (see below). Later dives, and keyboard mode, get a
-  ~1 s transform instead. Keyboard mode shows "Hold SPACE to puff up".
+- **The harbour.** After `cityObstaclesBeforeGate` (6) city obstacles the street
+  ends at a quay (bollard, ladder, stone wall) and the harbour opens up below.
+  Poops that land in the water just plop.
+- **Dive and transformation.** Once the bird is over the water the game takes
+  the controls: a little hop, and it plunges through the surface while the
+  camera follows it down past the quay wall into the sea. Under water it
+  gulps, loses its feathers in a burst of bubbles and becomes a deflated
+  pufferfish, which then inflates. On the first dive in face mode, inflating
+  *is* the puff calibration: the world holds still with "PUFF YOUR CHEEKS!"
+  and the fish puffs up as you do (see below). Otherwise it inflates by itself
+  over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
+  shows "Hold SPACE to puff up".
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
@@ -139,9 +186,13 @@ total distance.
   stun during which you sink without control. The meter flashes "DEFLATE!" in
   the last ~0.3 s.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
-- **Exit gate.** After `oceanObstacles` (8) ocean obstacles, a reef arch with a
-  bubble ring leads up to the surface. Swim through and you're a bird again.
-  A strain held while surfacing doesn't fire: you have to relax first.
+- **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
+  wall comes up ahead. Once the last obstacle is behind you and the wall is
+  close, the game takes the controls: the fish shoots up, breaks the surface
+  and becomes a bird again mid-leap, with the camera following it up to the
+  street. The bird glides at a safe height until the street is below it, then
+  the controls are yours again, so the wall can't get you. A strain held while
+  surfacing doesn't fire: you have to relax first.
 - With Space alone: hold to inflate (rise), let go to deflate (sink), and tap to
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
@@ -305,23 +356,19 @@ build is always the plain one:
   charge, and the windows where "straining" was on
 - in the ocean: a live plot of raw and smoothed face puff and the combined
   puff input, with hover and spike threshold lines and the spiked windows
-- **G** spawns the next gate right away, so you can test the ocean without
-  flying through the city first
+- **G** brings the stage's waterfront next (the harbour in the city, the far
+  quay in the ocean), so you can test both transitions without playing a whole
+  stage first
 - **L** spawns a power line right away (city only)
 - **K** sends a slingshot kid on right away (city only)
+- **W** starts a wedding right away (city only)
+- **B** floats a hot-air balloon in right away (city only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
   quick way to retry it. From the menu it starts in keyboard mode
-- **⏺ Record strain clip** (face mode) pauses the game and prompts 45 s of
-  relax → strain and hold → relax → four 1.5 s strain/relax pulses → a long
-  strain → relax → relaxed while looking around → smiling, laughing and
-  talking. Every step beeps (high for strain), since you can't read prompts
-  with your eyes squeezed shut. Then it downloads the raw features, all
-  blendshapes and all landmarks as JSON (`poopbird-face-strain-*.json`), for
-  tuning strain detection offline. Each sample is labelled with its step
-- **⏺ Record puff clip** does the same with 16 s of relax → puff and hold →
-  relax → quick puffs, for tuning puff detection
+- **⏺ Record a dataset session** pauses the game and opens the face dataset
+  recorder in a new tab (see [Face dataset](#face-dataset))
 - **🗑 Forget calibration** deletes the saved strain and puff calibrations and
   reloads, so you can test the first-time flow (scores and settings are kept)
 - each face feature (blendshapes and landmark geometry) as a bar, with neutral
@@ -334,8 +381,102 @@ build is always the plain one:
   defaults" and "Copy config JSON" buttons. When you find good values, paste
   them back into `config.ts`.
 
-`window.poopBird` exposes `game`, `config`, `tracker`, `calibration` and
-`puffCalibration` in the console.
+`window.poopBird` exposes `game`, `config`, `tracker`, `renderer`,
+`calibration` and `puffCalibration` in the console.
+
+## Face dataset
+
+Calibration has to work for every face, so detection changes are checked
+against a shared collection of labelled recordings from many people and
+devices. It lives on the team VM only and is deleted with it.
+
+**Recording.** The recorder is a separate page of the deployed site:
+`https://24.hackathon.ethz.ch/collect.html?code=<COLLECTION_CODE>` works on
+any device with a camera (the whole site is behind the ETH login, so
+participants need an ETH or SWITCH edu-ID login). The game never links to
+it; the debug panel's **⏺ Record a dataset session** opens it. It takes a
+participant through about 3 minutes:
+
+1. Consent. The text is stored verbatim with every session. A collect link
+   can carry the collection code: `/collect.html?code=<code>`.
+2. A random participant code (`pb-…`, no names), glasses, facial hair and
+   light. The code is remembered on the device; on another device people can
+   type it in so their sessions stay together.
+3. A camera check (face found, distance, brightness, detection rate).
+4. The game's calibration (relax, strain, same prompts and timing) plus a
+   "relax again" phase, then a strain script (pulses of random length, a light
+   strain, a long hold, looking around, laughing) and a puff script (full and
+   half puff, pulses, puffing while looking around), then the same with the
+   **pufferfish face** (cheeks puffed *and* lips pursed). Every step beeps:
+   high for strain or puff, low for relax. The pufferfish face is a candidate
+   gesture for the ocean: plain puffs barely move what MediaPipe reports
+   (`cheekPuff` stays 0 and the geometry moves about as much as a relaxed face
+   drifts), while pursed lips light up `mouthPucker`.
+5. The upload, with a "Delete this session" button and a fallback to save the
+   file when the upload fails. Then **Next person** starts over at consent
+   with a fresh participant code (for one shared device at a collection
+   table, logged in once), and **Same person again** goes straight back to
+   the camera check.
+
+The scripts and the file format are in `src/session.ts`. A session is one
+gzipped JSON file of about 3–4 MB: per frame, the step label, all
+blendshapes, the features and the 478 face-mesh points (Int16, stored as
+differences from the previous frame, which compresses about 3× better).
+Device, camera, detection delegate, tuning config and the game's saved
+calibrations are stored with it. No video or images.
+
+Scripts can't get past the ETH login, so the team reaches the VM over SSH
+instead. To record from a local dev server into the team dataset (for
+example to try a change to the recorder):
+
+```sh
+npm run tunnel        # keep running: SSH tunnel to the VM (port 8788 → the VM's Caddy)
+npm run dev:debug     # then open /collect.html?code=<COLLECTION_CODE>
+```
+
+The dev server proxies `/api` to the tunnel, or to `COLLECTOR_URL` (for
+example a local `HOST=127.0.0.1 COLLECTION_CODE=local DEV_TOKEN=local-dev-token
+DATA_DIR=/tmp/pb npm run collector` with `COLLECTOR_URL=http://127.0.0.1:8787`;
+its collection code is then `local`).
+
+**Storage.** `collector/server.ts` is a small Node server without
+dependencies, in its own container next to the game, with the recordings on
+the `poopbird-data` Docker volume (it survives deploys). Caddy routes `/api/*`
+to it. On the VM, `deploy.yml` generates its two secrets once into
+`~/poopbird-collector.env` (`ssh viscon@24-direct.viscon-hackathon.ch cat
+poopbird-collector.env`): `COLLECTION_CODE`, the upload password that goes
+into collect links (uploads only), and `DEV_TOKEN` for the team (list,
+download, review, delete). Every upload is validated, quality-checked (face
+coverage, detection rate, whether the strain moved brows and eyes) and added
+to the index. Participants can delete their session right after uploading; to
+delete everything under a participant code:
+
+```sh
+ssh viscon@24-direct.viscon-hackathon.ch 'curl -s -X DELETE -H "Authorization: Bearer $(grep ^DEV_TOKEN= poopbird-collector.env | cut -d= -f2)" localhost:8080/api/recordings/<code>'
+```
+
+**Using it.** Needs your SSH key on the VM (`ssh-copy-id`); `data:pull` reads
+the dev token and opens its own tunnel.
+
+```sh
+npm run data:pull   # new sessions into data/sessions/, sessions deleted on the server are deleted locally
+npm run eval        # scoreboard: every variant in scripts/eval/variants.ts, per recording and per participant
+npm run data:purge  # delete the local copy (everyone, when the VM goes away)
+```
+
+`npm run eval` fits each recording's calibration the way the game does and
+replays the rest. For strain it reports hits on strain steps, false strain
+while relaxed, looking around and laughing, releases in the middle of a
+strain, and press and release latency. For puff it scores the plain puff
+and the pufferfish face separately, each with a calibration fitted from its
+own first hold: the median puff level while relaxed, at half and at full
+puff, how often the fish sinks while relaxed and rises while puffing, and
+false spikes. To try a
+detection idea, add a variant to `scripts/eval/variants.ts`; the first entry
+is what the game does today. About 1 in 5 participants are held out (picked
+by a hash of their code); score them with `npm run eval -- --holdout` only
+when a change is ready to merge. Older debug-recorder clips
+(`poopbird-face-*.json`) still work: put them in `data/local/`.
 
 ## Privacy
 
@@ -346,9 +487,14 @@ build is always the plain one:
   screen, and saved only if you add the run to the local Hall of Fame
   (`localStorage`, top 5).
 - The paparazzi's photos show your face in face mode, and the bird with the
-  keyboard. They stay in memory for the current run and are never stored.
+  keyboard. So does the bird in the wedding photos. They stay in memory for
+  the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
+- Playing never sends face data anywhere. Only the separate dataset recorder
+  (`collect.html`) uploads, after explicit consent, and it records expression
+  scores and face-mesh points, never video or images. See
+  [Face dataset](#face-dataset).
 
 ## Project layout
 
@@ -360,14 +506,22 @@ src/
   puff.ts       blendshapes / Space → puff (pure)  puff.test.ts
   swim.ts       buoyancy, drag, spike / pop (pure) swim.test.ts
   face.ts       MediaPipe + webcam, detection loop
-  game.ts       simulation (fixed timestep)
+  game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
   audio.ts      WebAudio synth sounds
   debug.ts      debug / tuning panel
-  snapshot.ts   face crops: peak-strain snapshot, paparazzi photos
+  snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, Hall of Fame
   main.ts       screens, input, loops, calibration flow
+  session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
+  collect.ts    the dataset recorder page (collect.html)
+collector/
+  server.ts     dataset upload/download server (Node, no deps)       server.test.ts
+  Dockerfile
 scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm
   fetch-model.mjs  downloads face_landmarker.task
+  data.ts          data:pull / data:purge
+  run-ts.mjs       runs a TS script through Vite (used by eval)
+  eval/            detection scoreboard: load, strain, puff, variants
 ```

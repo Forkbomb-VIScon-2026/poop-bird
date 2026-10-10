@@ -856,6 +856,12 @@ svg.face.ready-face {
   filter: drop-shadow(0 5px 0 var(--ink));
 }
 
+.go-wedding {
+  width: 250px;
+  height: 235px;
+  transform: rotate(-1.5deg);
+}
+
 .go-hof-form {
   margin-top: 14px;
   display: flex;
@@ -1126,17 +1132,6 @@ body.debug-open #cam {
 
 .dbg-buttons button:hover {
   background: #3a3d5c;
-}
-
-.dbg-record {
-  margin-top: 8px;
-  padding: 8px;
-  border-radius: 6px;
-  background: #ef476f;
-  color: #fff;
-  font-size: 18px;
-  font-weight: bold;
-  text-align: center;
 }
 
 @media (max-width: 600px) {

@@ -38,8 +38,10 @@ jobs:
         with:
           ref: ${{ env.SHA }}
 
-      - name: Build image
-        run: docker build -t "poop-bird:$SHA" .
+      - name: Build images
+        run: |
+          docker build --build-arg APP_COMMIT="$SHA" -t "poop-bird:$SHA" .
+          docker build -f collector/Dockerfile -t "poop-bird-collector:$SHA" .
 
       - name: Set up SSH
         env:
@@ -56,17 +58,33 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
 
-      - name: Ship image and restart the container
+      - name: Ship images and restart the containers
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          docker save "poop-bird:$SHA" | gzip | ssh "viscon@$DEPLOY_HOST" 'gunzip | docker load'
-          ssh "viscon@$DEPLOY_HOST" "
+          docker save "poop-bird:$SHA" "poop-bird-collector:$SHA" | gzip | ssh "viscon@$DEPLOY_HOST" 'gunzip | docker load'
+          ssh "viscon@$DEPLOY_HOST" bash -s -- "$SHA" <<'EOF'
             set -e
+            SHA=$1
+            # The game's Caddy reaches the collector as "collector" on this network.
+            docker network inspect poopbird >/dev/null 2>&1 || docker network create poopbird
+            # Collector credentials, generated once and kept on the VM only:
+            # COLLECTION_CODE goes into the collect link, DEV_TOKEN is for the team.
+            ENV_FILE=~/poopbird-collector.env
+            if [ ! -f "$ENV_FILE" ]; then
+              hex() { head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+              ( umask 077; printf 'COLLECTION_CODE=%s\nDEV_TOKEN=%s\n' "$(hex 6)" "$(hex 24)" > "$ENV_FILE" )
+            fi
+            # Recordings live in the poopbird-data volume, which survives deploys.
+            docker rm -f collector 2>/dev/null || true
+            docker run -d --name collector --restart unless-stopped --network poopbird \
+              --env-file "$ENV_FILE" -v poopbird-data:/data "poop-bird-collector:$SHA"
             docker rm -f poop-bird 2>/dev/null || true
-            docker run -d --name poop-bird --restart unless-stopped \
-              -p 8080:8080 poop-bird:$SHA
-            # Drop older poop-bird images, keep the one now running
-            docker images poop-bird --format '{{.Repository}}:{{.Tag}}' \\
-              | grep -vx poop-bird:$SHA | xargs -r docker rmi >/dev/null || true
-          "
+            docker run -d --name poop-bird --restart unless-stopped --network poopbird \
+              -p 8080:8080 "poop-bird:$SHA"
+            # Drop older images, keep the ones now running
+            for image in poop-bird poop-bird-collector; do
+              docker images "$image" --format '{{.Repository}}:{{.Tag}}' \
+                | grep -vx "$image:$SHA" | xargs -r docker rmi >/dev/null || true
+            done
+          EOF
