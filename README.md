@@ -212,8 +212,9 @@ webcam), and the wiring in `src/main.ts`.
    not necessarily the face in front. **N** masks the locked face out and
    locks onto another one. Whenever the lock moves to a different face, the
    smoothed strain and puff reset and any calibration step that is collecting
-   samples starts over, so two people's samples never mix. The
-   preview outlines the locked face (debug builds also show the crop dashed).
+   samples starts over, so two people's samples never mix. In debug
+   builds, "Face lock box" in the debug panel outlines the locked face and
+   the crop (dashed) on the webcam preview.
    Detecting several faces instead would cost one landmark-model run per
    visible face (about 2.5× with three people); the crop costs nothing extra.
 9. **Decoupled loops.** Detection runs on `requestVideoFrameCallback` (or rAF

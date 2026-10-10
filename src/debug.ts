@@ -3,6 +3,7 @@
 
 import { CONFIG_SPEC, config, defaultConfig, resetConfig, setConfigValue, type ConfigKey } from "./config";
 import type { RecorderKind } from "./recorder";
+import { storageGet, storageSet } from "./storage";
 import {
   FEATURE_NAMES,
   GEOMETRY_FEATURE_NAMES,
@@ -62,6 +63,8 @@ export class DebugPanel {
   private lastText = 0;
   private recordEl!: HTMLElement;
   visible = false;
+  /** Outline the locked face and the detection crop on the webcam preview. */
+  showFaceLock = storageGet(FACE_LOCK_KEY) === "1";
 
   constructor(
     el: HTMLElement,
@@ -95,6 +98,14 @@ export class DebugPanel {
     quick.append(button("⏺ Record strain clip", () => this.onRecordFace("strain")));
     quick.append(button("⏺ Record puff clip", () => this.onRecordFace("puff")));
     quick.append(button("🗑 Forget calibration", () => this.onForgetCalibration()));
+    const faceLock = button("", () => {
+      this.showFaceLock = !this.showFaceLock;
+      storageSet(FACE_LOCK_KEY, this.showFaceLock ? "1" : "0");
+      label();
+    });
+    const label = () => (faceLock.textContent = `🎯 Face lock box: ${this.showFaceLock ? "on" : "off"}`);
+    label();
+    quick.append(faceLock);
     el.append(quick);
     this.recordEl = div("dbg-record hidden");
     el.append(this.recordEl);
@@ -389,6 +400,8 @@ function h3(text: string): HTMLElement {
   e.textContent = text;
   return e;
 }
+
+const FACE_LOCK_KEY = "poopbird.debug.faceLockBox.v1";
 
 function div(cls: string): HTMLDivElement {
   const e = document.createElement("div");

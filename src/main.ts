@@ -185,9 +185,11 @@ tracker.onFrame((frame) => {
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config);
   if (faceRecorder && !faceRecorder.push(frame)) finishFaceRecording();
-  placeCamBox($("cam-lock"), frame.box);
-  const crop = document.getElementById("cam-crop");
-  if (crop) placeCamBox(crop, frame.crop);
+  if (debug) {
+    // Debug panel toggle: outline the locked face and the crop detection runs on.
+    placeCamBox($("cam-lock"), debug.showFaceLock ? frame.box : null);
+    placeCamBox($("cam-crop"), debug.showFaceLock ? frame.crop : null);
+  }
   if (state === "playing" && game.phase === "playing" && game.stage === "city") {
     snapshot.offer(video, frame.box, strain.smoothed);
   }
