@@ -71,6 +71,10 @@ export const CONFIG_SPEC = {
     value: 1.5, min: 0.5, max: 5, step: 0.1, group: "Strain", label: "Default: relaxed read",
     hint: "s of relaxed face read on the strain check when the player skips calibration",
   },
+  slowDetectionRate: {
+    value: 8, min: 0, max: 30, step: 1, group: "Strain", label: "Slow tracking warning",
+    hint: "detections/s below which the strain check suggests touch or keyboard play (slow phones)",
+  },
   defaultStrainScale: {
     value: 1, min: 0.3, max: 2.5, step: 0.05, group: "Strain", label: "Default: strain scale",
     hint: "× the typical strain change of the default calibration (<1 = easier to strain); applies on the next relaxed read",

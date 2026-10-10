@@ -59,10 +59,10 @@ starts the face dataset collector (local credentials `local` /
 | Input | Action |
 | --- | --- |
 | Strain face (webcam) | City: charge; relax to poop |
-| Puff cheeks (webcam) | Ocean: inflate (more puff = rise, less = sink) |
+| Pufferfish face: puff cheeks, purse lips (webcam) | Ocean: inflate (more puff = rise, less = sink) |
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
-| **P** / Esc | Pause |
-| **M** | Mute |
+| **P** / Esc / ⏸ button | Pause |
+| **M** / 🔊 button | Mute (also silences vibration on phones) |
 | **R** | Play again from game over |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
@@ -74,6 +74,25 @@ starts the face dataset collector (local credentials `local` /
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration; close the ocean tutorial |
+
+### On phones and tablets
+
+Touch devices (`(hover: none) and (pointer: coarse)`, `body.touch`) get touch
+wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
+"or play with touch" replaces the keyboard mode.
+
+- **Landscape only.** Tapping Play goes fullscreen and locks the screen to
+  landscape where the browser allows it (Android Chrome). Where it can't (iOS),
+  a "Turn your phone sideways" screen covers the game while it's ready, running
+  or paused in portrait, and a run in progress pauses. Portrait is too narrow:
+  the playfield is always 600 units tall, so a portrait phone would only see
+  about a second ahead.
+- **Vibration** on releases, hits, accidents, crashes, zaps, bonks and pops
+  (Android; iOS has no vibration API).
+- Short landscape screens get compact cards: the webcam sits next to the
+  calibration card, and the game-over card puts its buttons first.
+- If face tracking runs below `slowDetectionRate` detections per second, the
+  strain check suggests playing with touch or the keyboard instead.
 
 ## How it plays
 
@@ -107,8 +126,7 @@ there's no countdown.
   bird) he takes your picture. Splat him first to smash the camera (×3).
   Miss, and you get a flash, a polaroid, and your photo on a roadside
   billboard as the next obstacle, always before the harbour (and on the
-  game-over screen). The run's first paparazzo walks slower and has a
-  "SPLAT HIM!" arrow.
+  game-over screen). The run's first paparazzo walks slower.
 - **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
   plants his feet and winds up his slingshot at you. A "!" pops over his head
   and a dotted arc reaches out toward the bird, ending in a crosshair. When
@@ -177,7 +195,9 @@ total distance.
   shows "Hold SPACE to puff up".
 - **Ocean tutorial.** A new player's first dive stops right after the bird
   becomes a fish: the world holds still and a "You're a pufferfish!" card
-  explains puffing, the meter, spikes and jellyfish, popping and the way out.
+  explains puffing (in face mode: cheeks puffed *and* lips pursed, since the
+  lips are what the camera picks up), the meter, spikes and jellyfish, popping
+  and the way out.
   The fish follows your puff meanwhile, so in keyboard mode you can try Space.
   **Got it** (or Enter) carries on, then the puff calibration if one is due.
   It shows once per browser; **⚙️ Options → "I'm new here: show tips"** in the

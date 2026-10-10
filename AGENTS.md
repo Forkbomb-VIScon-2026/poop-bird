@@ -39,13 +39,15 @@ When you finish implementing a change, leave a dev server running from your
 checkout and end your response with its URL, so the changed version can be
 opened right away.
 
-- Start it in the background (`npm run dev`, or `npm run dev:debug` when the
-  debug panel helps) so it outlives your turn.
+- Always use `npm run dev:debug`, never plain `npm run dev`: the person
+  you're working with tries the change there and needs the debug panel (`D`)
+  and its shortcuts.
+- Start it in the background so it outlives your turn.
 - Several agents run at once: pick a free port instead of 5173, and don't stop
   dev servers you didn't start.
 - Bind to localhost only. `vite.config.ts` sets `host: true`, which listens on
   all interfaces, so pass `--host 127.0.0.1` explicitly:
-  `npm run dev -- --host 127.0.0.1 --port <port>`.
+  `npm run dev:debug -- --host 127.0.0.1 --port <port>`.
 - Check that the URL actually responds before you post it.
 - Stop the dev server when you remove the checkout.
 
