@@ -1319,6 +1319,11 @@ export class Renderer {
     }
   }
 
+  /**
+   * The pufferfish: olive speckled back, spotted yellow flank, white belly. Deflated it's a
+   * slim torpedo; puffing rounds it into a ball with a sagging white belly. Fins and eye keep
+   * their size while the body inflates.
+   */
   private drawFish(game: Game): void {
     const ctx = this.ctx;
     const b = game.bird;
@@ -1330,7 +1335,10 @@ export class Renderer {
     const holding = !!game.transition && game.holdTransition;
     let r = game.bodyRadius;
     if (holding) r *= 1 + Math.sin(game.time * 5) * 0.06;
-    const puff = f.puff;
+    const puff = Math.min(1, Math.max(0, f.puff));
+    const shape = fishShape(r, puff);
+    const { L, H, B, q } = shape;
+    const S = BIRD_RADIUS; // fin and eye scale: these don't inflate
 
     ctx.save();
     let jx = 0;
@@ -1344,142 +1352,284 @@ export class Renderer {
     ctx.rotate(b.rot);
     const sy = b.stretch;
     ctx.scale(1 / Math.sqrt(sy), sy);
+    ctx.lineJoin = "round";
 
-    // Sandy yellow → strained red as the pop nears; pale while stunned.
-    let body: RGB = lerpColor([255, 214, 120], [239, 71, 111], Math.min(1, danger * 1.1));
-    if (warn && Math.sin(game.time * 40) > 0) body = [255, 120, 120];
-    if (stunned) body = [214, 214, 170];
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = OUTLINE;
-
-    // Spines (behind the body). Little nubs when puffed, real spikes when spiked.
-    const spineLen = r * (0.08 * Math.min(1, puff * 1.5) + 0.42 * f.spikes);
-    if (spineLen > 1 && !stunned) {
-      ctx.fillStyle = shade(body, -40);
-      const n = 18;
+    // Spines (behind the body): short prickles on the inflated belly, long spikes all round when spiked.
+    const prickle = r * 0.12 * Math.min(1, Math.max(0, (puff - 0.5) * 2.5));
+    const spineLen = r * 0.42 * f.spikes;
+    if (prickle + spineLen > 1 && !stunned) {
+      ctx.fillStyle = "#ece6cf";
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.5;
+      const n = 22;
+      const half = 1.4 + r * 0.05;
       for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2;
+        const a = -2.2 + (i / (n - 1)) * 4.4;
         const ca = Math.cos(a);
         const sa = Math.sin(a);
-        const half = 0.11;
+        const ry = sa < 0 ? H : B;
+        const x = ca * L * 0.9;
+        const y = sa * ry * 0.9;
+        const nl = Math.hypot(ca * ry, sa * L) || 1;
+        const nx = (ca * ry) / nl;
+        const ny = (sa * L) / nl;
+        const len = spineLen * (sa < 0 ? 0.8 : 1) + (sa > 0.25 ? prickle : 0);
+        if (len < 1) continue;
         ctx.beginPath();
-        ctx.moveTo(Math.cos(a - half) * r * 0.95, Math.sin(a - half) * r * 0.95);
-        ctx.lineTo(ca * (r + spineLen), sa * (r + spineLen));
-        ctx.lineTo(Math.cos(a + half) * r * 0.95, Math.sin(a + half) * r * 0.95);
+        ctx.moveTo(x - ny * half, y + nx * half);
+        ctx.lineTo(x + nx * (len + r * 0.1), y + ny * (len + r * 0.1));
+        ctx.lineTo(x + ny * half, y - nx * half);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
       }
     }
 
-    // Tail fin
+    // Tail, dorsal and anal fins (behind the body).
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2;
+    const finFill = stunned ? "#a9a283" : "#8f7e3c";
+    const finRay = "rgba(60,48,18,0.55)";
     const moving = Math.abs(b.vy) / 150;
-    const tailA = Math.sin(game.time * (10 + moving * 8)) * 0.35;
+    const tailA = dead ? 0 : Math.sin(game.time * (10 + moving * 8)) * 0.3;
     ctx.save();
-    ctx.translate(-r * 0.92, 0);
+    ctx.translate(-L + 1, 0);
     ctx.rotate(tailA);
-    ctx.fillStyle = shade(body, -25);
+    const tl = S * 0.8;
+    const th = S * 0.55;
+    ctx.fillStyle = finFill;
     ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(-r * 0.6, -r * 0.42);
-    ctx.quadraticCurveTo(-r * 0.45, 0, -r * 0.6, r * 0.42);
+    ctx.moveTo(1, -q * 0.9);
+    ctx.quadraticCurveTo(-tl * 0.5, -th * 0.7, -tl, -th);
+    ctx.quadraticCurveTo(-tl * 0.86, -th * 0.5, -tl * 0.95, 0);
+    ctx.quadraticCurveTo(-tl * 0.86, th * 0.5, -tl, th);
+    ctx.quadraticCurveTo(-tl * 0.5, th * 0.7, 1, q * 0.9);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.strokeStyle = finRay;
+    ctx.lineWidth = 1;
+    for (let i = -3; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-tl * 0.1, (i * q) / 5);
+      ctx.lineTo(-tl * 0.9, (i * th) / 3.6);
+      ctx.stroke();
+    }
     ctx.restore();
 
-    // Body
-    ctx.fillStyle = rgb(body);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 1.04, r, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // Belly
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
-    ctx.beginPath();
-    ctx.ellipse(r * 0.05, r * 0.42, r * 0.7, r * 0.42, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // Spots
-    ctx.fillStyle = shade(body, -55);
-    for (let i = 0; i < 5; i++) {
-      const sx = (-0.55 + i * 0.25) * r;
-      const syy = (-0.45 - (i % 2) * 0.15) * r;
+    const finFlap = dead ? 0 : Math.sin(game.time * 9) * 0.12;
+    for (const dir of [-1, 1]) {
+      // Dorsal (top) and anal (bottom) fins sit just ahead of the tail.
+      const base0 = fishEdgePoint(shape, dir, 0.42);
+      const base1 = fishEdgePoint(shape, dir, 0.72);
+      const fl = S * 0.42;
+      ctx.save();
+      ctx.translate(base1.x, base1.y);
+      ctx.rotate(finFlap * dir);
+      const bx0 = base0.x - base1.x;
+      const by0 = base0.y - base1.y;
+      ctx.fillStyle = finFill;
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(sx, syy, r * 0.07, 0, Math.PI * 2);
+      ctx.moveTo(bx0, by0 - dir * 2);
+      ctx.quadraticCurveTo(bx0 - fl * 0.2, by0 + dir * fl * 0.9, -fl * 0.75, dir * fl * 0.75);
+      ctx.quadraticCurveTo(-fl * 0.35, dir * fl * 0.25, 2, -dir * 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = finRay;
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 3; i++) {
+        const t = i / 4;
+        ctx.beginPath();
+        ctx.moveTo(bx0 * (1 - t), by0 * (1 - t));
+        ctx.lineTo(bx0 * (1 - t) - fl * (0.45 + t * 0.3), by0 * (1 - t) + dir * fl * (0.65 + t * 0.1));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Body, coloured in layers inside its own outline.
+    fishBodyPath(ctx, shape);
+    ctx.save();
+    ctx.clip();
+    const top = -H - 2;
+    const bottom = B + 2;
+    ctx.fillStyle = "#d4bd55"; // yellow flank band
+    ctx.fillRect(-L - 2, top, L * 2 + 4, bottom - top);
+
+    // Olive back: dips toward the mouth, rises toward the tail to bare the spotted band.
+    const back = ctx.createLinearGradient(0, -H, 0, H * 0.2);
+    back.addColorStop(0, "#463d22");
+    back.addColorStop(1, "#6f6634");
+    ctx.fillStyle = back;
+    ctx.beginPath();
+    ctx.moveTo(L + 2, H * 0.12 + B * 0.05);
+    ctx.bezierCurveTo(L * 0.4, B * 0.1, -L * 0.1, -H * 0.3, -L - 2, -q);
+    ctx.lineTo(-L - 2, top);
+    ctx.lineTo(L + 2, top);
+    ctx.closePath();
+    ctx.fill();
+
+    // Mottling on the back, then the big dark spots (band and rear back).
+    for (let i = 0; i < 46; i++) {
+      const u = rnd(i * 3.1 + 1) * 2 - 1;
+      const v = -rnd(i * 5.7 + 2) * 0.95;
+      ctx.fillStyle = i % 3 ? "rgba(214,204,140,0.35)" : "rgba(30,24,10,0.35)";
+      ctx.beginPath();
+      ctx.arc(u * L, v * H, 0.6 + rnd(i * 7.3 + 3) * (0.6 + r * 0.025), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "rgba(38,30,12,0.88)";
+    for (const [u, v, k] of FISH_SPOTS) {
+      const R = v < 0 ? H : B;
+      ctx.beginPath();
+      ctx.ellipse(u * L, v * R, k * (1 + L * 0.05), k * (1 + R * 0.075), 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Pectoral fin
-    ctx.save();
-    ctx.translate(-r * 0.05, r * 0.15);
-    ctx.rotate(-0.4 + Math.sin(game.time * 14) * 0.4);
-    ctx.fillStyle = shade(body, -20);
+    // White belly: grows up the flanks as the fish inflates.
+    const beltV = 0.42 - 0.26 * puff;
+    const belly = ctx.createLinearGradient(0, beltV * B, 0, B);
+    belly.addColorStop(0, "#f7f6ef");
+    belly.addColorStop(0.65, "#e6e5dc");
+    belly.addColorStop(1, "#b9b8ad");
+    ctx.fillStyle = belly;
     ctx.beginPath();
-    ctx.ellipse(-r * 0.22, 0, r * 0.3, r * 0.15, 0, 0, Math.PI * 2);
+    ctx.moveTo(L + 2, H * 0.12 + B * 0.18);
+    ctx.bezierCurveTo(L * 0.4, beltV * B, -L * 0.3, beltV * B, -L - 2, q * 0.7);
+    ctx.lineTo(-L - 2, bottom);
+    ctx.lineTo(L + 2, bottom);
+    ctx.closePath();
+    ctx.fill();
+    // Stretched belly skin
+    if (puff > 0.3) {
+      ctx.fillStyle = `rgba(150,148,135,${(puff - 0.3) * 0.5})`;
+      for (let i = 0; i < 24; i++) {
+        const u = rnd(i * 2.3 + 9) * 1.6 - 0.8;
+        const v = beltV + 0.1 + rnd(i * 4.1 + 5) * (0.85 - beltV);
+        ctx.beginPath();
+        ctx.arc(u * L, v * B, 0.8 + r * 0.02, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Roundness: light from above-front, shadow at the rim.
+    const shine = ctx.createRadialGradient(L * 0.15, -H * 0.45, 0, 0, 0, Math.max(L, B, H) * 1.15);
+    shine.addColorStop(0, "rgba(255,255,230,0.22)");
+    shine.addColorStop(0.5, "rgba(255,255,230,0)");
+    shine.addColorStop(1, "rgba(20,16,5,0.35)");
+    ctx.fillStyle = shine;
+    ctx.fillRect(-L - 2, top, L * 2 + 4, bottom - top);
+
+    // Strained red as the pop nears, flashing on the warning; washed out while stunned.
+    if (stunned) ctx.fillStyle = "rgba(205,205,190,0.55)";
+    else if (warn && Math.sin(game.time * 40) > 0) ctx.fillStyle = "rgba(255,90,90,0.55)";
+    else ctx.fillStyle = `rgba(239,71,111,${Math.min(0.55, danger * 0.6)})`;
+    ctx.fillRect(-L - 2, top, L * 2 + 4, bottom - top);
+    ctx.restore();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    fishBodyPath(ctx, shape);
+    ctx.stroke();
+
+    // Pectoral fin, fluttering, behind the eye.
+    ctx.save();
+    ctx.translate(L * 0.28, H * 0.05);
+    ctx.rotate(-0.15 + (dead ? 0 : Math.sin(game.time * 14) * 0.35));
+    const pw = S * 0.55;
+    const ph = S * 0.5;
+    ctx.fillStyle = finFill;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -ph * 0.3);
+    ctx.quadraticCurveTo(-pw * 0.45, -ph * 0.85, -pw, -ph * 0.5);
+    ctx.quadraticCurveTo(-pw * 0.78, -ph * 0.1, -pw * 0.92, ph * 0.12);
+    ctx.quadraticCurveTo(-pw * 0.55, ph * 0.75, 0, ph * 0.3);
+    ctx.quadraticCurveTo(pw * 0.12, 0, 0, -ph * 0.3);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.strokeStyle = finRay;
+    ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-pw * 0.05, i * ph * 0.08);
+      ctx.lineTo(-pw * 0.85, i * ph * 0.2 - ph * 0.12);
+      ctx.stroke();
+    }
     ctx.restore();
 
-    // Eye
-    const ex = r * 0.45;
-    const ey = -r * 0.22;
-    const er = Math.max(6, Math.min(12, r * 0.3));
+    // Eye: green iris in a gold ring, high on the head.
+    const ex = L * 0.56;
+    const ey = -H * 0.5;
+    const er = S * 0.2 + r * 0.05;
     ctx.strokeStyle = OUTLINE;
     if (dead || stunned) {
       ctx.fillStyle = OUTLINE;
-      drawX(ctx, ex, ey, er * 0.6);
+      drawX(ctx, ex, ey, er * 0.8);
     } else {
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = "#d9c45a";
       ctx.beginPath();
       ctx.arc(ex, ey, er, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.fillStyle = OUTLINE;
-      const pr = warn ? er * 0.25 : er * 0.48;
+      const iris = ctx.createRadialGradient(ex, ey, 0, ex, ey, er * 0.78);
+      iris.addColorStop(0, "#9cc94a");
+      iris.addColorStop(1, "#4d7a26");
+      ctx.fillStyle = iris;
+      ctx.beginPath();
+      ctx.arc(ex, ey, er * 0.78, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#111";
+      const pr = warn ? er * 0.2 : er * 0.42;
       const look = Math.max(-1, Math.min(1, b.vy / 200));
       ctx.beginPath();
-      ctx.arc(ex + er * 0.25, ey + look * er * 0.3, pr, 0, Math.PI * 2);
+      ctx.arc(ex + er * 0.15, ey + look * er * 0.25, pr, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#fff";
       ctx.beginPath();
-      ctx.arc(ex + er * 0.05, ey - er * 0.3, er * 0.18, 0, Math.PI * 2);
+      ctx.arc(ex - er * 0.15, ey - er * 0.3, er * 0.18, 0, Math.PI * 2);
       ctx.fill();
       // Worried brow when spiked
       if (f.spikes > 0.5) {
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 2.5;
         ctx.lineCap = "round";
         ctx.beginPath();
-        ctx.moveTo(ex - er, ey - er * 1.3);
-        ctx.lineTo(ex + er * 0.8, ey - er * (1.3 + danger * 0.6));
+        ctx.moveTo(ex - er * 1.1, ey - er * 1.25);
+        ctx.lineTo(ex + er * 0.9, ey - er * (1.25 + danger * 0.6));
         ctx.stroke();
         ctx.lineCap = "butt";
       }
     }
 
-    // Mouth: a puckered "o" when puffed, a little smile when deflated.
+    // Mouth: small pursed lips at the blunt snout; an "o" when puffed hard.
+    const mx = L;
+    const my = shape.noseY;
+    const lip = S * 0.15;
     ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2.5;
-    const mx = r * 0.93;
-    const my = r * 0.18;
-    if (puff > 0.45 && !stunned && !dead) {
-      ctx.fillStyle = "#d62839";
+    ctx.lineWidth = 2;
+    ctx.fillStyle = "#e3d3a2";
+    ctx.beginPath();
+    ctx.ellipse(mx, my, lip, lip * 1.05, 0, -Math.PI / 2, Math.PI / 2);
+    ctx.fill();
+    ctx.stroke();
+    if (puff > 0.6 && !stunned && !dead) {
+      ctx.fillStyle = "#5a1f1f";
       ctx.beginPath();
-      ctx.ellipse(mx, my, r * 0.09, r * 0.12, 0, 0, Math.PI * 2);
+      ctx.ellipse(mx + lip * 0.45, my, lip * 0.3, lip * 0.45, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.stroke();
     } else {
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(mx - r * 0.12, my - r * 0.04, r * 0.12, 0.2, 1.4);
+      ctx.moveTo(mx + lip, my);
+      ctx.lineTo(mx + lip * 0.3, my);
       ctx.stroke();
     }
-    // Cheek blush
-    if (puff > 0.55 && !stunned) {
-      ctx.fillStyle = `rgba(214,40,57,${Math.min(0.6, (puff - 0.55) * 1.5 + danger * 0.3)})`;
-      ctx.beginPath();
-      ctx.ellipse(r * 0.55, r * 0.22, r * 0.16, r * 0.09, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.lineJoin = "miter";
     ctx.restore();
 
     // Spike-out flash ring
@@ -1879,6 +2029,58 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 type RGB = [number, number, number];
+
+// --- pufferfish body -----------------------------------------------------------
+
+interface FishShape {
+  /** Half length, nose to tail root. */
+  L: number;
+  /** Height above the midline (back). */
+  H: number;
+  /** Depth below the midline (belly). */
+  B: number;
+  /** Half height of the tail root. */
+  q: number;
+  /** Mouth height. */
+  noseY: number;
+}
+
+/** Slim torpedo at puff 0, ball with a sagging belly at puff 1 (r already grows with puff). */
+function fishShape(r: number, puff: number): FishShape {
+  const lerp = (a: number, b: number) => a + (b - a) * puff;
+  const H = r * lerp(0.74, 0.9);
+  return { L: r * lerp(1.42, 1.06), H, B: r * lerp(0.7, 1.08), q: BIRD_RADIUS * 0.24, noseY: H * 0.12 };
+}
+
+function fishBodyPath(ctx: CanvasRenderingContext2D, s: FishShape): void {
+  const { L, H, B, q, noseY } = s;
+  ctx.beginPath();
+  ctx.moveTo(L, noseY - B * 0.12);
+  ctx.bezierCurveTo(L, -H * 0.7, L * 0.5, -H, L * 0.05, -H);
+  ctx.bezierCurveTo(-L * 0.5, -H, -L * 0.8, -q * 1.4, -L, -q);
+  ctx.lineTo(-L, q);
+  ctx.bezierCurveTo(-L * 0.8, q * 1.4, -L * 0.5, B, L * 0.05, B);
+  ctx.bezierCurveTo(L * 0.55, B, L, B * 0.65, L, noseY + B * 0.12);
+  ctx.closePath();
+}
+
+/** A point on the rear back (dir −1) or rear belly (dir 1) outline, t from the crown (0) to the tail root (1). */
+function fishEdgePoint(s: FishShape, dir: number, t: number): { x: number; y: number } {
+  const { L, q } = s;
+  const R = dir < 0 ? s.H : s.B;
+  const u = 1 - t;
+  const bez = (p0: number, p1: number, p2: number, p3: number) =>
+    u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
+  return { x: bez(L * 0.05, -L * 0.5, -L * 0.8, -L), y: dir * bez(R, R, q * 1.4, q) };
+}
+
+/** Dark spots as [u, v, size]: u along the body (−1 tail … 1 nose), v up (−) or down (+) as a fraction of H or B. */
+const FISH_SPOTS: [number, number, number][] = [
+  [-0.05, 0.02, 1.1], [0.15, -0.1, 0.9], [-0.28, -0.08, 1.2], [-0.5, 0.0, 1.0], [-0.68, -0.12, 0.85],
+  [-0.84, 0.02, 0.65], [-0.2, 0.2, 0.9], [-0.42, 0.22, 0.8], [-0.62, 0.18, 0.7], [0.08, 0.2, 0.75],
+  [-0.35, -0.42, 0.9], [-0.6, -0.36, 0.8], [-0.1, -0.5, 0.8], [0.18, -0.55, 0.65], [-0.8, -0.3, 0.55],
+  [0.38, -0.25, 0.55], [0.3, -0.72, 0.55],
+];
 
 function lerpColor(a: RGB, b: RGB, t: number): RGB {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
