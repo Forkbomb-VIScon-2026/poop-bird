@@ -206,8 +206,13 @@ webcam), and the wiring in `src/main.ts`.
    only counts if its centre is within `faceLockMaxJump` (0.8) face sizes of
    the locked one and its size is within ±50%; anyone else (say, right behind
    the player) counts as no face. When the locked face is missing, the crop
-   widens to cover that radius, and only after `faceRelockSeconds` (1 s) does
-   it search the full frame again. **N** masks the locked face out and locks onto another one. The
+   widens to cover that radius, and only after `faceRelockSeconds` (2 s) does
+   it search the full frame again; that search finds every face (painting each one found over to find
+   the next, up to 3) and locks the biggest, since MediaPipe's own pick is
+   not necessarily the face in front. **N** masks the locked face out and
+   locks onto another one. Whenever the lock moves to a different face, the
+   smoothed strain and puff reset and any calibration step that is collecting
+   samples starts over, so two people's samples never mix. The
    preview outlines the locked face (debug builds also show the crop dashed).
    Detecting several faces instead would cost one landmark-model run per
    visible face (about 2.5× with three people); the crop costs nothing extra.

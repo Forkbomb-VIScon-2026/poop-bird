@@ -54,7 +54,7 @@ export const CONFIG_SPEC = {
     value: 0.8, min: 0.2, max: 3, step: 0.1, group: "Face lock", label: "Max jump",
     hint: "face sizes the locked face may move between detections; a face farther away (or ±50% in size) is someone else",
   },
-  faceRelockSeconds: { value: 1.0, min: 0.2, max: 5, step: 0.1, group: "Face lock", label: "Relock after", hint: "s without the locked face before searching the full frame again" },
+  faceRelockSeconds: { value: 2.0, min: 0.2, max: 5, step: 0.1, group: "Face lock", label: "Relock after", hint: "s without the locked face before searching the full frame again" },
 
   // --- Strain detection ----------------------------------------------------
   strainOn: { value: 0.45, min: 0.05, max: 0.95, step: 0.01, group: "Strain", label: "On threshold" },

@@ -43,6 +43,12 @@ export interface FaceFrame {
   box: FaceBox | null;
   /** The 478 normalized landmarks (for the debug recorder). */
   landmarks: readonly LandmarkPoint[] | null;
+  /**
+   * The lock just moved to a newly picked face (N, or a full-frame search
+   * after losing the previous one): these features don't continue the
+   * previous frames', so smoothed signals and sample collection start over.
+   */
+  newFace: boolean;
   /** Region the detection ran on (normalized, not mirrored); null = the full frame. */
   crop: FaceBox | null;
   /** performance.now() of the detection. */
@@ -82,6 +88,8 @@ export class FaceTracker {
   /** What the previous detection ran on; MediaPipe's tracking only carries over within one kind. */
   private lastInput: "full" | "crop" | "mask" | null = null;
   private switchRequest: ((found: boolean) => void) | null = null;
+  /** Whether a face was locked before, since the camera started (so the next pick is a new face). */
+  private hadLock = false;
   private cropCanvas: HTMLCanvasElement | null = null;
   private maskCanvas: HTMLCanvasElement | null = null;
 
@@ -114,6 +122,7 @@ export class FaceTracker {
   resetLock(): void {
     this.lock = null;
     this.lost = false;
+    this.hadLock = false;
   }
 
   /**
@@ -236,16 +245,20 @@ export class FaceTracker {
 
     let hit: Hit | null = null;
     let crop: FaceBox | null = null;
+    // A face that doesn't continue the lock: picked by N, or by the full-frame search.
+    let picked = false;
     if (this.switchRequest) {
       const resolve = this.switchRequest;
       this.switchRequest = null;
       hit = this.lock ? this.detectMasked([this.lock.box], W, H) : null;
-      resolve(hit !== null);
+      picked = hit !== null;
+      resolve(picked);
     }
     if (!hit) {
       const lock = this.lock;
       const region = lock ? this.cropRegion(lock.box, W, H) : null;
       hit = region ? this.detectCrop(region, W, H) : this.acquire(W, H);
+      picked = !region && hit !== null;
       if (region) crop = { x: region.x / W, y: region.y / H, w: region.side / W, h: region.side / H };
       // A face in the crop that isn't where the locked one was is someone else
       // (e.g. right behind the player). MediaPipe would keep following them,
@@ -262,9 +275,12 @@ export class FaceTracker {
     let frame: FaceFrame;
     if (hit) {
       const box = boundingBox(hit.landmarks);
+      const newFace = picked && this.hadLock;
       this.lock = { box, seen: now };
       this.lost = false;
+      this.hadLock = true;
       frame = {
+        newFace,
         features: extractFeatures(hit.blendshapes, faceGeometry(hit.landmarks, W / H)),
         blendshapes: hit.blendshapes,
         box,
@@ -278,9 +294,12 @@ export class FaceTracker {
       // another face straight away.
       if (this.lock) {
         this.lost = true;
-        if (now - this.lock.seen > config.faceRelockSeconds * 1000) this.resetLock();
+        if (now - this.lock.seen > config.faceRelockSeconds * 1000) {
+          this.lock = null;
+          this.lost = false;
+        }
       }
-      frame = { features: null, blendshapes: {}, box: null, landmarks: null, crop, time: now };
+      frame = { features: null, blendshapes: {}, box: null, landmarks: null, newFace: false, crop, time: now };
     }
     for (const fn of this.listeners) fn(frame);
   }

@@ -111,6 +111,8 @@ let puffCalibrationTried = false;
 let lastPuffAttempt: { cal: Calibration; quality: ReturnType<typeof assessPuffCalibration> } | null = null;
 /** Flow token of the puff calibration in progress, if any. */
 let activePuffCalibration: number | null = null;
+/** Set when a different face got locked mid puff calibration: its phase starts over. */
+let restartPuffPhase = false;
 /** A calibration that failed the quality check; used only if the player picks "Play anyway". */
 let rejectedCalibration: Calibration | null = null;
 /** Whether the calibration result screen is showing a failed calibration. */
@@ -173,6 +175,7 @@ let calibSamples: { t: number; f: FeatureVector }[] | null = null;
 let calibFrames: number[] | null = null;
 
 tracker.onFrame((frame) => {
+  if (frame.newFace) onNewFace();
   const dt = lastFaceTime ? Math.min(0.25, (frame.time - lastFaceTime) / 1000) : 1 / 30;
   lastFaceTime = frame.time;
   lastFace = frame;
@@ -189,6 +192,20 @@ tracker.onFrame((frame) => {
     snapshot.offer(video, frame.box, strain.smoothed);
   }
 });
+
+/**
+ * The tracker locked onto a different face: drop the smoothed signals and
+ * restart any calibration step that is collecting samples, so two people's
+ * samples never mix.
+ */
+function onNewFace(): void {
+  strain = initialStrainState();
+  puffSignal = initialPuffState();
+  if (state === "calibrating") void runCalibration();
+  // The default calibration was fitted to the previous face's relaxed read.
+  else if (state === "calibrated" && calibrationIsDefault) void runDefaultCalibration();
+  if (activePuffCalibration !== null) restartPuffPhase = true;
+}
 
 /**
  * Positions an overlay over the webcam preview at a normalized video box,
@@ -678,7 +695,13 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
   const total = config.oceanCalibrationSeconds * 1000;
   const settle = config.calibrationSettle * 1000;
   let start = -1;
+  restartPuffPhase = false;
   for (;;) {
+    if (restartPuffPhase) {
+      // A different face got locked: start the puff over for them.
+      restartPuffPhase = false;
+      start = -1;
+    }
     if (token !== flow) {
       calibSamples = null;
       calibFrames = null;
