@@ -47,6 +47,8 @@ export const CONFIG_SPEC = {
   sweetSpotWindow: { value: 0.3, min: 0, max: 2, step: 0.05, group: "Charge", label: "Sweet-spot window", hint: "s right before the accident that pays a bonus" },
   sweetSpotMultiplier: { value: 1.35, min: 1, max: 3, step: 0.05, group: "Charge", label: "Sweet-spot bonus", hint: "× push" },
   stunTime: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Charge", label: "Accident stun", hint: "s tumbling without push" },
+  poopSoundMiddle: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Charge", label: "Middle poop sound", hint: "charge from which a release plays the middle sample (below: weak)" },
+  poopSoundLarge: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Charge", label: "Large poop sound", hint: "charge from which a release plays the large sample" },
 
   // --- Face lock ------------------------------------------------------------
   faceCropScale: { value: 2.2, min: 1.3, max: 4, step: 0.1, group: "Face lock", label: "Crop size", hint: "× the locked face box; detection only sees this square around the player" },

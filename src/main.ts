@@ -3,7 +3,7 @@
 
 import "./style.css";
 import { config } from "./config";
-import { Sound } from "./audio";
+import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
@@ -1205,11 +1205,18 @@ function takePhoto(photoId: number): void {
 /** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
 let weddingFace: Photo | null = null;
 
+/** Which poop sample a release at this charge plays. */
+function poopSize(charge: number): PoopSize {
+  if (charge >= config.poopSoundLarge) return "large";
+  if (charge >= config.poopSoundMiddle) return "middle";
+  return "weak";
+}
+
 function handleGameEvents(): void {
   for (const e of game.events) {
     switch (e.type) {
       case "release":
-        sound.release(e.charge, e.sweet);
+        sound.release(poopSize(e.charge), e.charge, e.sweet);
         buzz(e.sweet ? [15, 40, 25] : Math.round(8 + 20 * e.charge));
         break;
       case "accident":
