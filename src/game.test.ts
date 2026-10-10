@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { config, ramp } from "./config";
 import {
-  ANCHOR_H, ANCHOR_RIP_Y, ANCHOR_W, BIRD_RADIUS, BOAT_DRAFT, GROUND_Y, Game, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN,
-  obstacleRects, type Obstacle,
+  ANCHOR_H, ANCHOR_RIP_Y, ANCHOR_W, BIRD_RADIUS, BOAT_DRAFT, GROUND_Y, Game, PERCH_Y, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX,
+  WRECK_MAST_MIN, obstacleRects, type Obstacle,
 } from "./game";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
@@ -358,5 +358,54 @@ describe("attract mode", () => {
     expect(game.demo).toBe(false);
     expect(game.targets).toHaveLength(0);
     expect(game.score).toBe(0);
+  });
+});
+
+describe("practice perch", () => {
+  /** Strains for `strainS`, then relaxes for `relaxS`, on the perch. */
+  function practise(game: Game, strainS: number, relaxS: number): void {
+    game.straining = true;
+    for (let t = 0; t < strainS; t += 1 / 120) game.stepPerch(1 / 120);
+    game.straining = false;
+    for (let t = 0; t < relaxS; t += 1 / 120) game.stepPerch(1 / 120);
+  }
+
+  it("hops off the lamp and lands back on it", () => {
+    const game = new Game(1000);
+    game.perch();
+    practise(game, 0.8, 3);
+    expect(game.events.some((e) => e.type === "release")).toBe(true);
+    expect(game.bird.y).toBe(PERCH_Y);
+    expect(game.phase).toBe("playing");
+    expect(game.speed).toBe(0);
+  });
+
+  it("survives an accident, and the practice doesn't count once the run starts", () => {
+    const game = new Game(1000);
+    game.perch();
+    practise(game, 4, 3);
+    expect(game.accidents).toBe(1);
+    expect(game.phase).toBe("playing");
+    game.leavePerch();
+    expect(game.score).toBe(0);
+    expect(game.accidents).toBe(0);
+    expect(game.targetsHit).toBe(0);
+  });
+
+  it("leaves the lamp behind once the run scrolls", () => {
+    const game = new Game(1000);
+    game.perch();
+    game.leavePerch();
+    for (let i = 0; i < 60 * 3; i++) game.step(1 / 60);
+    expect(game.perchX === null || game.perchX < game.bird.x - 100).toBe(true);
+  });
+});
+
+describe("practice perch on a resize", () => {
+  it("keeps the lamp under the bird when the screen widens", () => {
+    const game = new Game(600);
+    game.perch();
+    game.resize(1400);
+    expect(game.perchX).toBe(game.bird.x);
   });
 });

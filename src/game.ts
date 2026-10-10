@@ -60,11 +60,21 @@ export const VIEW_H = 600;
 export const GROUND_Y = 520;
 export const BIRD_RADIUS = 22;
 /** × the target spawn rate in attract mode, so there's always someone to hit. */
-const DEMO_SPAWN_SCALE = 2.2;
+const DEMO_SPAWN_SCALE = 3;
 /** Top fraction of the gap-centre range that makes a tall building (see pickGapCenter). */
 const TALL_FRACTION = 0.4;
 /** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
 const DEMO_MAX_RISE = 300;
+/** The practice perch (a street lamp) the bird sits on before a run: the bird's y when perched. */
+export const PERCH_Y = 270;
+/** Fastest climb (px/s) off the practice perch, so a practice poop is a hop, not a launch. */
+const PERCH_MAX_RISE = 280;
+/** Attract mode: how far (screen vx, px/s) off a poop's natural fall the autopilot still lets go for a target. */
+const DEMO_RELEASE_SLACK = 25;
+/** Attract mode: the most a falling poop gets nudged (px/s) toward its target. */
+const DEMO_MAX_NUDGE = 40;
+/** How fast a poop loses its forward world speed (1/s). */
+const POOP_DRAG = 0.6;
 /** Collision radius is a bit smaller than the drawn bird, to feel fair. */
 const BIRD_HIT_RADIUS = 16;
 /** Ocean: the water surface (a soft ceiling). The sea floor is GROUND_Y. */
@@ -827,6 +837,14 @@ export class Game {
    */
   demo = false;
 
+  /**
+   * Before a run: x of the street lamp the bird sits on to practise (null =
+   * no lamp). Once the run starts, the lamp scrolls away with the street.
+   */
+  perchX: number | null = null;
+  /** The bird still sits on the perch (the run hasn't started). */
+  private perched = false;
+
   constructor(width: number) {
     this.resize(width);
     this.reset();
@@ -834,11 +852,16 @@ export class Game {
 
   resize(width: number): void {
     this.width = width;
+    const x = this.bird.x;
     this.bird.x = Math.round(Math.min(320, width * 0.28));
+    // Still on the perch (e.g. a phone turned to landscape): the lamp moves with the bird.
+    if (this.perched && this.perchX !== null) this.perchX += this.bird.x - x;
   }
 
   reset(): void {
     this.demo = false;
+    this.perchX = null;
+    this.perched = false;
     this.phase = "playing";
     this.time = 0;
     this.runTime = 0;
@@ -1019,9 +1042,11 @@ export class Game {
     this.step(dt);
     // A long strain would send it to the top of the screen: hop, don't launch.
     this.bird.vy = Math.max(this.bird.vy, -DEMO_MAX_RISE);
+    // The autopilot lets go when the poop's natural fall lands on someone; it only
+    // gets a slight nudge for what it can't foresee (people stopping or turning).
     for (const p of this.poops) {
-      const aim = this.aim(p.x, p.y, p.vy, p.vx, 700);
-      if (aim) p.vx += (aim.vx - p.vx) * Math.min(1, dt * 10);
+      const aim = this.aim(p.x, p.y, p.vy, p.vx, DEMO_MAX_NUDGE);
+      if (aim) p.vx += (aim.vx - p.vx) * Math.min(1, dt * 3);
     }
     // Nobody listens on the start screen.
     this.events = [];
@@ -1033,7 +1058,7 @@ export class Game {
     const c = this.charge.charge;
     if (c > 0) {
       const vy = 140 + c * 260 + Math.max(0, b.vy * 0.2); // as in release()
-      const onTarget = c >= 0.3 && this.aim(b.x - 4, b.y + BIRD_RADIUS * 0.8, vy, 0, 120) !== null;
+      const onTarget = c >= 0.15 && this.aim(b.x - 4, b.y + BIRD_RADIUS * 0.8, vy, 0, DEMO_RELEASE_SLACK) !== null;
       return !onTarget && this.charge.fullHold < 0.85 && b.y < 390;
     }
     return b.y > 210 && b.vy > 0;
@@ -1042,16 +1067,20 @@ export class Game {
   /**
    * The target a poop at (x, y) falling at vy would hit with the least change
    * to its screen vx, and the vx that gets it there; null if that change is
-   * more than `maxChange`.
+   * more than `maxChange`. Follows updatePoops(): the poop's world vx decays
+   * with POOP_DRAG, so its screen vx drifts from vx toward -speed.
    */
   private aim(x: number, y: number, vy: number, vx: number, maxChange: number): { target: Target; vx: number } | null {
     const g = config.poopGravity;
+    const s = this.speed;
     let best: { target: Target; vx: number } | null = null;
     for (const t of this.targets) {
       const dy = t.y - t.h * 0.5 - y;
       if (dy <= 0) continue;
       const time = (-vy + Math.sqrt(vy * vy + 2 * g * dy)) / g;
-      const need = (t.x + (t.speed - this.speed) * time - x) / time;
+      // Screen x after `time`: x + (vx + s)(1 - e^(-k·time))/k - s·time; the target is at t.x + (t.speed - s)·time.
+      const glide = (1 - Math.exp(-POOP_DRAG * time)) / POOP_DRAG;
+      const need = (t.x + t.speed * time - x) / glide - s;
       if (Math.abs(need - vx) > maxChange) continue;
       if (!best || Math.abs(need - vx) < Math.abs(best.vx - vx)) best = { target: t, vx: need };
     }
@@ -1065,6 +1094,51 @@ export class Game {
     this.bird.y = 240 + Math.sin(this.time * 2.5) * 12;
     this.bird.rot = Math.sin(this.time * 2.5 + 1) * 0.08;
     this.updateEffects(dt, 0);
+  }
+
+  /** Sits the bird on the practice perch. Call after reset(). */
+  perch(): void {
+    const b = this.bird;
+    this.perched = true;
+    this.perchX = b.x;
+    Object.assign(b, { y: PERCH_Y, vy: 0, rot: 0 });
+  }
+
+  /**
+   * One practice step on the perch: `straining` charges as in a run and a
+   * release poops and hops the bird, but the world holds still and the bird
+   * lands back on the lamp. Nothing spawns and nothing can hurt it.
+   */
+  stepPerch(dt: number): void {
+    this.time += dt;
+    this.speed = 0;
+    this.updateCharge(dt);
+    const b = this.bird;
+    b.vy = Math.max(b.vy, -PERCH_MAX_RISE);
+    const charging = this.charge.charge > 0 && !this.stunned;
+    b.vy = Math.min(b.vy + config.gravity * (charging ? config.chargeGravityScale : 1) * dt, config.maxFallSpeed);
+    b.y += b.vy * dt;
+    if (b.y >= PERCH_Y) {
+      b.y = PERCH_Y;
+      if (b.vy > 0) b.vy = 0;
+    }
+    this.animateBird(dt);
+    b.rot += ((this.stunned ? 0 : Math.max(-0.5, Math.min(0.7, b.vy / 700))) - b.rot) * Math.min(1, dt * 10);
+    for (const t of this.targets) t.hitFlash = Math.max(0, t.hitFlash - dt);
+    this.updatePoops(dt, 0);
+    this.updateEffects(dt, 0);
+  }
+
+  /** The run starts: practice hits and mishaps don't count. The lamp stays behind. */
+  leavePerch(): void {
+    this.perched = false;
+    this.bonus = 0;
+    this.combo = 0;
+    this.bestCombo = 0;
+    this.targetsHit = 0;
+    this.poopsDropped = 0;
+    this.accidents = 0;
+    this.floaters = [];
   }
 
   step(dt: number): void {
@@ -1095,6 +1169,10 @@ export class Game {
     if (alive) {
       this.distance += speed * dt;
       this.stageTime += dt;
+    }
+    if (this.perchX !== null) {
+      this.perchX -= speed * dt;
+      if (this.perchX < -100) this.perchX = null;
     }
 
     if (ocean) {
@@ -1213,13 +1291,7 @@ export class Game {
       if (b.vy < 0) b.vy = 0;
     }
 
-    // Squash & stretch spring.
-    const k = 220;
-    const damp = 14;
-    b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
-    b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
-    b.relief = Math.max(0, b.relief - dt);
-    b.flap = Math.max(0, b.flap - dt);
+    this.animateBird(dt);
 
     if (this.stunned) b.rot += dt * 14;
     else if (this.phase === "dying") b.rot += (1.4 - b.rot) * Math.min(1, dt * 6);
@@ -1253,6 +1325,17 @@ export class Game {
         gravity: -40, world: true,
       });
     }
+  }
+
+  /** Squash & stretch spring, and the relief and flap timers. */
+  private animateBird(dt: number): void {
+    const b = this.bird;
+    const k = 220;
+    const damp = 14;
+    b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
+    b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
+    b.relief = Math.max(0, b.relief - dt);
+    b.flap = Math.max(0, b.flap - dt);
   }
 
   private crash(cause: "crash" | "zap" = "crash"): void {
@@ -3479,11 +3562,10 @@ export class Game {
   }
 
   private updatePoops(dt: number, speed: number): void {
-    const drag = 0.6;
     const keep: Poop[] = [];
     for (const p of this.poops) {
       // World velocity decays from `speed` toward 0 → screen vx drifts back.
-      const worldVx = (p.vx + speed) * Math.exp(-drag * dt);
+      const worldVx = (p.vx + speed) * Math.exp(-POOP_DRAG * dt);
       p.vx = worldVx - speed;
       p.vy += config.poopGravity * dt;
       p.x += p.vx * dt;

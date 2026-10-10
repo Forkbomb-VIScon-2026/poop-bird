@@ -7,7 +7,7 @@ import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
-import { Game, wireAt } from "./game";
+import { BIRD_RADIUS, Game, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
@@ -74,6 +74,8 @@ const screens = {
 };
 const hud = $("hud");
 const cam = $("cam");
+/** Where #cam lives in the DOM when it isn't docked beside the bird on the perch. */
+const camHome = { parent: cam.parentElement!, next: cam.nextElementSibling };
 const rotateScreen = $("screen-rotate");
 
 /** A phone or tablet: no hover, coarse pointer. Swaps key hints for touch wording (CSS `.touch`). */
@@ -86,6 +88,7 @@ function show(el: HTMLElement, visible: boolean): void {
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
+  dockCam(name === "ready" && mode === "face");
   // Game over gets longer: players often die mid-press, and shouldn't skip their score.
   armButtonKeys(name === "gameover" ? 800 : 300);
 }
@@ -232,7 +235,7 @@ function onNewFace(): void {
   puffSignal = initialPuffState();
   if (state === "calibrating") void runCalibration();
   // The default calibration was fitted to the previous face's relaxed read.
-  else if (state === "calibrated" && calibrationIsDefault) void runDefaultCalibration();
+  else if (state === "ready" && calibrationIsDefault) void runDefaultCalibration();
   if (activePuffCalibration !== null) abortPuffCalibration = true;
 }
 
@@ -271,52 +274,26 @@ function openDatasetRecorder(): void {
 function updateStrainBars(): void {
   const value = faceFresh() ? strain.smoothed : 0;
   const active = straining();
-  for (const prefix of ["cam", "calib"]) {
-    const fill = $(`${prefix}-strain-fill`);
-    fill.style.width = `${value * 100}%`;
-    fill.classList.toggle("active", active);
-    $(`${prefix}-strain-on`).style.left = `${config.strainOn * 100}%`;
-    $(`${prefix}-strain-off`).style.left = `${config.strainOff * 100}%`;
-  }
+  const fill = $("cam-strain-fill");
+  fill.style.width = `${value * 100}%`;
+  fill.classList.toggle("active", active);
+  $("cam-strain-on").style.left = `${config.strainOn * 100}%`;
+  $("cam-strain-off").style.left = `${config.strainOff * 100}%`;
   // Short grace period so a single dropped frame doesn't flash the warning.
   const lost = mode === "face" && tracker.ready && performance.now() - lastFaceSeen > 300;
   show($("cam-noface"), lost);
-  if (state === "calibrated") {
-    updateStrainCheck(value, active);
-    updateMeterBird(value, active);
-    // Give the detector a moment to warm up before judging its speed.
-    const slow = performance.now() - strainCheckSince > 3000 && tracker.detectionRate < config.slowDetectionRate;
-    show($("calib-slow"), slow);
-  }
+  if (state === "ready" && mode === "face") updateGauge(value, active);
 }
 
-/** When the strain check opened (for the slow-tracking warning). */
-let strainCheckSince = 0;
-
-/** The "try it" checklist on the calibration result: strain once, then relax once. */
-const strainCheck = { strained: false, relaxed: false };
-
-function updateStrainCheck(value: number, active: boolean): void {
-  if (active) strainCheck.strained = true;
-  else if (strainCheck.strained && value < config.strainOff) strainCheck.relaxed = true;
-  $("check-strain").classList.toggle("done", strainCheck.strained);
-  $("check-relax").classList.toggle("done", strainCheck.relaxed);
-  $("meter-strained").classList.toggle("lit", active);
-  $("meter-relaxed").classList.toggle("lit", !active && value < config.strainOff);
-  $("btn-calib-play").classList.toggle("pulse", strainCheck.strained && strainCheck.relaxed);
-}
-
-/** Until when the meter bird looks relieved, after the player lets go of a strain (performance.now() ms). */
-let meterBirdReliefUntil = 0;
-let meterBirdWasActive = false;
-
-/** The strain check's bird: rides the meter's fill and strains as hard as the player does. */
-function updateMeterBird(value: number, active: boolean): void {
-  const now = performance.now();
-  if (meterBirdWasActive && !active) meterBirdReliefUntil = now + 900;
-  meterBirdWasActive = active;
-  const relief = !active && now < meterBirdReliefUntil;
-  renderer.drawMeterBird($<HTMLCanvasElement>("calib-bird"), value, relief ? 0 : value, relief, now / 1000);
+/** The perch's upright strain gauge beside the webcam: fills with the face's strain, 💩 line = strainOn. */
+function updateGauge(value: number, active: boolean): void {
+  const fill = $("gauge-fill");
+  fill.style.height = `${Math.min(1, value) * 100}%`;
+  fill.classList.toggle("active", active);
+  $("gauge-line").style.bottom = `${config.strainOn * 100}%`;
+  const gauge = fill.closest(".gauge")!;
+  gauge.classList.toggle("strained", active);
+  gauge.classList.toggle("relaxed", !active && value < config.strainOff);
 }
 
 async function startFaceMode(forceCalibrate = false): Promise<void> {
@@ -353,7 +330,7 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   tracker.start();
   show(cam, true);
   if (forceCalibrate) await runCalibration();
-  else if (calibration && !calibrationIsDefault) showCalibrationResult("saved");
+  else if (calibration && !calibrationIsDefault) startReady();
   else await runDefaultCalibration();
 }
 
@@ -418,24 +395,31 @@ async function runCalibration(): Promise<void> {
     rejectedCalibration = quality.totalChange > 0 ? cal : null;
   }
   strain = initialStrainState();
-  showCalibrationResult(quality);
+  if (!quality.ok) {
+    showCalibrationResult(quality);
+    return;
+  }
+  // Straight back onto the perch to try it out.
+  startReady();
+  showToast(`Tuned to your face 💪 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
 }
 
 /**
- * The start without calibration: the strain check opens right away and the
+ * The start without calibration: the bird's perch opens right away and the
  * default calibration is fitted to a short read of the player's relaxed face.
  * It's never saved, so the next player on this browser gets their own read.
- * Calibrating from the strain check replaces it.
+ * Tuning from the perch replaces it.
  */
 async function runDefaultCalibration(): Promise<void> {
-  const token = ++flow;
   // A new player: the next dive samples their puff again.
   clearPuffCalibration();
   calibration = null;
   calibrationIsDefault = true;
   rejectedCalibration = null;
   strain = initialStrainState();
-  showCalibrationResult("reading");
+  startReady();
+  const token = flow;
+  enterPerchStep("reading");
   // A read whose own samples would trip the meter (fidgeting, blinking,
   // jittery tracking) is read again. The last try is kept regardless, since
   // the player can always calibrate.
@@ -449,10 +433,10 @@ async function runDefaultCalibration(): Promise<void> {
       calibration = cal;
       break;
     }
-    $("calib-result-text").textContent = "Hold still and relax completely…";
+    $("ready-sub").textContent = "Hold still…";
   }
   strain = initialStrainState();
-  showCalibrationResult("default");
+  enterPerchStep(seenTutorials.has("perch") ? "go" : "strain");
 }
 
 /** Relaxed-face reads before the default calibration takes the last one, steady or not. */
@@ -586,14 +570,8 @@ function topFeatureLabels(cal: Calibration): string[] {
     .map((f) => FEATURE_LABELS[f]);
 }
 
-/**
- * What the strain check shows: a saved calibration, the default one (while
- * reading the relaxed face, then ready), or the result of a fresh calibration.
- */
-type CalibrationResult = "saved" | "reading" | "default" | ReturnType<typeof assessCalibration>;
-
-function showCalibrationResult(result: CalibrationResult): void {
-  if (state !== "calibrated") strainCheckSince = performance.now();
+/** A calibration that failed the quality check: try again, or play with it anyway. */
+function showCalibrationResult(result: ReturnType<typeof assessCalibration>): void {
   state = "calibrated";
   showScreen("calibrate");
   show(hud, false);
@@ -602,43 +580,20 @@ function showCalibrationResult(result: CalibrationResult): void {
   show($("calib-run"), false);
   show($("calib-result"), true);
   show($("btn-calib-keyboard"), true);
-  strainCheck.strained = false;
-  strainCheck.relaxed = false;
-  const text = $("calib-result-text");
   const playBtn = $<HTMLButtonElement>("btn-calib-play");
   const retryBtn = $<HTMLButtonElement>("btn-calib-retry");
-  const card = screens.calibrate.querySelector(".calib")!;
-  card.classList.remove("strain");
-  $("calib-step").textContent = "Strain check";
-
+  screens.calibrate.querySelector(".calib")!.classList.remove("strain");
+  $("calib-step").textContent = "Calibration";
   armButtonKeys(300);
-  if (result === "saved") {
-    $("calib-prompt").textContent = "Welcome back!";
-    text.textContent = "New player? Recalibrate.";
-    setPrimary(playBtn, retryBtn);
-  } else if (result === "reading") {
-    $("calib-prompt").textContent = "Relax your face…";
-    text.textContent = "Just look at the screen for a moment.";
-    setPrimary(playBtn, retryBtn);
-  } else if (result === "default") {
-    $("calib-prompt").textContent = "Try your strain 💩";
-    text.textContent = "Bar acting up? Recalibrate it to your face.";
-    setPrimary(playBtn, retryBtn);
-  } else if (result.ok) {
-    $("calib-prompt").textContent = "Nice strain! 💪";
-    text.textContent = "";
-    setPrimary(playBtn, retryBtn);
-  } else {
-    $("calib-prompt").textContent = "Hmm, that didn't work well";
-    text.textContent = result.reason ?? "Try again.";
-    setPrimary(retryBtn, playBtn);
-  }
-  const anyway = typeof result === "object" && !result.ok;
-  calibrationFailed = anyway;
-  playBtn.textContent = anyway ? "Play anyway" : "Play!";
+  $("calib-prompt").textContent = "Hmm, that didn't work well";
+  $("calib-result-text").textContent = result.reason ?? "Try again.";
+  setPrimary(retryBtn, playBtn);
+  calibrationFailed = true;
+  retryBtn.textContent = "Try again";
+  playBtn.textContent = "Play anyway";
   decorate(playBtn);
   decorate(retryBtn);
-  playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);
+  playBtn.disabled = !(rejectedCalibration ?? calibration);
 }
 
 function setPrimary(primary: HTMLElement, secondary: HTMLElement): void {
@@ -1097,14 +1052,16 @@ function startOceanRun(): void {
 }
 
 /**
- * Set once the player stops straining on the ready screen, so a strain held
- * over from the previous screen doesn't start the run by itself.
+ * Set once the player stops straining on the perch, so a strain held over
+ * from the previous screen doesn't charge the bird by itself.
  */
 let readyArmed = false;
 
 /**
- * The bird hovers until the player strains for the first time; that starts
- * the run. `ocean` (debug) skips the wait and dives straight in.
+ * The perch: before a run the bird sits on a street lamp and the player
+ * practises on a parked car below. A new player is walked through it (strain,
+ * relax, splat); after that, the first poop takes off and starts the run.
+ * `ocean` (debug) skips it and dives straight in.
  */
 function startReady(ocean = false): void {
   flow++;
@@ -1129,22 +1086,185 @@ function startReady(ocean = false): void {
   }
   readyArmed = false;
   state = "ready";
+  game.perch();
   const face = mode === "face";
-  $("ready-text").textContent = face ? "Strain to take off!" : "Hold to take off!";
-  $("ready-sub").textContent = face ? "then relax to poop 💩" : "then let go to poop 💩";
-  show($("ready-face"), face);
+  show($("perch-you"), face);
+  show($("perch-help"), face);
   show($("ready-key"), !face);
   showScreen("ready");
+  perch.enteredAt = performance.now();
+  enterPerchStep(seenTutorials.has("perch") ? "go" : "strain");
 }
 
-function updateReady(): void {
-  if (needsRotate()) return;
+/**
+ * - reading: the default calibration reads the relaxed face (no strain yet).
+ * - strain / relax: a new player's guided practice poop.
+ * - again: practice done; a full poop takes off.
+ * - go: a returning player; a full poop takes off.
+ * Smaller poops just hop on the lamp, so a stray strain never starts the run.
+ */
+type PerchStep = "reading" | "strain" | "relax" | "again" | "go";
+
+const perch = {
+  step: "go" as PerchStep,
+  enteredAt: 0,
+  stepSince: 0,
+  /** The face crossed the 💩 line since this step began. */
+  reached: false,
+  /** When the current unbroken strain began (-1: not straining). */
+  strainSince: -1,
+  /** Why the tune button is nudging (empty: it isn't). Cleared by a poop: the bar evidently works. */
+  nudge: "",
+  /** Until when (performance.now() ms) the second line explains that a small poop doesn't take off. */
+  hopHintUntil: 0,
+};
+
+/** Each step's one line (face mode, keyboard mode) and the face it asks for. */
+interface PerchLine {
+  face: string;
+  keys: string;
+  look: "strained" | "relaxed";
+}
+
+const HOLD = isTouch ? "Hold the screen" : "Hold Space";
+
+const PERCH_TEXT: Record<PerchStep, PerchLine> = {
+  reading: { face: "Relax and look here", keys: "", look: "relaxed" },
+  strain: { face: "Squeeze your face", keys: HOLD, look: "strained" },
+  relax: { face: "Now relax", keys: "Now let go", look: "relaxed" },
+  again: { face: "Squeeze till the bird is full", keys: `${HOLD} till the bird is full`, look: "strained" },
+  go: { face: "Squeeze till the bird is full", keys: `${HOLD} till the bird is full`, look: "strained" },
+};
+
+/** While the bird is full: letting go now takes off. */
+const PERCH_FULL: PerchLine = { face: "Relax to fly! 🚀", keys: "Let go to fly! 🚀", look: "relaxed" };
+/** Under the line for a few seconds after a poop too small to take off. */
+function perchHopHint(): string {
+  return mode === "face" ? "Squeeze longer to take off" : "Hold longer to take off";
+}
+
+/** Charge at which a poop off the perch takes off: full. */
+const TAKEOFF_CHARGE = 1;
+
+function enterPerchStep(step: PerchStep): void {
+  perch.step = step;
+  perch.stepSince = performance.now();
+  perch.reached = false;
+  perch.hopHintUntil = 0;
+  setPerchText(PERCH_TEXT[step], "");
+}
+
+function setPerchText(line: PerchLine, sub: string): void {
+  const face = mode === "face";
+  const title = face ? line.face : line.keys;
+  const t = $("ready-text");
+  if (t.textContent !== title) t.textContent = title;
+  const s = $("ready-sub");
+  if (s.textContent !== sub) s.textContent = sub;
+  show($("perch-face"), face);
+  $("perch-face-use").setAttribute("href", `#face-${line.look}`);
+}
+
+/** The step's line, or "relax to fly" while the bird is full, plus why a small poop didn't take off. */
+function updatePerchText(now: number): void {
+  if (perch.step !== "again" && perch.step !== "go") return;
+  const full = game.charge.charge >= TAKEOFF_CHARGE && !game.stunned;
+  setPerchText(full ? PERCH_FULL : PERCH_TEXT[perch.step], !full && now < perch.hopHintUntil ? perchHopHint() : "");
+}
+
+/** What charges the bird on the perch: the player, once armed and the relaxed read is done. */
+function perchStraining(): boolean {
+  if (perch.step === "reading") return false;
   if (!straining()) readyArmed = true;
-  else if (readyArmed) {
-    state = "playing";
-    showScreen(null);
-    sound.beep(true);
+  return readyArmed && straining();
+}
+
+/** One frame on the perch: practice physics, the steps, the tune nudge and the layout. */
+function updatePerch(dt: number): void {
+  // Behind the rotate prompt everything holds, so a hold isn't mistaken for letting go.
+  if (needsRotate()) {
+    accumulator = 0;
+    return;
   }
+  accumulator += dt;
+  while (accumulator >= STEP) {
+    game.straining = perchStraining();
+    game.stepPerch(STEP);
+    accumulator -= STEP;
+  }
+  const now = performance.now();
+  const release = game.events.find((e) => e.type === "release");
+  const pooped = release !== undefined;
+  const full = release?.type === "release" && release.charge >= TAKEOFF_CHARGE;
+  const accident = game.events.some((e) => e.type === "accident");
+  handleGameEvents();
+  if (pooped) perch.nudge = "";
+  switch (perch.step) {
+    case "strain":
+      if (pooped) enterPerchStep("again");
+      else if (game.charge.charge >= 0.3) enterPerchStep("relax");
+      break;
+    case "relax":
+      if (pooped) enterPerchStep("again");
+      else if (accident) enterPerchStep("strain");
+      break;
+    case "again":
+    case "go":
+      if (full) return takeOff();
+      if (pooped) perch.hopHintUntil = now + 3000;
+      break;
+  }
+  updatePerchText(now);
+  updatePerchNudge(now);
+  // The panel starts right of the bird and its lamp (canvas units → CSS px).
+  const k = canvas.clientHeight / VIEW_H;
+  screens.ready.style.setProperty("--perch-x", `${Math.round((game.bird.x + BIRD_RADIUS * 3.4) * k)}px`);
+  const slow = mode === "face" && now - perch.enteredAt > 3000 && tracker.detectionRate < config.slowDetectionRate;
+  show($("perch-slow"), slow);
+}
+
+/**
+ * Face mode: offers tuning when the bar doesn't follow the face, i.e. it
+ * never reaches the 💩 line when asked to strain, or stays over it when asked
+ * to relax (or for a long time anyway).
+ */
+function updatePerchNudge(now: number): void {
+  if (mode !== "face") return;
+  const active = straining();
+  if (!active) perch.strainSince = -1;
+  else if (perch.strainSince < 0) perch.strainSince = now;
+  if (active) perch.reached = true;
+  const inStep = now - perch.stepSince;
+  const strainFor = perch.strainSince < 0 ? 0 : now - perch.strainSince;
+  const asksStrain = perch.step === "strain" || perch.step === "again" || perch.step === "go";
+  if (perch.step !== "reading" && faceVisible()) {
+    if (strainFor > (perch.step === "relax" ? 3000 : 6000)) perch.nudge = "Bar stuck even when you relax?";
+    else if (asksStrain && !perch.reached && inStep > (perch.step === "strain" ? 7000 : 10000)) {
+      perch.nudge = "Bar not reacting to your face?";
+    }
+  }
+  const help = $("perch-help");
+  help.classList.toggle("nudge", perch.nudge !== "");
+  $("perch-help-text").textContent = perch.nudge;
+}
+
+/** The first poop off the perch: the run starts, the practice doesn't count. */
+function takeOff(): void {
+  if (perch.step === "again") markTutorialSeen("perch");
+  perch.nudge = "";
+  game.leavePerch();
+  // A full push: the perch caps practice hops, not the takeoff.
+  game.bird.vy = Math.min(game.bird.vy, -config.pushMax);
+  state = "playing";
+  showScreen(null);
+}
+
+/** Moves the webcam preview beside the bird on the perch, or back to its corner. */
+function dockCam(perched: boolean): void {
+  if (perched === cam.classList.contains("perched")) return;
+  cam.classList.toggle("perched", perched);
+  if (perched) $("perch-cam-slot").append(cam);
+  else camHome.parent.insertBefore(cam, camHome.next);
 }
 
 function toggleMute(): void {
@@ -1389,7 +1509,6 @@ function frame(now: number): void {
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
   updateRotatePrompt();
-  if (state === "ready") updateReady();
   if (state === "playing") {
     accumulator += dt;
     while (accumulator >= STEP) {
@@ -1410,6 +1529,8 @@ function frame(now: number): void {
       accumulator -= STEP;
     }
     handleGameEvents();
+  } else if (state === "ready") {
+    updatePerch(dt);
   } else if (state === "gameover") {
     game.step(dt);
   } else if (game.demo) {
@@ -1426,7 +1547,7 @@ function frame(now: number): void {
 
   renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
-  const charging = state === "playing" && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
+  const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);
   if (activePuffCalibration === null) {
     sound.setBurble(state === "playing" && game.swimming && !game.stunned ? game.fish.puff : -1);
@@ -1837,6 +1958,11 @@ on("btn-calib-keyboard", () => {
   startKeyboardMode();
 });
 on("btn-calib-cancel", goToMenu);
+on("btn-tune", () => void recalibrate());
+on("btn-perch-keyboard", () => {
+  goLandscape();
+  startKeyboardMode();
+});
 on("btn-resume", togglePause);
 on("btn-pause-menu", goToMenu);
 on("btn-again", () => {

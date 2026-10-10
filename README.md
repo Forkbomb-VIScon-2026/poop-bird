@@ -96,17 +96,33 @@ wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
 - Short landscape screens get compact cards: the webcam sits next to the
   calibration card, and the game-over card puts its buttons first.
 - If face tracking runs below `slowDetectionRate` detections per second, the
-  strain check suggests playing with touch or the keyboard instead.
+  perch suggests playing with touch or the keyboard instead.
 
 ## How it plays
 
-Calibration is optional. Face mode opens straight on a strain check: a live
-meter between a relaxed and a strained face sketch, running on a default
-calibration fitted to a quick read of the player's relaxed face. If the meter
-doesn't follow their face, the player clicks "Calibrate" for the full two-phase
-calibration (each phase shows a sketch of the face to make). Then the
-bird hovers until the player strains for the first time, which starts the run;
-there's no countdown.
+Calibration is optional. Every run starts on the **perch**: the bird sits in
+its nest on top of a street lamp, with the player's webcam and an upright
+strain gauge right beside it, and a big arrow from the webcam to the bird says
+"that's you!". Above them is a single instruction next to a sketch of the face
+it asks for. The gauge
+fills as the face strains; over its 💩 line, the bird charges. Face mode runs
+on a default calibration fitted to a quick read of the player's relaxed face.
+
+- **Takeoff takes a full poop.** "Squeeze till the bird is full": smaller
+  poops just hop in the nest ("Squeeze longer to take off"), so a stray strain
+  never starts the run. Once the bird is full, the line changes to "Relax to
+  fly! 🚀", and letting go then starts the run. There's no countdown.
+- **New players** (the perch tutorial hasn't been seen on this browser, or
+  "I'm new here" is ticked) first get one guided practice poop: "Squeeze your
+  face" until the bird starts filling up, then "Now relax".
+- **Tuning** (the full two-phase calibration) is a small "Tune to my face"
+  button (or **C**). It turns yellow and pulses with a question when the gauge
+  doesn't follow the face: it never reaches the 💩 line when the player is
+  asked to strain (7 s; 10 s once practised), or it stays over it when they're
+  asked to relax (3 s) or for 6 s anyway. A good calibration goes straight
+  back to the perch; a failed one offers "Try again" or "Play anyway".
+
+Practice poops score nothing, and the lamp and its nest scroll away with the street.
 
 - Gravity pulls the bird down all the time. Fall speed is capped, and the bird
   falls slower while charging, because it tenses up.
@@ -315,7 +331,7 @@ webcam), and the wiring in `src/main.ts`.
    pollute the data. We store the mean and standard deviation of each feature
    for both phases.
 
-   **Default calibration.** Without a saved calibration, the strain check reads the
+   **Default calibration.** Without a saved calibration, the perch reads the
    relaxed face for `defaultNeutralSeconds` (1.5 s; it retries until a face
    stays in view) and takes each feature's median as neutral. The strain target
    is neutral plus a typical change per feature (`DEFAULT_STRAIN_DELTAS` in

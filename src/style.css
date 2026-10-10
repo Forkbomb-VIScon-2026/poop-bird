@@ -300,7 +300,7 @@ svg.face.puff-face.puffing {
   --cam-w: 168px;
 }
 
-#app:has(#cam:not(.hidden):not(.large)) {
+#app:has(#cam:not(.hidden):not(.large):not(.perched)) {
   --cam-space: calc(var(--cam-w) + 10px);
 }
 
@@ -331,7 +331,7 @@ svg.face.puff-face.puffing {
   aspect-ratio: 4 / 3;
 }
 
-/* The calibration card has its own big strain meter. */
+/* Calibration watches the face itself, not the bar. */
 #cam.large .strain-bar {
   display: none;
 }
@@ -532,18 +532,36 @@ svg.face {
   color: #fff;
 }
 
-.start-hero .more {
-  background: rgba(255, 250, 240, 0.9);
-  border: 3px solid var(--ink);
-  border-radius: 12px;
-  padding: 4px 12px;
-  color: var(--ink);
+.start-play {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.start-hero .more:not([open]) {
-  background: none;
-  border-color: transparent;
-  color: #fff;
+/* Square button with just an emoji (play without the camera). */
+.btn.icon {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.kbd-icon {
+  width: 40px;
+  height: 26px;
+}
+
+.start-hero .opt {
+  margin: 4px 0 0;
+}
+
+.start-hero .opt input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
 }
 
 @keyframes float {
@@ -653,11 +671,6 @@ svg.face {
 .privacy.small {
   font-size: 11px;
   margin: 4px 0 0;
-}
-
-.keys {
-  font-size: 12px;
-  opacity: 0.75;
 }
 
 kbd {
@@ -915,106 +928,7 @@ svg.face.calib-face {
   opacity: 0.7;
 }
 
-/* Live strain meter between a relaxed and a strained face sketch. */
-.meter {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 6px 0;
-}
-
-.meter .strain-bar.big {
-  height: clamp(30px, 6vh, 56px);
-  border-width: 4px;
-}
-
-.meter-track {
-  position: relative;
-  flex: 1;
-  /* Room above the bar for the bird when the faces beside it are short. */
-  margin-top: var(--meter-bird-h);
-  --meter-bird-h: clamp(44px, 10vh, 84px);
-}
-
-.meter-bar {
-  margin-top: 0;
-}
-
-/* Spans the track above the bar; the bird sits on top of the bar, over the fill's end. */
-.meter-bird {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  width: 100%;
-  height: var(--meter-bird-h);
-  z-index: 1;
-  pointer-events: none;
-}
-
-.meter-end {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 15px;
-  font-weight: 700;
-  opacity: 0.45;
-  transition: opacity 0.15s, transform 0.15s;
-}
-
-.meter-end svg.face {
-  width: clamp(64px, 14vh, 120px);
-  height: clamp(64px, 14vh, 120px);
-}
-
-.meter-end.lit {
-  opacity: 1;
-  transform: scale(1.12);
-}
-
-.checks {
-  list-style: none;
-  padding: 0;
-  margin: 4px 0;
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 4px 28px;
-  font-size: 19px;
-}
-
-.checks li::before {
-  content: "○";
-  display: inline-block;
-  width: 1.4em;
-  font-weight: 900;
-}
-
-.checks li.done::before {
-  content: "✔";
-  color: #5a8f12;
-}
-
-.checks li.done {
-  opacity: 0.7;
-}
-
 /* --- Ready ------------------------------------------------------------------- */
-
-.ready {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  margin-left: 18vw;
-  text-align: center;
-}
-
-svg.face.ready-face {
-  width: clamp(80px, 16vh, 140px);
-  height: clamp(80px, 16vh, 140px);
-  animation: shake 0.3s infinite;
-}
 
 .ready-key {
   font-size: 36px;
@@ -1042,12 +956,221 @@ svg.face.ready-face {
   text-shadow: 0 2px 0 var(--ink);
 }
 
-/* Shown with a slow-detecting face tracker on the strain check. */
-.calib-slow {
+/* --- Perch (ready) ------------------------------------------------------------ */
+
+/* Practice poops don't score: no score until the run starts. */
+#app:has(#screen-ready:not(.hidden)) .hud-left {
+  visibility: hidden;
+}
+
+/* Beside the bird on its lamp (--perch-x, set by main.ts), below the HUD. */
+.perch {
+  position: absolute;
+  left: var(--perch-x, 35%);
+  right: calc(16px + env(safe-area-inset-right));
+  top: calc(64px + env(safe-area-inset-top));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, 1.6vh, 14px);
+  text-align: center;
+}
+
+.perch button {
+  pointer-events: auto;
+}
+
+.perch-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.perch .ready-text {
+  font-size: clamp(26px, 4.4vw, 54px);
+  line-height: 1.05;
+  animation: none;
+}
+
+.perch-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+svg.face.perch-face {
+  flex: none;
+  width: clamp(44px, 8vh, 76px);
+  height: clamp(44px, 8vh, 76px);
+}
+
+.perch .ready-sub {
+  max-width: 28ch;
+}
+
+.perch .ready-sub:empty {
+  display: none;
+}
+
+/* The webcam with the strain gauge on its right; the "that's you" arrow points left, at the bird. */
+.perch-you {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  /* Room for the 💩 beside the gauge. */
+  padding-right: clamp(24px, 4vh, 36px);
+}
+
+.perch-cam-slot {
+  width: clamp(160px, min(32vw, 40vh), 380px);
+}
+
+#cam.perched {
+  position: relative;
+  right: auto;
+  top: auto;
+  width: 100%;
+  transition: none;
+}
+
+#cam.perched .strain-bar {
+  display: none;
+}
+
+.perch-arrow {
+  position: absolute;
+  right: calc(100% + 6px);
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: clamp(96px, 13vw, 180px);
+  color: var(--gold);
+  font-weight: 900;
+  font-size: clamp(20px, 2.6vw, 34px);
+  line-height: 1;
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 3px 0 var(--ink);
+  transform: translateY(-60%);
+  animation: nudge-left 1s ease-in-out infinite;
+}
+
+.perch-arrow svg {
+  width: 100%;
+  filter: drop-shadow(0 3px 0 var(--ink)) drop-shadow(0 -2px 0 var(--ink)) drop-shadow(2px 0 0 var(--ink));
+}
+
+@keyframes nudge-left {
+  0%,
+  100% {
+    transform: translate(0, -60%);
+  }
+  50% {
+    transform: translate(-10px, -60%);
+  }
+}
+
+.gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+svg.face.gauge-face {
+  width: clamp(38px, 7vh, 60px);
+  height: clamp(38px, 7vh, 60px);
+  opacity: 0.55;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.gauge.strained .gauge-face.strained,
+.gauge.relaxed .gauge-face.relaxed {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.gauge-bar {
+  position: relative;
+  flex: 1;
+  width: clamp(28px, 5vh, 44px);
+  border: 4px solid var(--ink);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.gauge-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  border-radius: 999px;
+  background: var(--green);
+}
+
+.gauge-fill.active {
+  background: var(--accent);
+}
+
+/* The 💩 line: over it, the bird charges. */
+.gauge-line {
+  position: absolute;
+  left: -9px;
+  right: -9px;
+  height: 5px;
+  margin-bottom: -2px;
+  background: var(--ink);
+  border-radius: 2px;
+}
+
+.gauge-line span {
+  position: absolute;
+  left: calc(100% + 2px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: clamp(20px, 4vh, 32px);
+}
+
+.perch-help {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.perch-help-text {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  -webkit-text-stroke: 1px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 0 var(--ink);
+}
+
+.perch-help-text:empty {
+  display: none;
+}
+
+.perch-help.nudge #btn-tune {
+  background: var(--gold);
+  font-size: 18px;
+  padding: 8px 16px;
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+.perch-slow {
+  margin: 0;
   font-size: 14px;
   font-weight: 700;
-  color: #9a6700;
-  margin: 2px 0;
+  color: #fff;
+  text-shadow: 0 0 3px var(--ink), 0 1px 2px var(--ink);
 }
 
 /* --- Rotate prompt ------------------------------------------------------------ */
@@ -1448,11 +1571,6 @@ body.debug-open #cam {
   #app {
     --cam-w: 110px;
   }
-  /* Keep the ready prompt clear of the bird and the webcam preview. */
-  .ready {
-    margin-left: 0;
-    margin-top: 30vh;
-  }
   /* The hero sits low, clear of the hovering bird. */
   .screen.start {
     align-items: flex-end;
@@ -1469,16 +1587,6 @@ body.debug-open #cam {
   }
   .calib-step {
     display: none;
-  }
-  .meter {
-    gap: 8px;
-  }
-  .meter-end svg.face {
-    width: 52px;
-    height: 52px;
-  }
-  .checks {
-    font-size: 15px;
   }
 
   .hud-score {
@@ -1568,23 +1676,35 @@ body.debug-open #cam {
     font-size: 40px;
   }
 
-  svg.face.calib-face,
-  .meter-end svg.face {
+  svg.face.calib-face {
     width: clamp(48px, 18vh, 80px);
     height: clamp(48px, 18vh, 80px);
   }
 
-  .meter .strain-bar.big {
+  .progress {
+    margin: 6px 0;
+  }
+
+  .perch {
+    top: calc(52px + env(safe-area-inset-top));
+    bottom: 8px;
+  }
+
+  .perch-cam-slot {
+    width: clamp(140px, 28vw, 48vh);
+  }
+
+  svg.face.gauge-face {
+    width: 28px;
     height: 28px;
   }
 
-  .checks {
-    font-size: 15px;
-    gap: 2px 16px;
+  .gauge {
+    gap: 2px;
   }
 
-  .progress {
-    margin: 6px 0;
+  .perch-help-text {
+    font-size: 14px;
   }
 
   .calib .hint,
