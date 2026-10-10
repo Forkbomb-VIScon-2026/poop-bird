@@ -41,6 +41,10 @@ export const SOUND_NAMES = [
   "angler_cast",
   "angler_hooked",
   "reel_click",
-  "line_snap"
+  "line_snap",
+  "power_down",
+  "beep",
+  "wedding_arrived",
+  "wedding_beat"
 ] as const;
 export type SoundName = (typeof SOUND_NAMES)[number];

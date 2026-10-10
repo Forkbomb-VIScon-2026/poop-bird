@@ -454,7 +454,7 @@ async function readRelaxedFace(token: number): Promise<FeatureVector[] | null> {
   const total = config.defaultNeutralSeconds * 1000;
   let start = performance.now();
   let mine = startSampling();
-  for (; ;) {
+  for (;;) {
     await wait(50);
     if (token !== flow || calibSamples !== mine.samples || !calibFrames) {
       stopSampling(mine.samples);
@@ -510,12 +510,14 @@ async function calibrationPhase(
   progress.style.width = "0%";
   for (let i = 2; i > 0; i--) {
     count.textContent = String(i);
+    sound.beep();
     await wait(600);
     if (token !== flow) return { samples: [], coverage: 0 };
   }
 
   $("calib-prompt").textContent = prompt;
   card.classList.toggle("strain", strainPhase);
+  sound.beep(true);
   const total = config.calibrationSeconds * 1000;
   const settle = config.calibrationSettle * 1000;
   const start = performance.now();
@@ -706,7 +708,7 @@ async function runSwimLesson(): Promise<void> {
   let steps = LESSON_STEPS;
   let calibrationRuns = 0;
   let why = "";
-  for (; ;) {
+  for (;;) {
     const lesson = steps === LESSON_STEPS;
     if (!lesson) {
       calibrationRuns++;
@@ -917,8 +919,7 @@ async function puffCalibrationPhase(token: number, seconds: number, burble: bool
   const settle = config.calibrationSettle * 1000;
   let start = -1;
   let mine: ReturnType<typeof startSampling> | null = null;
-  abortPuffCalibration = false;
-  for (; ;) {
+  for (;;) {
     if (token !== flow || abortPuffCalibration) {
       abortPuffCalibration = false;
       stopSampling(mine?.samples ?? null);
@@ -1657,6 +1658,9 @@ function handleGameEvents(): void {
         sound.zap();
         buzz([30, 20, 30, 20, 120]);
         break;
+      case "droneDown":
+        sound.powerDown();
+        break;
       case "droneCrashed":
         sound.droneCrash();
         buzz([20, 30, 60]);
@@ -1681,7 +1685,7 @@ function handleGameEvents(): void {
         break;
       case "transformed":
       case "surfaced":
-        sound.splash();
+        sound.beep(true);
         break;
       case "spike":
         sound.spike();
@@ -1694,14 +1698,14 @@ function handleGameEvents(): void {
         sound.jellyPop(e.combo);
         break;
       case "paparazzoBeep":
-        sound.cameraBeep();
+        sound.cameraBeep(e.timer);
         break;
       case "photo":
         sound.shutter();
         takePhoto(e.photoId);
         break;
       case "cameraSmashed":
-        sound.droneCrash()
+        sound.smash();
         break;
       case "slingshotDraw":
         sound.slingshotDraw(e.windup);
@@ -1724,6 +1728,12 @@ function handleGameEvents(): void {
         break;
       case "curse":
         sound.curse();
+        break;
+      case "weddingArrived":
+        sound.weddingArrived();
+        break;
+      case "weddingBeat":
+        sound.weddingBeat(e.count);
         break;
       case "weddingKiss":
         sound.weddingKiss();
@@ -1791,6 +1801,19 @@ function handleGameEvents(): void {
       case "lineSnapped":
         sound.lineSnap();
         buzz(60);
+        break;
+      case "anchorWarn":
+        sound.beep();
+        break;
+      case "anchorRattle":
+        sound.anchorRattle();
+        break;
+      case "anchorSnapped":
+        sound.lineSnap();
+        break;
+      case "anchorLanded":
+        sound.anchorLanded();
+        buzz(50);
         break;
     }
   }
@@ -1867,6 +1890,10 @@ window.addEventListener("keydown", (e) => {
     case "h":
       // Debug shortcut: a fisherman rows in (ocean only).
       if (debug?.visible && state === "playing") game.spawnAnglerNow();
+      break;
+    case "a":
+      // Debug shortcut: a boat that drops its anchor (ocean only).
+      if (debug?.visible && state === "playing") game.spawnAnchorDropNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
@@ -1976,7 +2003,7 @@ function goLandscape(): void {
   document.documentElement
     .requestFullscreen({ navigationUI: "hide" })
     .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape"))
-    .catch(() => { });
+    .catch(() => {});
 }
 
 const portraitQuery = window.matchMedia("(orientation: portrait)");

@@ -270,6 +270,7 @@ async function record(): Promise<void> {
     requestAnimationFrame(updateCheck);
     return;
   }
+  sound.beep(true);
   await upload(buildSession(recorders, recordedAt));
 }
 
@@ -291,6 +292,7 @@ function runSegment(rec: SegmentRecorder, before: number, total: number): Promis
         $("record-prompt").textContent = step.prompt;
         $("record-prompt").classList.toggle("go", strain);
         $("record-hint").textContent = step.hint ?? "";
+        if (step.beep) sound.beep(strain);
       }
       const into = rec.elapsed(now);
       $("record-left").textContent = `${Math.ceil(step.start + step.seconds - into)} s`;

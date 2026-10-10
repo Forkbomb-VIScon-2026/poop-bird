@@ -417,4 +417,13 @@ export class Sound {
     const delay = 0;
     this.play("curse", volume, delay);
   }
+
+  /** Additional event sounds used by the current gameplay code. */
+  beep(_high = false): void { this.play("beep"); }
+  powerDown(): void { this.play("power_down"); }
+  smash(): void { this.play("smash"); }
+  weddingArrived(): void { this.play("wedding_arrived"); }
+  weddingBeat(_count: number): void { this.play("wedding_beat"); }
+  anchorRattle(): void { this.play("reel_click", 0.8, 0.1); }
+  anchorLanded(): void { this.play("bonk"); }
 }
