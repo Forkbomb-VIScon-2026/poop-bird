@@ -1420,8 +1420,7 @@ export class Renderer {
   // --- paparazzi ----------------------------------------------------------------
 
   /**
-   * The paparazzo's timer: a ring with a camera that fills as he closes in,
-   * and on the run's first one a bouncing arrow.
+   * The paparazzo's timer: a ring with a camera that fills as he closes in.
    */
   private drawPaparazzoTimer(t: Target, game: Game): void {
     const p = t.pap;
@@ -1462,24 +1461,6 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(x, y + 1, 2.2, 0, Math.PI * 2);
     ctx.fill();
-
-    if (!p.tutorial) return;
-    const bob = Math.sin(game.time * 6) * 5;
-    const ay = y - r - 16 + bob;
-    ctx.fillStyle = "#ffd60a";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(x - 9, ay - 14);
-    ctx.lineTo(x + 9, ay - 14);
-    ctx.lineTo(x + 9, ay - 4);
-    ctx.lineTo(x + 16, ay - 4);
-    ctx.lineTo(x, ay + 10);
-    ctx.lineTo(x - 16, ay - 4);
-    ctx.lineTo(x - 9, ay - 4);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
   }
 
   /** The fresh shot pops up as a polaroid in the top corner. */

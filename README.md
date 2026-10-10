@@ -126,8 +126,7 @@ there's no countdown.
   bird) he takes your picture. Splat him first to smash the camera (×3).
   Miss, and you get a flash, a polaroid, and your photo on a roadside
   billboard as the next obstacle, always before the harbour (and on the
-  game-over screen). The run's first paparazzo walks slower and has a
-  bouncing arrow over his head.
+  game-over screen). The run's first paparazzo walks slower.
 - **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
   plants his feet and winds up his slingshot at you. A "!" pops over his head
   and a dotted arc reaches out toward the bird, ending in a crosshair. When
