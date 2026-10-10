@@ -8,7 +8,6 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
 import { Game } from "./game";
-import { FaceRecorder, type RecorderKind } from "./recorder";
 import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
@@ -19,6 +18,8 @@ import {
   stepPuff,
 } from "./puff";
 import {
+  CALIBRATION_KEY,
+  PUFF_CALIBRATION_KEY,
   addToHallOfFame,
   loadBest,
   loadHallOfFame,
@@ -92,13 +93,9 @@ const sound = new Sound();
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
 const debug = DEBUG
-  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), recordFace, forgetCalibration)
+  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), openDatasetRecorder, forgetCalibration)
   : null;
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
-
-const CALIBRATION_KEY = "poopbird.calibration.v1";
-// v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
-const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v2";
 
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
 /** `calibration` is the default one, fitted to a quick relaxed-face read and never saved. */
@@ -181,45 +178,15 @@ tracker.onFrame((frame) => {
   if (calibSamples && frame.features) calibSamples.push({ t: frame.time, f: frame.features });
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config);
-  if (faceRecorder && !faceRecorder.push(frame)) finishFaceRecording();
   if (state === "playing" && game.phase === "playing" && game.stage === "city") {
     snapshot.offer(video, frame.box, strain.smoothed);
   }
 });
 
-// --- Debug face recorder -------------------------------------------------------------
-
-let faceRecorder: FaceRecorder | null = null;
-
-/** Records a scripted puff or strain clip (raw features + landmarks) and downloads it for offline tuning. */
-function recordFace(kind: RecorderKind = "puff"): void {
-  if (faceRecorder) return;
-  if (mode !== "face" || !tracker.ready) {
-    debug?.setRecordPrompt("Start a face-mode game first");
-    window.setTimeout(() => !faceRecorder && debug?.setRecordPrompt(null), 2500);
-    return;
-  }
-  // Freeze the game so the clip doesn't cost a life.
+/** Debug: opens the face dataset recorder (collect.html) in a new tab, pausing a running game. */
+function openDatasetRecorder(): void {
   if (state === "playing") togglePause();
-  faceRecorder = new FaceRecorder(kind, (step) => {
-    debug?.setRecordPrompt(`${step.prompt} (${step.seconds} s)`);
-    if (step.cue) sound.beep(step.cue === "strain");
-  });
-}
-
-function finishFaceRecording(): void {
-  const rec = faceRecorder;
-  if (!rec) return;
-  faceRecorder = null;
-  rec.download({
-    video: { width: tracker.video.videoWidth, height: tracker.video.videoHeight },
-    calibration,
-    puffCalibration,
-    lastPuffAttempt,
-    config,
-  });
-  debug?.setRecordPrompt("Saved: send me the downloaded JSON");
-  window.setTimeout(() => !faceRecorder && debug?.setRecordPrompt(null), 4000);
+  window.open(`${import.meta.env.BASE_URL}collect.html`, "_blank");
 }
 
 function updateStrainBars(): void {
@@ -795,8 +762,6 @@ function goToMenu(): void {
   flow++;
   calibSamples = null;
   calibFrames = null;
-  faceRecorder = null;
-  debug?.setRecordPrompt(null);
   tracker.stopCamera();
   state = "menu";
   sound.setGroan(-1, false);
@@ -1348,7 +1313,7 @@ if (DEBUG) {
       get calibration() { return calibration; },
       get puffCalibration() { return puffCalibration; },
       get lastPuffAttempt() { return lastPuffAttempt; },
-      recordFace,
+      openDatasetRecorder,
     },
   });
 }

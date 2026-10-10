@@ -1118,17 +1118,6 @@ body.debug-open #cam {
   background: #3a3d5c;
 }
 
-.dbg-record {
-  margin-top: 8px;
-  padding: 8px;
-  border-radius: 6px;
-  background: #ef476f;
-  color: #fff;
-  font-size: 18px;
-  font-weight: bold;
-  text-align: center;
-}
-
 @media (max-width: 600px) {
   #cam {
     width: 110px;
