@@ -263,8 +263,6 @@ export class Renderer {
     if (game.wedding && !game.transition) this.drawWeddingCue(game.wedding, game);
     if (game.transition) {
       this.drawParticles(game);
-      // A held dive (tutorial, puff calibration) shows the meter, so the player sees their puff.
-      if (ocean && game.holdTransition) this.drawPuffMeter(game);
     } else if (game.phase === "playing" && !game.demo) {
       if (ocean) this.drawPuffMeter(game);
       else this.drawChargeMeter(game);
@@ -2629,9 +2627,7 @@ export class Renderer {
     const stunned = game.stunned;
     const danger = game.popProgress;
     const warn = game.popWarning;
-    const holding = !!game.transition && game.holdTransition;
-    let r = game.bodyRadius;
-    if (holding) r *= 1 + Math.sin(game.time * 5) * 0.06;
+    const r = game.bodyRadius;
     const puff = Math.min(1, Math.max(0, f.puff));
     const shape = fishShape(r, puff);
     const { L, H, B, q } = shape;
