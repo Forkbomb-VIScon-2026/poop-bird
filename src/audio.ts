@@ -167,7 +167,7 @@ export class Sound {
   pebbleShot(_combo: number): void { this.play("pebble_shot"); }
   ricochet(): void { this.play("ricochet"); }
   kidCry(): void { this.play("kid_cry"); }
-  beep(_high = false): void { this.play("beep"); }
+  beep(_high = false): void { return; this.play("beep"); }
   sadTrombone(): void { this.play("sad_trombone"); }
   weddingKiss(): void { this.play("wedding_kiss"); }
   weddingRuined(): void { this.play("wedding_ruined"); }

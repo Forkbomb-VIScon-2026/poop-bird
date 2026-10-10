@@ -519,14 +519,12 @@ async function calibrationPhase(
   progress.style.width = "0%";
   for (let i = 2; i > 0; i--) {
     count.textContent = String(i);
-    sound.beep();
     await wait(600);
     if (token !== flow) return { samples: [], coverage: 0 };
   }
 
   $("calib-prompt").textContent = prompt;
   card.classList.toggle("strain", strainPhase);
-  sound.beep(true);
   const total = config.calibrationSeconds * 1000;
   const settle = config.calibrationSettle * 1000;
   const start = performance.now();
@@ -920,7 +918,6 @@ function updateReady(): void {
   else if (readyArmed) {
     state = "playing";
     showScreen(null);
-    sound.beep(true);
   }
 }
 
@@ -1337,7 +1334,7 @@ function handleGameEvents(): void {
         break;
       case "transformed":
       case "surfaced":
-        sound.beep(true);
+        sound.splash();
         break;
       case "spike":
         sound.spike();
