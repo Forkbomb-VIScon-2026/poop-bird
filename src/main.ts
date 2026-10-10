@@ -136,9 +136,14 @@ let currentSnapshotUrl: string | null = null;
 
 sound.setMuted(storageGet("poopbird.muted.v1") === "1");
 
-/** The single "is the player straining?" signal: face OR keyboard OR pointer. */
+/** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
+function manualHeld(): boolean {
+  return mode === "keyboard" && (keyHeld || pointerHeld);
+}
+
+/** The single "is the player straining?" signal: the face in face mode, Space / pointer in keyboard mode. */
 function straining(): boolean {
-  return keyHeld || pointerHeld || (mode === "face" && faceFresh() && strain.active);
+  return mode === "face" ? faceFresh() && strain.active : manualHeld();
 }
 
 /** Face puff 0..1 (0 in keyboard mode, or if the detector stalled). */
@@ -146,7 +151,7 @@ function facePuff(): number {
   return mode === "face" && faceFresh() ? puffSignal.smoothed : 0;
 }
 
-/** The single puff signal for the fish: max of face and key, the same "face OR key" spirit as straining(). */
+/** The single puff signal for the fish: max of face and key (only one is ever nonzero, see manualHeld()). */
 function puffInput(): number {
   return Math.max(keyPuff, facePuff());
 }
@@ -964,7 +969,7 @@ function updateHud(): void {
 }
 
 function updateModeLabel(): void {
-  $("hud-mode").textContent = mode === "face" ? "😣 face (Space works too)" : "⌨️ keyboard";
+  $("hud-mode").textContent = mode === "face" ? "😣 face" : "⌨️ keyboard";
   $("hud-mute").textContent = sound.muted ? "🔇 M" : "🔊 M";
 }
 
@@ -989,7 +994,7 @@ function frame(now: number): void {
         // A pop deflates the fish: key puff stays empty while stunned.
         keyPuff = game.stunned
           ? 0
-          : stepKeyPuff(keyPuff, keyHeld || pointerHeld, STEP, config.oceanKeyInflateRate, config.oceanKeyDeflateRate);
+          : stepKeyPuff(keyPuff, manualHeld(), STEP, config.oceanKeyInflateRate, config.oceanKeyDeflateRate);
       }
       game.puffInput = puffInput();
       game.step(STEP);

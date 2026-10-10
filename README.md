@@ -55,7 +55,7 @@ access on anything other than localhost, put it behind HTTPS.
 | --- | --- |
 | Strain face (webcam) | City: charge; relax to poop |
 | Puff cheeks (webcam) | Ocean: inflate (more puff = rise, less = sink) |
-| Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Always works, also in face mode |
+| Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / Esc | Pause |
 | **M** | Mute |
 | **R** | Play again from game over |
@@ -181,8 +181,9 @@ webcam), and the wiring in `src/main.ts`.
    − neutral)` and clamped to `0..featureClampMax`. We take the weighted mean,
    clamp it to 0..1, then smooth it with a frame-rate-independent EMA.
 5. **Hysteresis.** The signal turns on at `strainOn` and stays on until it
-   drops below `strainOff`. "Straining" is then face OR Space OR pointer, which
-   feeds the charge state machine in `src/charge.ts`.
+   drops below `strainOff`. "Straining" is then the face in face mode, or Space /
+   pointer in keyboard mode (the two never mix), which feeds the charge state
+   machine in `src/charge.ts`.
 6. **Quality check.** After calibration, every calibration sample is scored. It
    fails if fewer than `minFaceCoverage` (60%) of a phase's frames had a face,
    if the summed weights are below
@@ -252,9 +253,10 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 6. A passing puff calibration is saved like the main one, and the toast says
    which features it watches. **C** clears it, so the next dive samples again.
    After the face-loss grace, puff drops to 0 and the fish sinks.
-7. **Input.** The fish gets `max(face puff, key puff)`. Holding Space, mouse or
-   touch inflates the key puff at `oceanKeyInflateRate`; releasing deflates it
-   at `oceanKeyDeflateRate`.
+7. **Input.** The fish gets `max(face puff, key puff)`; only one of them is live,
+   depending on the mode. In keyboard mode, holding Space, mouse or touch inflates
+   the key puff at `oceanKeyInflateRate`; releasing deflates it at
+   `oceanKeyDeflateRate`.
 
 If the puff doesn't register, open the debug panel (`npm run dev:debug`) in the ocean: the feature
 rows show the geometry values as numbers with the relaxed-face marker, and the
