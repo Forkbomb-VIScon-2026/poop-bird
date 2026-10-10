@@ -1,5 +1,7 @@
 import { SOUND_NAMES, type SoundName } from "./audio-assets";
 
+export type PoopSize = "weak" | "middle" | "large";
+
 type ActiveSound = { source: AudioBufferSourceNode; gain: GainNode };
 
 /** All game audio is sample-based; no synthesized sound effects. */
@@ -114,7 +116,7 @@ export class Sound {
   jellyPop(_combo: number): void { this.play("jelly_pop"); }
   deflate(): void { this.play("deflate"); }
   /** Use the normalized charge (0..1) to choose the matching poop recording. */
-  release(size: "weak" | "middle" | "large", _charge: number, _sweet: boolean): void {
+  release(size: PoopSize, _charge: number, _sweet: boolean): void {
     this.play(`poop_${size}`);
   }
   accident(): void { this.play("accident"); }
