@@ -175,4 +175,8 @@ export class Sound {
   bouquetThrown(_angry: boolean): void { this.play("bouquet_thrown"); }
   bouquetCaught(): void { this.play("bouquet_caught"); }
   bouquetHit(): void { this.play("bouquet_hit"); }
+  anglerCast(): void { this.play("angler_cast"); }
+  anglerHooked(): void { this.play("angler_hooked"); }
+  reelClick(): void { this.play("reel_click", 0.5, 0.25); }
+  lineSnap(): void { this.play("line_snap"); }
 }

@@ -671,6 +671,130 @@ kbd {
   background: #fff;
 }
 
+/* --- Key hints (keyhints.ts) ---------------------------------------------------
+   The main button wears a small keycap on its corner; every button with keys
+   shows them all in a tooltip on hover or keyboard focus. */
+
+.has-keys {
+  position: relative;
+}
+
+.key-badge {
+  display: none;
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  text-decoration: none;
+  color: var(--ink);
+  background: #fff;
+  border: 2px solid var(--ink);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  pointer-events: none;
+}
+
+.btn.primary:not(:disabled) > .key-badge {
+  display: block;
+  animation: key-badge-in 0.35s cubic-bezier(0.3, 1.6, 0.6, 1) 0.6s both;
+}
+
+.has-keys:hover > .key-badge,
+.has-keys:focus-visible > .key-badge {
+  visibility: hidden;
+}
+
+@keyframes key-badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-20deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(6deg);
+  }
+}
+
+.key-tip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  gap: 5px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--ink);
+  border-radius: 9px;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.12s, transform 0.12s;
+  pointer-events: none;
+}
+
+.key-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: var(--ink);
+}
+
+.key-tip kbd {
+  border-color: var(--ink);
+  border-bottom-width: 2px;
+}
+
+.has-keys:hover > .key-tip,
+.has-keys:focus-visible > .key-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 0.25s;
+}
+
+/* Enter / Space belong to the yellow button only: a demoted one drops them, and a tip left empty hides. */
+.btn:not(.primary) .k-default,
+.btn:not(.primary):not([data-keys]):not([data-shortcut]) > .key-tip {
+  display: none;
+}
+
+/* The HUD buttons sit at the top of the screen: tip below. */
+.hud-btn > .key-tip {
+  bottom: auto;
+  top: calc(100% + 10px);
+}
+
+.hud-btn > .key-tip::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--ink);
+}
+
+.btn.key-pressed,
+.hud-btn.key-pressed {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--ink);
+  animation: none;
+}
+
+body.touch .key-badge,
+body.touch .key-tip {
+  display: none !important;
+}
+
 .error {
   color: #c1121f;
   font-weight: 700;
@@ -1039,6 +1163,12 @@ svg.face.ready-face {
   width: 250px;
   height: 235px;
   transform: rotate(-1.5deg);
+}
+
+.go-trophy {
+  width: 250px;
+  height: 235px;
+  transform: rotate(1.5deg);
 }
 
 .go-hof-form {

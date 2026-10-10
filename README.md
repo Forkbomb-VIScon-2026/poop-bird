@@ -63,17 +63,20 @@ starts the face dataset collector (local credentials `local` /
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / Esc / ⏸ button | Pause |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
+| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). The ocean tutorial takes Enter only, since Space tries out the puff there. Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
 | **R** | Play again from game over |
+| **K** | Menu: play with the keyboard |
+| **Esc** | Calibration and game over: back to the menu |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
 | **G** | With the debug panel open: the stage's waterfront comes next |
 | **L** | With the debug panel open: spawn a power line now |
-| **K** | With the debug panel open: a slingshot kid walks on |
+| **K** | With the debug panel open, while playing: a slingshot kid walks on |
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
+| **H** | With the debug panel open: a fisherman rows in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
-| **Enter** | Play after calibration; close the ocean tutorial |
 
 ### On phones and tablets
 
@@ -116,10 +119,11 @@ there's no countdown.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
-- **Power lines:** some city obstacles are a run of poles with wires sagging
-  between them (`powerLineChance`). Touching a wire zaps the bird and ends the
-  run, and so does hitting a pole. Fly over, under, or (later, when the wires
-  stack up to three) between them. Pigeons sit on the wires and are targets
+- **Power lines:** from the second city on (after the first dive), some city
+  obstacles are a run of poles with wires sagging between them
+  (`powerLineChance`). Touching a wire zaps the bird and ends the run, and so
+  does hitting a pole. Fly over, under, or (in later cities, when the wires
+  stack up to three and the top one climbs higher) between them. Pigeons sit on the wires and are targets
   too (×2). Some of them (`droneChance`) are government surveillance drones:
   splat one and it drops off the wire and breaks open on the street, wires
   sparking.
@@ -129,7 +133,7 @@ there's no countdown.
   Miss, and you get a flash, a polaroid, and your photo on a roadside
   billboard as the next obstacle, always before the harbour (and on the
   game-over screen). The run's first paparazzo walks slower.
-- **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
+- **Slingshot kids:** from the second city on, a kid in a propeller beanie trots along the sidewalk,
   plants his feet and winds up his slingshot at you. A "!" pops over his head
   and a dotted arc reaches out toward the bird, ending in a crosshair. When
   the band is fully back he lets go, aimed at where you are (with a little
@@ -138,8 +142,9 @@ there's no countdown.
   Ways out: change height once he fires (a near miss pays a "CLOSE ONE!"
   bonus), put a building or pole between you (pebbles ping off them), shoot
   the pebble down with a falling poop ("INTERCEPTED!", ×4), or splat the kid
-  while he's still armed ("DISARMED!", ×3) and he runs off crying. Later
-  kids fire twice. Tunables are in the debug panel's "Slingshot kids" group.
+  while he's still armed ("DISARMED!", ×3) and he runs off crying. From the
+  third city on kids fire twice, and they wind up and shoot faster city by
+  city. Tunables are in the debug panel's "Slingshot kids" group.
 - **The wedding:** now and then (`weddingChance`, about one city stage in
   four) a church takes the place of one building, with a wedding on the
   sidewalk in front: the couple under a flower arch with their names on it,
@@ -180,7 +185,11 @@ there's no countdown.
 ### The ocean stage
 
 A run alternates city → ocean → city → … and difficulty keeps ramping with
-total distance.
+total distance (scroll speed, gaps, spacing). On top of that, each new city
+stage brings more: the first city has no power lines or slingshot kids and
+few tall buildings; power lines and kids come in with the second, double
+shots and stacked wires with the third, and tall buildings get more common
+city by city (the debug panel's "Progression" group).
 
 - **The harbour.** After `cityObstaclesBeforeGate` (6) city obstacles the street
   ends at a quay (bollard, ladder, stone wall) and the harbour opens up below.
@@ -205,6 +214,14 @@ total distance.
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
   floor kills; the surface is a soft ceiling you bump against.
+- **Obstacles.** Coral and rocks rise from the sea floor. Some slots are a
+  boat at anchor instead (`oceanAnchorChance`, 40%): its anchor hangs down on
+  the chain, over coral or a rock (a gap between them) or, for
+  `oceanAnchorOpenChance` (35%) of them, over open water, so you dive under
+  it. The hull dips below the surface, so hugging the surface isn't safe
+  either. The last obstacle before the far quay is never a boat (it would
+  vanish from the harbour as the bird leaps out), and neither is one while a
+  fisherman is out (he rows against the scroll, so it would run into him).
 - **Size is the tradeoff.** The fish, and its hitbox, grow with puff. Rising
   makes you bigger.
 - **Spike-out.** At ~85% puff the spines come out. Spiked, you pop jellyfish
@@ -213,6 +230,24 @@ total distance.
   spiked longer than ~1.5 s and you **pop**: a comic deflate, shake, and a
   stun during which you sink without control. The meter flashes "DEFLATE!" in
   the last ~0.3 s.
+- **The fisherman:** some ocean stages (`anglerChance`) have a fisherman in
+  a rowing boat, sitting low in the water with his pipe, beard, yellow
+  oilskins and sou'wester. When he's close he casts (a "!" by the bobber), and
+  the hook, with a wriggling worm on it, sinks to the depth the fish is at
+  right then. After that it doesn't follow you: he only jigs it gently
+  (`anglerJig`). Change depth to get past it ("CLOSE ONE!" if it was near).
+  - **The hook always catches**, spiked or not. The world holds still while
+    he reels the fish up, the reel ratcheting, and yanks it out of the water.
+    That ends the run with **his trophy photo**: him in his boat, grinning,
+    holding up the puffed-up fish. It pops up in-game and goes on the
+    game-over card ("Catch of the day").
+  - **The line above the hook can be cut**: cross it spiked (×4). It snags on
+    the spines and he leans back hauling on it until it parts. The end on his
+    rod whips back up, the cut-off end sinks away with the hook, and with the
+    pull suddenly gone he goes over backwards into his boat, boots in the air,
+    his hat flying off into the water. A moment later he sits up again, bald
+    and shaking his fist. Unspiked, the fish just slips past the line.
+  Tunables are in the debug panel's "Fisherman" group.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
 - **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
   wall comes up ahead. Once the last obstacle is behind you and the wall is
@@ -370,7 +405,7 @@ one that failed.
 overstrain timing, thresholds, EMA, calibration, world scroll, gaps and
 spacing, difficulty ramp, targets and scoring, and the "Ocean" and "Ocean puff"
 groups (stage lengths, buoyancy and drag, hitbox scale, ocean gaps and spacing,
-spike and pop timing, jellyfish, key puff rates, puff calibration and fallback
+anchors, spike and pop timing, jellyfish, key puff rates, puff calibration and fallback
 range).
 
 Start the app with `npm run dev:debug` (or build with `npm run build:debug`),

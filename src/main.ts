@@ -8,7 +8,8 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { Game, wireAt } from "./game";
-import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
+import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
+import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
@@ -85,6 +86,15 @@ function show(el: HTMLElement, visible: boolean): void {
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
+  // Game over gets longer: players often die mid-press, and shouldn't skip their score.
+  armButtonKeys(name === "gameover" ? 800 : 300);
+}
+
+/** Enter / Space / R… press buttons only after this time, so a press from the previous screen can't. */
+let buttonKeysArmedAt = 0;
+
+function armButtonKeys(ms: number): void {
+  buttonKeysArmedAt = performance.now() + ms;
 }
 
 // --- State ------------------------------------------------------------------------
@@ -594,6 +604,7 @@ function showCalibrationResult(result: CalibrationResult): void {
   card.classList.remove("strain");
   $("calib-step").textContent = "Strain check";
 
+  armButtonKeys(300);
   retryBtn.textContent = calibrationIsDefault ? "Calibrate" : "Recalibrate";
   if (result === "saved") {
     $("calib-prompt").textContent = "Welcome back!";
@@ -618,7 +629,9 @@ function showCalibrationResult(result: CalibrationResult): void {
   }
   const anyway = typeof result === "object" && !result.ok;
   calibrationFailed = anyway;
-  playBtn.innerHTML = anyway ? "Play anyway" : 'Play! <small class="kbd-only">(Enter)</small>';
+  playBtn.textContent = anyway ? "Play anyway" : "Play!";
+  decorate(playBtn);
+  decorate(retryBtn);
   playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);
 }
 
@@ -803,6 +816,7 @@ async function runOceanTutorial(token: number): Promise<void> {
   show($("tutorial-next"), needsPuffCalibration());
   game.holdTransition = true;
   show(overlay, true);
+  armButtonKeys(300);
   let done = false;
   dismissTutorial = () => (done = true);
   while (!done && token === flow) await wait(50);
@@ -963,7 +977,9 @@ function onGameOver(): void {
     best = score;
     saveBest(best);
   }
-  $("go-title").textContent = pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
+  $("go-title").textContent = game.trophy !== null
+    ? pick(["Hooked!", "Reeled in!", "Gone fishing.", "Fish and chips!"])
+    : pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
   $("go-score").textContent = String(score);
   show($("go-newbest"), newBest);
   $("go-best").textContent = String(best);
@@ -990,6 +1006,20 @@ function onGameOver(): void {
     }
   }
   $("go-balloons").textContent = String(game.balloonsPopped);
+  $("go-lines").textContent = String(game.anglersSnapped);
+
+  // Landed by the fisherman: his trophy photo.
+  show($("go-trophy"), game.trophy !== null);
+  if (game.trophy !== null) {
+    const tc = $<HTMLCanvasElement>("go-trophy-canvas");
+    const tctx = tc.getContext("2d");
+    if (tctx) {
+      tctx.setTransform(1, 0, 0, 1, 0, 0);
+      tctx.clearRect(0, 0, tc.width, tc.height);
+      tctx.scale(tc.width / 250, tc.width / 250);
+      drawTrophyPrint(tctx, 2, 2, 240, renderer.photos.get(game.trophy));
+    }
+  }
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -1214,6 +1244,7 @@ function frame(now: number): void {
     stun: game.charge.stun,
     scrollSpeed: game.speed,
     difficulty: game.difficulty,
+    cityStage: game.cityStage,
     birdVy: game.bird.vy,
     stage: game.transition
       ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`
@@ -1396,6 +1427,30 @@ function handleGameEvents(): void {
       case "threaded":
         sound.hit(4);
         break;
+      case "anglerCast":
+        sound.anglerCast();
+        break;
+      case "anglerHooked":
+        sound.anglerHooked();
+        buzz([40, 30, 40]);
+        break;
+      case "anglerReel":
+        sound.reelClick();
+        break;
+      case "anglerLanded": {
+        sound.splash();
+        buzz(200);
+        const photo = renderer.captureTrophy(game);
+        if (photo) renderer.photos.set(e.photoId, photo);
+        break;
+      }
+      case "anglerPhoto":
+        sound.shutter();
+        break;
+      case "lineSnapped":
+        sound.lineSnap();
+        buzz(60);
+        break;
     }
   }
   game.events.length = 0;
@@ -1408,8 +1463,24 @@ function isTyping(e: Event): boolean {
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
 }
 
+/** Something focused that handles Enter itself (a Tab-focused button, the options toggle…). */
+function focusHandlesEnter(): boolean {
+  const el = document.activeElement;
+  return !!el && el !== document.body && el.matches("button, summary, a, select, input, textarea");
+}
+
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
+  // A screen's yellow button takes Enter and Space; some buttons take more keys (data-keys).
+  if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const name = keyName(e);
+    const btn = name === "Enter" && focusHandlesEnter() ? null : buttonForKey(name);
+    if (btn) {
+      e.preventDefault();
+      if (performance.now() >= buttonKeysArmedAt) pressFromKey(btn);
+      return;
+    }
+  }
   const key = e.key.toLowerCase();
   if (e.code === "Space") {
     e.preventDefault();
@@ -1424,9 +1495,6 @@ window.addEventListener("keydown", (e) => {
       break;
     case "m":
       toggleMute();
-      break;
-    case "r":
-      if (state === "gameover") startReady();
       break;
     case "d":
       debug?.toggle();
@@ -1455,6 +1523,10 @@ window.addEventListener("keydown", (e) => {
       // Debug shortcut: a hot-air balloon floats in.
       if (debug?.visible && state === "playing") game.spawnBalloonNow();
       break;
+    case "h":
+      // Debug shortcut: a fisherman rows in (ocean only).
+      if (debug?.visible && state === "playing") game.spawnAnglerNow();
+      break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
       if (debug?.visible) startOceanRun();
@@ -1464,10 +1536,6 @@ window.addEventListener("keydown", (e) => {
       break;
     case "c":
       void recalibrate();
-      break;
-    case "enter":
-      if (state === "calibrated") playAfterCalibration();
-      else if (state === "playing") dismissTutorial?.();
       break;
   }
 });
@@ -1498,6 +1566,7 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 
 // --- Buttons -------------------------------------------------------------------------------
 
+decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
 on("btn-face", () => {
   goLandscape();

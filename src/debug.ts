@@ -30,6 +30,8 @@ export interface DebugData {
   stun: number;
   scrollSpeed: number;
   difficulty: number;
+  /** 1 = the first city, 2 = after the first dive, … */
+  cityStage: number;
   birdVy: number;
   /** "city", "ocean", or a transition like "city → ocean". */
   stage: string;
@@ -137,7 +139,7 @@ export class DebugPanel {
     el.append(this.puffSection);
 
     const keys = div("dbg-legend");
-    keys.textContent = "With this panel open: G brings the waterfront next, L a power line, F a paparazzo, K a slingshot kid, B a balloon, O starts a run as the pufferfish";
+    keys.textContent = "With this panel open: G brings the waterfront next, L a power line, F a paparazzo, K a slingshot kid, B a balloon, H a fisherman (ocean), O starts a run as the pufferfish";
     el.append(keys);
 
     el.append(h3("Face features (value · neutral | strain/puff · weight)"));
@@ -250,6 +252,7 @@ export class DebugPanel {
       ["bird vy", d.birdVy.toFixed(0)],
       ["scroll", d.scrollSpeed.toFixed(0)],
       ["difficulty", d.difficulty.toFixed(2)],
+      ["city stage", String(d.cityStage)],
       ["puff source", d.puffSource],
       ["puff raw / face", `${d.rawPuff.toFixed(3)} / ${d.facePuff.toFixed(3)}`],
       ["puff key / input", `${d.keyPuff.toFixed(2)} / ${d.puffInput.toFixed(2)}`],
