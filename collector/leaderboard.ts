@@ -54,7 +54,15 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
       const id = name.slice(0, -".json".length);
       if (!name.endsWith(".json") || !ID_RE.test(id)) continue;
       try {
-        map.set(id, JSON.parse(await readFile(file(id, "json"), "utf8")) as Stored);
+        const run = JSON.parse(await readFile(file(id, "json"), "utf8")) as Stored;
+        // Keyboard runs were accepted at first; only face-mode runs count now.
+        if ((run.entry as { mode?: unknown }).mode === "keyboard") {
+          await rm(file(id, "json"), { force: true });
+          await rm(file(id, "jpg"), { force: true });
+          console.log(`[leaderboard] dropped keyboard run ${id}`);
+          continue;
+        }
+        map.set(id, run);
       } catch (err) {
         console.error(`[leaderboard] skipping ${name}:`, err);
       }
@@ -107,7 +115,6 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
         id,
         name: cleanName(s.name)!,
         score: s.score,
-        mode: s.mode,
         stats: { targets: s.stats.targets, distance: s.stats.distance, bestCombo: s.stats.bestCombo },
         strain: s.face ? s.face.strain : null,
         face: s.face ? `/api/leaderboard/${id}.jpg` : null,

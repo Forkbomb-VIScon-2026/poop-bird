@@ -346,6 +346,11 @@ leaderboard: two boards of the runs players chose to submit.
 - **😣 Most strained faces**, by how strained the run's finest-strain face
   looks, 0–100. Only runs submitted with their face are on it.
 
+Only runs played with the face count. After a keyboard or touch run the
+game-over screen says so instead of offering to submit, and the collector
+turns away submissions that aren't face-mode runs. (At first keyboard runs
+were accepted; the collector deletes any it finds when it starts.)
+
 Nothing is sent until the player presses "Submit to the leaderboard" on the
 game-over screen (with a name, 16 characters at most). The face goes along
 only if they tick "with my face", which starts unticked every run, so the next

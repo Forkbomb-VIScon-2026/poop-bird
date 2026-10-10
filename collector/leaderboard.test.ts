@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -57,7 +57,7 @@ describe("leaderboard", () => {
     const b = await boards();
     expect(b.scores.map((e) => [e.name, e.score])).toEqual([["Di", 900], ["Bea Bop", 500], ["Cy", 300]]);
     expect(b.faces.map((e) => [e.name, e.strain])).toEqual([["Cy", 0.7], ["Di", 0.4]]);
-    expect(b.scores[1]).toMatchObject({ face: null, strain: null, mode: "face", stats: { targets: 3, distance: 120, bestCombo: 2 } });
+    expect(b.scores[1]).toMatchObject({ face: null, strain: null, stats: { targets: 3, distance: 120, bestCombo: 2 } });
 
     const img = await fetch(new URL(b.faces[0].face!, base));
     expect(img.status).toBe(200);
@@ -103,6 +103,22 @@ describe("leaderboard", () => {
     expect((await fetch(new URL(b.faces[0].face!, base))).status).toBe(200);
   });
 
+  it("drops keyboard runs stored before they stopped counting", async () => {
+    const { id: face } = await (await submit(withFace(42, 0.6))).json();
+    const old = (id: string, score: number) => ({
+      entry: { id, name: "Kb", score, mode: "keyboard", stats: { targets: 0, distance: 1, bestCombo: 0 }, strain: null, face: null, submittedAt: "2026-10-10T20:40:00.000Z" },
+      debug: false,
+      deleteKeyHash: "0".repeat(64),
+    });
+    await writeFile(join(dir, "leaderboard", "00000000000000aa.json"), JSON.stringify(old("00000000000000aa", 9000)));
+    await new Promise((r) => server.close(r));
+    server = createCollector({ dataDir: dir, collectionCode: "code", devToken: TOKEN });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/leaderboard`;
+    expect((await boards()).scores.map((e) => e.id)).toEqual([face]);
+    expect(await readdir(join(dir, "leaderboard"))).toEqual([`${face}.jpg`, `${face}.json`]);
+  });
+
   it("keeps runs from debug builds off the public boards", async () => {
     await submit(run(100));
     await submit(run(999, { debug: true }));
@@ -122,6 +138,13 @@ describe("leaderboard", () => {
     expect(await readdir(join(dir, "leaderboard"))).toEqual([]);
   });
 
+  it("turns away keyboard runs", async () => {
+    const res = await submit({ ...run(5000), mode: "keyboard" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/face/);
+    expect(await boards()).toEqual({ scores: [], faces: [] });
+  });
+
   it("rejects invalid runs", async () => {
     const bad = [
       run(10, { name: "   " }),
@@ -129,9 +152,9 @@ describe("leaderboard", () => {
       run(-1),
       run(1.5),
       { ...run(10), mode: "cheat" },
+      { ...run(10), mode: undefined },
       { ...run(10), stats: null },
       withFace(10, 1.2),
-      withFace(10, 0.5, { mode: "keyboard" }),
       run(10, { face: { jpeg: Buffer.from("<svg/>").toString("base64"), strain: 0.5 } }),
       run(10, { face: { jpeg: "not base64!", strain: 0.5 } }),
     ];
