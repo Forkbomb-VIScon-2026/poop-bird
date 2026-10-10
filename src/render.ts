@@ -1,6 +1,5 @@
 // Canvas rendering. Simple shapes, chunky outlines, no image assets.
 
-import { initialChargeState } from "./charge";
 import { config } from "./config";
 import { initialSpikeState } from "./swim";
 import {
@@ -22,6 +21,7 @@ import {
   WRECK_MAST_W,
   weddingX,
   OCEAN_DEPTH,
+  PERCH_Y,
   VIEW_H,
   WATER_Y,
   PEBBLE_R,
@@ -59,10 +59,14 @@ import {
 /** A captured photo: a face crop from the webcam, or a crop of the game canvas around the bird. */
 export type Photo = HTMLCanvasElement;
 
-/** What drawBird reads, so a bird can be drawn outside the game (the strain check's meter). */
+/** What drawBird reads (captureBird draws the bird outside the game). */
 type BirdLook = Pick<Game, "bird" | "charge" | "stunned" | "phase" | "overstrainProgress" | "zapped" | "zapFlash" | "time">;
 
 const OUTLINE = "#2b2d42";
+/** The perch's nest, relative to the perched bird's centre (PERCH_Y): its rim, depth and half-width. */
+const NEST_RIM = 8;
+const NEST_DEPTH = 30;
+const NEST_RX = 36;
 /** Pigeons are drawn at this scale (their hit radius is PIGEON_R in game.ts). */
 const PIGEON_SCALE = 1.35;
 /** Slingshot kids are drawn at this scale (their hitbox is the target's w × h). */
@@ -163,52 +167,6 @@ export class Renderer {
     return out;
   }
 
-  /**
-   * The strain check's bird, perched on the live meter at `at` (0..1 across
-   * the canvas) and charged by the live strain, so the player sees that
-   * straining is what drives the bird before the run starts. `relief` shows
-   * its relieved face (after letting go of a strain).
-   */
-  drawMeterBird(canvas: HTMLCanvasElement, at: number, strain: number, relief: boolean, time: number): void {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = Math.round(canvas.clientWidth * dpr);
-    const h = Math.round(canvas.clientHeight * dpr);
-    if (w <= 0 || h <= 0) return;
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
-    const octx = canvas.getContext("2d");
-    if (!octx) return;
-    octx.setTransform(1, 0, 0, 1, 0, 0);
-    octx.clearRect(0, 0, w, h);
-    const charge = Math.max(0, Math.min(1, strain));
-    // Room for the fully puffed bird plus its sweat drops.
-    const s = h / (BIRD_RADIUS * 3.2);
-    const half = BIRD_RADIUS * 1.6 * s;
-    // Over the fill's end, but whole on the canvas near either end of the bar.
-    const x = Math.max(half, Math.min(w - half, at * w));
-    // The bird puffs up around its centre (drawBird), so lift it as it grows: its belly
-    // (plus the outline) stays resting on the bottom edge, never sinking into the bar.
-    const belly = BIRD_RADIUS * (1 + charge * 0.28) + 2;
-    octx.setTransform(s, 0, 0, s, x, h - belly * s);
-    const look: BirdLook = {
-      bird: { x: 0, y: 0, vy: 0, rot: Math.sin(time * 2.5) * 0.06, stretch: 1, stretchV: 0, relief: relief ? 1 : 0, flap: 0 },
-      charge: { ...initialChargeState(), charge },
-      stunned: false,
-      phase: "playing",
-      overstrainProgress: 0,
-      zapped: false,
-      zapFlash: 0,
-      time,
-    };
-    const main = this.ctx;
-    this.ctx = octx;
-    try {
-      this.drawBird(look);
-    } finally {
-      this.ctx = main;
-    }
-  }
-
   /** Fits the canvas to its CSS size. Returns the logical width (height is always VIEW_H). */
   resize(): number {
     const rect = this.canvas.getBoundingClientRect();
@@ -239,6 +197,7 @@ export class Renderer {
     if (game.wedding) drawWeddingBackdrop(ctx, game.wedding, game.time);
     for (const o of game.obstacles) this.drawObstacle(o, game.time);
     for (const l of game.powerLines) this.drawPowerLine(l, game.time);
+    if (game.perchX !== null) this.drawPerch(game.perchX);
     // People stand on the sidewalk, in front of the buildings and poles.
     for (const t of game.targets) if (t.kind !== "car" && !t.chute) this.drawTarget(t, game.time);
     for (const b of game.balloons) this.drawBalloon(b, game.time);
@@ -256,6 +215,7 @@ export class Renderer {
     if (!game.transition) this.drawParticles(game);
     if (ocean) this.drawFish(game);
     else this.drawBird(game);
+    if (game.perchX !== null && !ocean) this.drawNestFront(game.perchX);
     if (game.angler && !game.transition) this.drawHookedCue(game.angler, game);
     // Over the bird, so the crosshair reads on it.
     if (!game.transition) for (const t of game.targets) if (t.kid) this.drawKidAim(t, game);
@@ -616,6 +576,92 @@ export class Renderer {
   }
 
   // --- power lines ------------------------------------------------------------
+
+  /**
+   * The practice perch: the bird's nest on top of a street lamp (game.perch).
+   * This is the lamp and the inside of the nest; drawNestFront() covers the
+   * bird's belly once the bird is drawn, so it sits in the nest.
+   */
+  private drawPerch(x: number): void {
+    const ctx = this.ctx;
+    const top = PERCH_Y + NEST_DEPTH + 6;
+    const foot = GROUND_Y + 16;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = OUTLINE;
+    // Arm and the lamp hanging off it.
+    ctx.fillStyle = "#3d4a5c";
+    ctx.beginPath();
+    ctx.moveTo(x + 4, top + 26);
+    ctx.quadraticCurveTo(x + 40, top + 10, x + 56, top + 30);
+    ctx.lineTo(x + 52, top + 33);
+    ctx.quadraticCurveTo(x + 38, top + 18, x + 4, top + 34);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#fff3a0";
+    ctx.beginPath();
+    ctx.moveTo(x + 42, top + 32);
+    ctx.lineTo(x + 66, top + 32);
+    ctx.lineTo(x + 60, top + 46);
+    ctx.lineTo(x + 48, top + 46);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Pole and its base.
+    ctx.fillStyle = "#3d4a5c";
+    ctx.fillRect(x - 5, top, 10, foot - top);
+    ctx.strokeRect(x - 5, top, 10, foot - top);
+    roundRect(ctx, x - 11, foot - 18, 22, 20, 4);
+    ctx.fill();
+    ctx.stroke();
+    // The inside of the nest, behind the bird.
+    ctx.fillStyle = "#5c3b1e";
+    ctx.beginPath();
+    ctx.ellipse(x, PERCH_Y + NEST_RIM, NEST_RX, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  /** The front of the nest: a woven bowl over the bird's belly, with twigs sticking out. */
+  private drawNestFront(x: number): void {
+    const ctx = this.ctx;
+    const y0 = PERCH_Y + NEST_RIM;
+    const bottom = PERCH_Y + NEST_DEPTH;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineCap = "round";
+    // Twigs poking out of the sides.
+    ctx.lineWidth = 2.5;
+    for (const [dx, dy, ex, ey] of [[-30, 8, -46, -2], [-24, 16, -42, 20], [28, 6, 46, -4], [26, 15, 44, 22]]) {
+      ctx.beginPath();
+      ctx.moveTo(x + dx, y0 + dy);
+      ctx.lineTo(x + ex, y0 + ey);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 3;
+    ctx.fillStyle = "#a0703c";
+    ctx.beginPath();
+    ctx.moveTo(x - NEST_RX - 2, y0);
+    ctx.quadraticCurveTo(x, y0 + 16, x + NEST_RX + 2, y0);
+    ctx.quadraticCurveTo(x + NEST_RX - 2, bottom, x, bottom + 2);
+    ctx.quadraticCurveTo(x - NEST_RX + 2, bottom, x - NEST_RX - 2, y0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Woven straw.
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#d9a865";
+    for (let i = 0; i < 3; i++) {
+      const y = y0 + 8 + i * 6;
+      const w = NEST_RX - 4 - i * 6;
+      ctx.beginPath();
+      ctx.moveTo(x - w, y - 3);
+      ctx.quadraticCurveTo(x - w / 3, y + 4, x + w / 4, y - 1);
+      ctx.moveTo(x - w / 6, y + 3);
+      ctx.quadraticCurveTo(x + w / 2, y + 5, x + w, y - 3);
+      ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+  }
 
   private drawPowerLine(l: PowerLine, time: number): void {
     const ctx = this.ctx;

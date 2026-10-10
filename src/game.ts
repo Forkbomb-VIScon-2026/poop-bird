@@ -65,6 +65,10 @@ const DEMO_SPAWN_SCALE = 2.2;
 const TALL_FRACTION = 0.4;
 /** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
 const DEMO_MAX_RISE = 300;
+/** The practice perch (a street lamp) the bird sits on before a run: the bird's y when perched. */
+export const PERCH_Y = 270;
+/** Fastest climb (px/s) off the practice perch, so a practice poop is a hop, not a launch. */
+const PERCH_MAX_RISE = 280;
 /** Collision radius is a bit smaller than the drawn bird, to feel fair. */
 const BIRD_HIT_RADIUS = 16;
 /** Ocean: the water surface (a soft ceiling). The sea floor is GROUND_Y. */
@@ -800,6 +804,14 @@ export class Game {
    */
   demo = false;
 
+  /**
+   * Before a run: x of the street lamp the bird sits on to practise (null =
+   * no lamp). Once the run starts, the lamp scrolls away with the street.
+   */
+  perchX: number | null = null;
+  /** The bird still sits on the perch (the run hasn't started). */
+  private perched = false;
+
   constructor(width: number) {
     this.resize(width);
     this.reset();
@@ -807,11 +819,16 @@ export class Game {
 
   resize(width: number): void {
     this.width = width;
+    const x = this.bird.x;
     this.bird.x = Math.round(Math.min(320, width * 0.28));
+    // Still on the perch (e.g. a phone turned to landscape): the lamp moves with the bird.
+    if (this.perched && this.perchX !== null) this.perchX += this.bird.x - x;
   }
 
   reset(): void {
     this.demo = false;
+    this.perchX = null;
+    this.perched = false;
     this.phase = "playing";
     this.time = 0;
     this.runTime = 0;
@@ -1040,6 +1057,51 @@ export class Game {
     this.updateEffects(dt, 0);
   }
 
+  /** Sits the bird on the practice perch. Call after reset(). */
+  perch(): void {
+    const b = this.bird;
+    this.perched = true;
+    this.perchX = b.x;
+    Object.assign(b, { y: PERCH_Y, vy: 0, rot: 0 });
+  }
+
+  /**
+   * One practice step on the perch: `straining` charges as in a run and a
+   * release poops and hops the bird, but the world holds still and the bird
+   * lands back on the lamp. Nothing spawns and nothing can hurt it.
+   */
+  stepPerch(dt: number): void {
+    this.time += dt;
+    this.speed = 0;
+    this.updateCharge(dt);
+    const b = this.bird;
+    b.vy = Math.max(b.vy, -PERCH_MAX_RISE);
+    const charging = this.charge.charge > 0 && !this.stunned;
+    b.vy = Math.min(b.vy + config.gravity * (charging ? config.chargeGravityScale : 1) * dt, config.maxFallSpeed);
+    b.y += b.vy * dt;
+    if (b.y >= PERCH_Y) {
+      b.y = PERCH_Y;
+      if (b.vy > 0) b.vy = 0;
+    }
+    this.animateBird(dt);
+    b.rot += ((this.stunned ? 0 : Math.max(-0.5, Math.min(0.7, b.vy / 700))) - b.rot) * Math.min(1, dt * 10);
+    for (const t of this.targets) t.hitFlash = Math.max(0, t.hitFlash - dt);
+    this.updatePoops(dt, 0);
+    this.updateEffects(dt, 0);
+  }
+
+  /** The run starts: practice hits and mishaps don't count. The lamp stays behind. */
+  leavePerch(): void {
+    this.perched = false;
+    this.bonus = 0;
+    this.combo = 0;
+    this.bestCombo = 0;
+    this.targetsHit = 0;
+    this.poopsDropped = 0;
+    this.accidents = 0;
+    this.floaters = [];
+  }
+
   step(dt: number): void {
     this.time += dt;
     this.runTime += dt;
@@ -1068,6 +1130,10 @@ export class Game {
     if (alive) {
       this.distance += speed * dt;
       this.stageTime += dt;
+    }
+    if (this.perchX !== null) {
+      this.perchX -= speed * dt;
+      if (this.perchX < -100) this.perchX = null;
     }
 
     if (ocean) {
@@ -1186,13 +1252,7 @@ export class Game {
       if (b.vy < 0) b.vy = 0;
     }
 
-    // Squash & stretch spring.
-    const k = 220;
-    const damp = 14;
-    b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
-    b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
-    b.relief = Math.max(0, b.relief - dt);
-    b.flap = Math.max(0, b.flap - dt);
+    this.animateBird(dt);
 
     if (this.stunned) b.rot += dt * 14;
     else if (this.phase === "dying") b.rot += (1.4 - b.rot) * Math.min(1, dt * 6);
@@ -1226,6 +1286,17 @@ export class Game {
         gravity: -40, world: true,
       });
     }
+  }
+
+  /** Squash & stretch spring, and the relief and flap timers. */
+  private animateBird(dt: number): void {
+    const b = this.bird;
+    const k = 220;
+    const damp = 14;
+    b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
+    b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
+    b.relief = Math.max(0, b.relief - dt);
+    b.flap = Math.max(0, b.flap - dt);
   }
 
   private crash(cause: "crash" | "zap" = "crash"): void {
