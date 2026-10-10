@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cheek outline test</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐡</text></svg>" />
+    <style>
+      :root { color-scheme: light dark; --bg: #f4f6fb; --fg: #1d2030; --card: #fff; --muted: #667; --accent: #ef476f; --line: #d9dce6; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #14161f; --fg: #e8e9f0; --card: #1e2130; --muted: #9aa; --line: #333a4d; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+      main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+      @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+      h1 { font-size: 20px; margin: 0 0 4px; grid-column: 1 / -1; }
+      h2 { font-size: 16px; margin: 0 0 8px; }
+      p { margin: 6px 0; }
+      .muted { color: var(--muted); font-size: 13px; }
+      canvas { width: 100%; display: block; border-radius: 8px; background: #000; }
+      #view { transform: scaleX(-1); }
+      #plot { background: transparent; margin-top: 8px; }
+      #prompt { font-size: 28px; font-weight: 700; min-height: 1.4em; margin: 6px 0; }
+      #prompt.active { color: var(--accent); }
+      .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+      .bar > div { height: 100%; width: 0; background: var(--accent); }
+      button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+      button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+      th, td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+      th:first-child, td:first-child { text-align: left; }
+      .good { color: #2a9d5c; font-weight: 600; }
+      .bad { color: var(--muted); }
+      .legend span { display: inline-block; margin-right: 12px; font-size: 13px; }
+      .legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 4px; }
+      #results { grid-column: 1 / -1; overflow-x: auto; }
+      #live { font-size: 13px; font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>🐡 Cheek outline test</h1>
+
+      <section>
+        <canvas id="view" width="640" height="480"></canvas>
+        <p class="legend">
+          <span><i style="background:#888"></i>probe lines</span>
+          <span><i style="background:#3ddc84"></i>edge found in the image</span>
+          <span><i style="background:#3a86ff"></i>mesh contour</span>
+          <span><i style="background:#ffca3a"></i>cheek patches</span>
+        </p>
+        <canvas id="plot" width="640" height="180"></canvas>
+        <p class="legend">
+          <span><i style="background:#ef476f"></i>image outline width</span>
+          <span><i style="background:#3a86ff"></i>mesh outline width</span>
+          <span><i style="background:#3ddc84"></i>cheek shading change</span>
+          <span><i style="background:#ffca3a"></i>mouthPucker</span>
+        </p>
+      </section>
+
+      <section>
+        <h2>What this tests</h2>
+        <p>Whether puffing your cheeks pushes the face's outline out in the <b>camera image</b>, where MediaPipe's face mesh barely moves. Green dots should sit on the edge of your cheeks; if they jump to the background or your hair, move to a plainer background or better light.</p>
+        <p class="muted">Everything runs in this tab. No video or images are stored or sent anywhere; "Download numbers" saves only the measured values.</p>
+        <div id="prompt">Press start</div>
+        <div class="bar"><div id="progress"></div></div>
+        <p id="status" class="muted">Loading the face model…</p>
+        <div class="buttons">
+          <button id="btn-start" class="primary" disabled>Start the test (~95 s)</button>
+          <button id="btn-download" disabled>Download numbers</button>
+        </div>
+        <p id="live"></p>
+      </section>
+
+      <section id="results" hidden>
+        <h2>Results</h2>
+        <p class="muted">AUC: how well each signal separates puff frames from the other frames (0.5 = chance, 1 = never confused; ≥ 0.8 highlighted). Oriented so the puff side is the side the signal moves to. Effect = median change while puffing / relaxed jitter.</p>
+        <div id="results-table"></div>
+      </section>
+    </main>
+    <script type="module" src="/src/cheek.ts"></script>
+  </body>
+</html>
