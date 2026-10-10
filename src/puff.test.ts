@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assessPuffCalibration,
+  buildInteractivePuffCalibration,
   buildPuffCalibration,
   faceGeometry,
   fallbackPuff,
@@ -31,6 +32,8 @@ const PARAMS = {
   oceanFallbackMax: 0.5,
   oceanFallbackRestSds: 3,
   oceanFallbackRestMargin: 0.05,
+  oceanPuffRelaxedQuantile: 0.8,
+  oceanPuffMinGap: 0.5,
   emaAlpha: 1,
   faceLossGrace: 0.25,
 };
@@ -228,6 +231,42 @@ describe("assessPuffCalibration", () => {
     const cal = buildPuffCalibration(mainCal, puff, PARAMS)!;
     const q = assessPuffCalibration(cal, puff, { strain: 1 }, PARAMS);
     expect(q.ok).toBe(false);
+  });
+});
+
+describe("buildInteractivePuffCalibration", () => {
+  // Right after a puff the mouth stays narrow and the lips pressed; only the cheeks and eyes-to-mouth go back.
+  const AFTER_PUFF = { ...RELAXED, mouthWidth: 0.5, mouthPress: 0.2 };
+  const relaxed = [...samples(RELAXED, 30), ...samples(AFTER_PUFF, 30)];
+  const cal = buildInteractivePuffCalibration(relaxed, samples(PUFFED, 40), PARAMS)!;
+
+  it("only weights what the puff has and the face right after it doesn't", () => {
+    expect(cal.weights.eyeMouth).toBeGreaterThan(0.9);
+    expect(cal.weights.cheekWidth).toBeGreaterThan(0.5);
+    expect(cal.weights.mouthWidth).toBeLessThan(0.05);
+    expect(cal.weights.mouthPress).toBeLessThan(0.05);
+    for (const f of STRAIN_FEATURES) if (!PUFF_FEATURES.includes(f)) expect(cal.weights[f]).toBe(0);
+  });
+
+  it("lets the face right after a puff sink, and a puff float", () => {
+    expect(rawPuff(fv(AFTER_PUFF), cal, PARAMS)).toBeLessThan(PARAMS.oceanHoverPuff);
+    expect(rawPuff(fv(RELAXED), cal, PARAMS)).toBeCloseTo(0, 1);
+    expect(rawPuff(fv(PUFFED), cal, PARAMS)).toBeGreaterThan(0.9);
+  });
+
+  it("needs both relaxed and puff samples", () => {
+    expect(buildInteractivePuffCalibration([], samples(PUFFED, 10), PARAMS)).toBeNull();
+    expect(buildInteractivePuffCalibration(relaxed, [], PARAMS)).toBeNull();
+  });
+
+  it("fails the quality check when the relaxed faces would keep the fish up", () => {
+    const plain = buildInteractivePuffCalibration(samples(RELAXED, 30), samples(PUFFED, 40), PARAMS)!;
+    const puffs = samples(PUFFED, 40);
+    expect(assessPuffCalibration(plain, puffs, { strain: 1 }, PARAMS, samples(RELAXED, 30)).ok).toBe(true);
+    const q = assessPuffCalibration(plain, puffs, { strain: 1 }, PARAMS, samples(PUFFED, 30));
+    expect(q.ok).toBe(false);
+    expect(q.sinkRate).toBe(0);
+    expect(q.reason).toMatch(/relax/);
   });
 });
 

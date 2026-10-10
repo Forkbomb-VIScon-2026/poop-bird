@@ -203,6 +203,50 @@ canvas#game {
   background: #4cc9f0;
 }
 
+.puff-calib-step {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 0 var(--ink);
+  min-height: 1.2em;
+}
+
+/* Practice step: the checks tick green as the fish floats up, then sinks. */
+.puff-check {
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.puff-check li {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  opacity: 0.75;
+}
+
+.puff-check li.done {
+  background: #3ddc84;
+  opacity: 1;
+}
+
+.puff-check li.done::after {
+  content: " ✓";
+}
+
+.puff-calib-buttons {
+  justify-content: center;
+  margin-top: 12px;
+  pointer-events: auto;
+}
+
 /* In-game tutorial card (first dive). Right of centre, so the fish and its meter stay in view; below the pause screen. */
 .tutorial {
   position: absolute;

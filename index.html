@@ -51,9 +51,19 @@
 
       <!-- In-game puff calibration (first dive in face mode; the world is frozen) -->
       <div id="puff-calib" class="puff-calib hidden">
+        <div id="puff-calib-step" class="puff-calib-step"></div>
         <h2 id="puff-calib-title">PUFFERFISH FACE! 🐡</h2>
         <p id="puff-calib-hint" class="hint">Puff your cheeks and purse your lips, like a kiss. Hold it.</p>
-        <div class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
+        <div id="puff-calib-bar" class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
+        <!-- Practice step ("Try it!"): the checks tick as the fish floats up, then sinks. -->
+        <ul id="puff-calib-check" class="puff-check hidden">
+          <li id="puff-check-up">⬆️ Float up</li>
+          <li id="puff-check-down">⬇️ Sink</li>
+        </ul>
+        <div id="puff-calib-buttons" class="buttons puff-calib-buttons hidden">
+          <button id="btn-puff-redo" class="btn">Redo <small class="kbd-only">(R)</small></button>
+          <button id="btn-puff-play" class="btn primary">Play! <small class="kbd-only">(Enter)</small></button>
+        </div>
       </div>
 
       <!-- Ocean tutorial: a new player's first dive (the world is frozen until "Got it").
@@ -98,7 +108,7 @@
             </li>
           </ul>
           <p class="tutorial-try" data-keys>Try it now: hold <kbd class="kbd-only">Space</kbd><span class="touch-only">the screen</span> and watch the fish.</p>
-          <p id="tutorial-next" class="tutorial-try" data-face>Next: one big pufferfish face (cheeks puffed, lips pursed), so the game learns yours.</p>
+          <p id="tutorial-next" class="tutorial-try" data-face>Next: a short puff-and-relax routine (about 20 s), so the game learns your pufferfish face.</p>
           <div class="buttons">
             <button id="btn-tutorial-ok" class="btn primary">Got it! <small class="kbd-only">(Enter)</small></button>
           </div>

@@ -22,6 +22,7 @@
 //   → max(face puff, key puff) → Game.puffInput
 
 import {
+  FEATURE_NAMES,
   PUFF_FEATURES,
   buildCalibration,
   clamp,
@@ -33,6 +34,7 @@ import {
   type FeatureVector,
   type GeometryFeatureName,
   type PhaseCoverage,
+  zeroFeatures,
 } from "./strain";
 
 // --- Landmark geometry ---------------------------------------------------------
@@ -110,14 +112,87 @@ export function buildPuffCalibration(
   );
 }
 
-export interface PuffQualityParams {
-  featureClampMax: number;
+export interface InteractivePuffParams {
+  oceanPuffMinSeparation: number;
+  oceanPuffRelaxedQuantile: number;
+  oceanPuffMinGap: number;
+}
+
+/**
+ * Fits the puff calibration from the interactive calibration: relaxed faces
+ * (a relaxed read, and the relaxed faces right after each puff) vs. the puff
+ * holds. A face just after a puff doesn't return to the relaxed face from
+ * before it: the mouth stays narrower, the lips pressed or a bit pursed. With
+ * only the first relaxed face as the reference, those leftovers read as puff
+ * and the fish won't sink (in the face dataset, a fifth of relaxed frames
+ * floated, for some people half). So per feature:
+ *
+ * - "relaxed" (`neutral`) is the `oceanPuffRelaxedQuantile` of the relaxed
+ *   samples toward the puff side, so most relaxed faces score 0 on it;
+ * - "full" (`strain`) is the puff median (robust: the lips purse for a moment
+ *   as the cheeks fill);
+ * - the weight is the usual separation weight (change vs. noise), scaled down
+ *   unless the puff clears that relaxed edge by `oceanPuffMinGap` of its change.
+ *
+ * `neutralStd` holds the relaxed spread (MAD), which also places the pucker
+ * range above the relaxed faces (puckerRange).
+ */
+export function buildInteractivePuffCalibration(
+  relaxed: readonly FeatureVector[],
+  puff: readonly FeatureVector[],
+  p: InteractivePuffParams,
+): Calibration | null {
+  if (!relaxed.length || !puff.length) return null;
+  const neutral = zeroFeatures();
+  const strain = zeroFeatures();
+  const weights = zeroFeatures();
+  const neutralStd = zeroFeatures();
+  const q = clamp(p.oceanPuffRelaxedQuantile, 0.5, 1);
+  for (const f of FEATURE_NAMES) {
+    const r = relaxed.map((s) => s[f]);
+    const v = puff.map((s) => s[f]);
+    const relaxedMedian = quantile(r, 0.5);
+    const puffMedian = quantile(v, 0.5);
+    const up = puffMedian >= relaxedMedian;
+    const edge = quantile(r, up ? q : 1 - q);
+    neutral[f] = edge;
+    strain[f] = puffMedian;
+    neutralStd[f] = mad(r);
+    if (!PUFF_FEATURES.includes(f)) continue;
+    const change = Math.abs(puffMedian - relaxedMedian);
+    if (change < 1e-9) continue;
+    const gap = up ? puffMedian - edge : edge - puffMedian;
+    const separation = separationWeight(puffMedian - relaxedMedian, mad(r) + mad(v), p.oceanPuffMinSeparation);
+    weights[f] = separation * clamp(gap / change / Math.max(1e-3, p.oceanPuffMinGap), 0, 1);
+  }
+  return { neutral, strain, weights, neutralStd };
+}
+
+/** Linear-interpolated quantile, q in 0..1. */
+function quantile(values: readonly number[], q: number): number {
+  const s = [...values].sort((a, b) => a - b);
+  if (!s.length) return 0;
+  const i = clamp(q, 0, 1) * (s.length - 1);
+  const lo = Math.floor(i);
+  const hi = Math.min(s.length - 1, lo + 1);
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+}
+
+/** Median absolute deviation, scaled to a standard deviation for normal data. */
+function mad(values: readonly number[]): number {
+  const m = quantile(values, 0.5);
+  return 1.4826 * quantile(values.map((x) => Math.abs(x - m)), 0.5);
+}
+
+export interface PuffQualityParams extends RawPuffParams {
   oceanHoverPuff: number;
   oceanMinPuffChange: number;
   minFaceCoverage?: number;
   minSamples?: number;
   /** Fraction of puff samples that must score at or above the hover point. */
   minHitRate?: number;
+  /** Fraction of relaxed samples (if given) that must score below the hover point. */
+  minSinkRate?: number;
 }
 
 export interface PuffQuality {
@@ -126,29 +201,41 @@ export interface PuffQuality {
   totalChange: number;
   /** Fraction of puff-phase samples scoring at or above the hover point. */
   hitRate: number;
+  /** Fraction of relaxed samples scoring below the hover point (NaN without relaxed samples). */
+  sinkRate: number;
   reason?: string;
 }
 
-/** Checks that the puff phase was visible, clearly different from neutral, and steady. */
+/**
+ * Checks that the puff phase was visible, clearly different from relaxed, and
+ * steady; with `relaxedSamples`, also that the relaxed faces (the pucker range
+ * included, as in game) would let the fish sink.
+ */
 export function assessPuffCalibration(
   calib: Calibration,
   puffSamples: readonly FeatureVector[],
   coverage: Pick<PhaseCoverage, "strain">,
   p: PuffQualityParams,
+  relaxedSamples?: readonly FeatureVector[],
 ): PuffQuality {
   const minSamples = p.minSamples ?? 8;
   const minCoverage = p.minFaceCoverage ?? 0.6;
   const minHitRate = p.minHitRate ?? 0.6;
+  const minSinkRate = p.minSinkRate ?? 0.8;
   const totalChange = PUFF_FEATURES.reduce((s, f) => s + calib.weights[f], 0);
   let hits = 0;
   for (const s of puffSamples) if (rawStrain(s, calib, p.featureClampMax) >= p.oceanHoverPuff) hits++;
   const hitRate = puffSamples.length ? hits / puffSamples.length : 0;
-  const base = { totalChange, hitRate };
+  let sinks = 0;
+  for (const s of relaxedSamples ?? []) if (rawPuff(s, calib, p) < p.oceanHoverPuff) sinks++;
+  const sinkRate = relaxedSamples?.length ? sinks / relaxedSamples.length : NaN;
+  const base = { totalChange, hitRate, sinkRate };
   if (puffSamples.length < minSamples || coverage.strain < minCoverage) {
     return { ...base, ok: false, reason: "couldn't see your face" };
   }
   if (totalChange < p.oceanMinPuffChange) return { ...base, ok: false, reason: "puff looked like your relaxed face" };
   if (hitRate < minHitRate) return { ...base, ok: false, reason: "puff wasn't held steadily" };
+  if (sinkRate < minSinkRate) return { ...base, ok: false, reason: "your face didn't relax between puffs" };
   return { ...base, ok: true };
 }
 

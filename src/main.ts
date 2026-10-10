@@ -12,7 +12,7 @@ import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render"
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
-  buildPuffCalibration,
+  buildInteractivePuffCalibration,
   initialPuffState,
   stepKeyPuff,
   stepPuff,
@@ -663,94 +663,211 @@ function needsPuffCalibration(): boolean {
   return mode === "face" && tracker.ready && puffCalibration === null && !puffCalibrationTried;
 }
 
+/** One step of the interactive puff calibration. Puff steps last oceanCalibrationSeconds, relax steps oceanRelaxSeconds. */
+interface PuffCalibrationStep {
+  kind: "relax" | "puff";
+  title: string;
+  hint: string;
+}
+
+/**
+ * A relaxed read, looking around, then two puff/relax cycles. Every relax
+ * step counts as "not puffing". The relax steps after each puff matter most:
+ * a face right after a puff doesn't go back to the relaxed face from before
+ * it, and the calibration has to know what that looks like, or the fish won't
+ * sink (see buildInteractivePuffCalibration). Looking around keeps features
+ * that move with the head (eye–mouth distance) from counting as a puff.
+ */
+const PUFF_CALIBRATION_STEPS: readonly PuffCalibrationStep[] = [
+  { kind: "relax", title: "RELAX 😌", hint: "Relaxed face, lips loose. Learning your resting face…" },
+  { kind: "relax", title: "LOOK AROUND 👀", hint: "Keep your face relaxed and look around the screen." },
+  { kind: "puff", title: "PUFFERFISH FACE! 🐡", hint: "Puff your cheeks and purse your lips, like a kiss. Hold it." },
+  { kind: "relax", title: "LET IT OUT 😮‍💨", hint: "Let the air out and relax your lips completely." },
+  { kind: "puff", title: "AGAIN! 🐡", hint: "The same pufferfish face. Hold it." },
+  { kind: "relax", title: "AND RELAX 😌", hint: "Air out, lips loose." },
+];
+
+/** The practice step's controls, while it runs (Enter / R and the overlay's buttons). */
+let puffPracticeControls: { play(): void; redo(): void } | null = null;
+
 /**
  * Runs while the dive transition is held, right after the bird turned into a
- * deflated fish: the world holds still, an overlay asks for a full puff and
- * the fish inflates as the player puffs. Belongs to the current run's flow token, so going to
- * the menu or recalibrating mid-dive abandons it (the next run resets the
- * game). Never blocks the game: a failed check asks for another pufferfish
- * face (oceanPuffCalibrationAttempts in all), then falls back to the pucker range.
- * One hold can miss for faces with a single usable feature (in the dataset, a
- * beard hid the pursed lips and only the eye–mouth distance moved), and a second
- * try is usually fine.
+ * deflated fish: the world holds still and an overlay walks the player
+ * through PUFF_CALIBRATION_STEPS while the fish puffs along. Then a practice
+ * step ("float up, then sink") shows whether it works before the run goes on;
+ * the player can redo it (R). A failed quality check says why and runs the
+ * steps again (oceanPuffCalibrationAttempts in all), then falls back to the
+ * pucker range. Belongs to the current run's flow token, so going to the menu
+ * or recalibrating mid-dive abandons it (the next run resets the game).
  */
 async function runPuffCalibration(): Promise<void> {
   const token = flow;
-  const main = calibration;
-  if (!main?.neutralStd) {
-    // Calibrated before the ocean existed: no relaxed-face stats to compare against.
-    puffCalibrationTried = true;
-    showToast("Using default puff. Recalibrate (C) to tune it.");
-    return;
-  }
   activePuffCalibration = token;
-  // Cleared once per calibration, not per try: a new face during the pause between tries still aborts.
+  // Cleared once per calibration, not per step: a new face between steps still aborts.
   abortPuffCalibration = false;
   game.holdTransition = true;
-  const title = $("puff-calib-title");
-  const hint = $("puff-calib-hint");
   const attempts = Math.max(1, Math.round(config.oceanPuffCalibrationAttempts));
-  for (let attempt = 1; ; attempt++) {
-    title.textContent = attempt === 1 ? "PUFFERFISH FACE! 🐡" : "ONCE MORE! 🐡";
-    hint.textContent =
-      attempt === 1
-        ? "Puff your cheeks and purse your lips, like a kiss. Hold it."
-        : "A bigger pufferfish face: cheeks full, lips pursed. Hold it.";
-    show($("puff-calib"), true);
-    const phase = await puffCalibrationPhase(token);
+  let attempt = 1;
+  for (;;) {
+    const result = await puffCalibrationSteps(token);
     if (token !== flow) return endPuffCalibrationOverlay(token);
-    if (!phase) {
-      // A different face got locked mid-puff: this run uses the default puff.
-      endPuffCalibrationOverlay(token);
-      puffCalibrationTried = true;
-      puffSignal = initialPuffState();
-      game.holdTransition = false;
-      showToast("New face: using default puff. Recalibrate (C) to tune it.", 3500);
-      return;
+    if (!result) return abandonPuffCalibration(token);
+
+    const { relaxed, puffs, coverage } = result;
+    const cal = buildInteractivePuffCalibration(relaxed, puffs, config);
+    const quality = cal
+      ? assessPuffCalibration(cal, puffs, { strain: coverage }, { ...config, minSinkRate: config.oceanPuffMinSinkRate }, relaxed)
+      : null;
+    console.info("[puff calibration]", { attempt, cal, quality, relaxed: relaxed.length, puffs: puffs.length });
+    lastPuffAttempt = cal && quality ? { cal, quality } : null;
+
+    if (!cal || !quality?.ok) {
+      const reason = quality?.reason ?? "couldn't see your face";
+      if (attempt >= attempts) {
+        endPuffCalibrationOverlay(token);
+        puffCalibrationTried = true;
+        showToast(`Couldn't calibrate puff (${reason}), using defaults`, 3500);
+        break;
+      }
+      attempt++;
+      setPuffOverlay("NOT QUITE! 🐡", `${reason[0].toUpperCase()}${reason.slice(1)}. Let's go again.`, "");
+      await wait(2500);
+      if (token !== flow) return endPuffCalibrationOverlay(token);
+      continue;
     }
 
-    const cal = buildPuffCalibration(main, phase.samples, config);
-    const quality = cal ? assessPuffCalibration(cal, phase.samples, { strain: phase.coverage }, config) : null;
-    console.info("[puff calibration]", { attempt, cal, quality, phase });
-    lastPuffAttempt = cal && quality ? { cal, quality } : null;
-    if (cal && quality?.ok) {
-      endPuffCalibrationOverlay(token);
-      puffCalibrationTried = true;
-      puffCalibration = cal;
-      saveCalibration(PUFF_CALIBRATION_KEY, cal);
-      showToast(`Puff calibrated! 🐡 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
-      break;
-    }
-    if (attempt >= attempts) {
-      endPuffCalibrationOverlay(token);
-      puffCalibrationTried = true;
-      showToast(`Couldn't calibrate puff (${quality?.reason ?? "no data"}), using defaults`, 3500);
-      break;
-    }
-    // Let the air out before the next try, so it's a fresh puff.
-    title.textContent = "NOT QUITE! 🐡";
-    hint.textContent = "Let the air out and relax…";
-    sound.setBurble(-1);
-    $("puff-calib-progress").style.width = "0%";
-    await wait(1500);
+    // Try it out with the new calibration before the run goes on.
+    puffCalibration = cal;
+    puffSignal = initialPuffState();
+    const practice = await puffPractice(token);
     if (token !== flow) return endPuffCalibrationOverlay(token);
+    if (practice === null) return abandonPuffCalibration(token);
+    if (practice === "redo") {
+      puffCalibration = null;
+      attempt = 1;
+      continue;
+    }
+    endPuffCalibrationOverlay(token);
+    puffCalibrationTried = true;
+    saveCalibration(PUFF_CALIBRATION_KEY, cal);
+    showToast(`Puff calibrated! 🐡 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
+    break;
   }
   puffSignal = initialPuffState();
   game.holdTransition = false;
+}
+
+/** A different face got locked mid-calibration: this run uses the default puff. */
+function abandonPuffCalibration(token: number): void {
+  endPuffCalibrationOverlay(token);
+  puffCalibration = null;
+  puffCalibrationTried = true;
+  puffSignal = initialPuffState();
+  game.holdTransition = false;
+  showToast("New face: using default puff. Recalibrate (C) to tune it.", 3500);
+}
+
+/** Runs PUFF_CALIBRATION_STEPS once. null = abandoned (new face, or the run ended). */
+async function puffCalibrationSteps(
+  token: number,
+): Promise<{ relaxed: FeatureVector[]; puffs: FeatureVector[]; coverage: number } | null> {
+  const relaxed: FeatureVector[] = [];
+  const puffs: FeatureVector[] = [];
+  let coverage = 1;
+  for (const [i, step] of PUFF_CALIBRATION_STEPS.entries()) {
+    setPuffOverlay(step.title, step.hint, `${i + 1} / ${PUFF_CALIBRATION_STEPS.length}`);
+    const puff = step.kind === "puff";
+    const phase = await puffCalibrationPhase(token, puff ? config.oceanCalibrationSeconds : config.oceanRelaxSeconds, puff);
+    if (!phase || token !== flow) return null;
+    (puff ? puffs : relaxed).push(...phase.samples);
+    coverage = Math.min(coverage, phase.coverage);
+  }
+  return { relaxed, puffs, coverage };
+}
+
+/**
+ * "Try it": the fish follows the new calibration; float it up, then let it
+ * sink. Each check needs ~0.4 s on its side of the hover point; with both done
+ * the run goes on by itself. Enter / "Play!" goes on anyway, R / "Redo" runs
+ * the calibration again. null = abandoned.
+ */
+async function puffPractice(token: number): Promise<"play" | "redo" | null> {
+  const HOLD = 400;
+  const up = $("puff-check-up");
+  const down = $("puff-check-down");
+  up.classList.remove("done");
+  down.classList.remove("done");
+  setPuffOverlay("TRY IT! 🐡", "Pufferfish face to float up, then let it out and sink.", "");
+  show($("puff-calib-check"), true);
+  show($("puff-calib-buttons"), true);
+  show($("puff-calib-bar"), false);
+  let choice: "play" | "redo" | null = null;
+  puffPracticeControls = { play: () => (choice = "play"), redo: () => (choice = "redo") };
+  let floated = false;
+  let sank = false;
+  let since = performance.now();
+  let above = false;
+  let doneAt = 0;
+  try {
+    for (;;) {
+      if (token !== flow || abortPuffCalibration) {
+        abortPuffCalibration = false;
+        return null;
+      }
+      if (choice) return choice;
+      const now = performance.now();
+      if (state === "playing") {
+        const isAbove = puffSignal.smoothed > config.oceanHoverPuff;
+        if (isAbove !== above) {
+          above = isAbove;
+          since = now;
+        }
+        if (above && now - since >= HOLD && !floated) {
+          floated = true;
+          up.classList.add("done");
+        }
+        if (!above && floated && now - since >= HOLD && !sank) {
+          sank = true;
+          down.classList.add("done");
+          doneAt = now;
+          setPuffOverlay("NICE! 🐡", "That's your pufferfish. Off you go!", "");
+        }
+        if (sank && now - doneAt >= 1200) return "play";
+      }
+      await wait(50);
+    }
+  } finally {
+    puffPracticeControls = null;
+    show($("puff-calib-check"), false);
+    show($("puff-calib-buttons"), false);
+    show($("puff-calib-bar"), true);
+  }
+}
+
+function setPuffOverlay(title: string, hint: string, step: string): void {
+  $("puff-calib-title").textContent = title;
+  $("puff-calib-hint").textContent = hint;
+  $("puff-calib-step").textContent = step;
+  $("puff-calib-progress").style.width = "0%";
+  show($("puff-calib"), true);
 }
 
 /** Hides the puff calibration overlay if `token`'s calibration still owns it. */
 function endPuffCalibrationOverlay(token: number): void {
   if (activePuffCalibration !== token) return;
   activePuffCalibration = null;
+  puffPracticeControls = null;
   show($("puff-calib"), false);
   sound.setBurble(-1);
 }
 
-/** Collects puff samples, dropping the settle time. Pausing restarts it after resume. null = abandoned. */
-async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> {
+/**
+ * Collects one step's samples for `seconds`, dropping the settle time. Pausing
+ * restarts the step after resume. `burble` plays the puffing sound. null = abandoned.
+ */
+async function puffCalibrationPhase(token: number, seconds: number, burble: boolean): Promise<PhaseResult | null> {
   const progress = $("puff-calib-progress");
-  const total = config.oceanCalibrationSeconds * 1000;
+  const total = seconds * 1000;
   const settle = config.calibrationSettle * 1000;
   let start = -1;
   let mine: ReturnType<typeof startSampling> | null = null;
@@ -761,7 +878,7 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
       return null;
     }
     if (state !== "playing") {
-      // Paused: start over after resuming, so the samples are one continuous puff.
+      // Paused: start over after resuming, so the samples are one continuous step.
       start = -1;
       stopSampling(mine?.samples ?? null);
       mine = null;
@@ -777,10 +894,11 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
     const elapsed = now - start;
     if (elapsed >= total) break;
     progress.style.width = `${(elapsed / total) * 100}%`;
-    sound.setBurble(elapsed / total);
+    sound.setBurble(burble ? elapsed / total : -1);
     await wait(50);
   }
   progress.style.width = "100%";
+  sound.setBurble(-1);
   const samples = (mine?.samples ?? []).filter((s) => s.t - start >= settle).map((s) => s.f);
   const frames = (mine?.frames ?? []).filter((t) => t - start >= settle).length;
   stopSampling(mine?.samples ?? null);
@@ -1418,6 +1536,7 @@ window.addEventListener("keydown", (e) => {
       break;
     case "r":
       if (state === "gameover") startReady();
+      else puffPracticeControls?.redo();
       break;
     case "d":
       debug?.toggle();
@@ -1458,7 +1577,10 @@ window.addEventListener("keydown", (e) => {
       break;
     case "enter":
       if (state === "calibrated") playAfterCalibration();
-      else if (state === "playing") dismissTutorial?.();
+      else if (state === "playing") {
+        if (puffPracticeControls) puffPracticeControls.play();
+        else dismissTutorial?.();
+      }
       break;
   }
 });
@@ -1521,6 +1643,8 @@ on("btn-again", () => {
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
 on("btn-tutorial-ok", () => dismissTutorial?.());
+on("btn-puff-play", () => puffPracticeControls?.play());
+on("btn-puff-redo", () => puffPracticeControls?.redo());
 $<HTMLInputElement>("opt-tips").addEventListener("change", (e) => {
   setNewPlayer((e.target as HTMLInputElement).checked);
 });

@@ -3,7 +3,14 @@
 // how it changes every participant's numbers.
 
 import type { Config } from "../../src/config";
-import { assessPuffCalibration, buildPuffCalibration, fallbackPuff, initialPuffState, stepPuff } from "../../src/puff";
+import {
+  assessPuffCalibration,
+  buildInteractivePuffCalibration,
+  buildPuffCalibration,
+  fallbackPuff,
+  initialPuffState,
+  stepPuff,
+} from "../../src/puff";
 import {
   PUFF_FEATURES,
   buildCalibration,
@@ -20,7 +27,7 @@ import {
   type FeatureStats,
   type FeatureVector,
 } from "../../src/strain";
-import type { PuffCalibrationInput, PuffVariant } from "./puff";
+import type { PuffCalibrationInput, PuffCycle, PuffVariant } from "./puff";
 import type { StrainVariant } from "./strain";
 
 function strainDetector(): StrainVariant["detector"] {
@@ -72,11 +79,30 @@ function gamePuffCalibration(neutral: FeatureVector[], puff: FeatureVector[], co
   return checked(buildPuffCalibration(main, puff, config), puff, config);
 }
 
-/** Like the game: if the first hold fails the check, the second try's hold. */
-function gamePuffCalibrationWithRetry(c: PuffCalibrationInput, config: Config): Calibration | null {
-  const first = gamePuffCalibration(c.neutral, c.puff, config);
-  if (first || config.oceanPuffCalibrationAttempts < 2 || !c.retry.length) return first;
-  return gamePuffCalibration(c.neutral, c.retry, config);
+/** The single-hold calibration with a retry: if the first hold fails the check, the next hold. */
+function singleHoldWithRetry(c: PuffCalibrationInput, config: Config): Calibration | null {
+  const first = gamePuffCalibration(c.neutral, c.cycles[0].puff, config);
+  if (first || config.oceanPuffCalibrationAttempts < 2) return first;
+  return gamePuffCalibration(c.neutral, c.cycles[1].puff, config);
+}
+
+/**
+ * The game's interactive calibration from a relaxed read, looking around and
+ * puff/relax cycles, quality-checked like the game.
+ */
+function interactivePuffCalibration(fresh: FeatureVector[], look: FeatureVector[], cycles: PuffCycle[], config: Config): Calibration | null {
+  const relaxed = [...fresh, ...look, ...cycles.flatMap((c) => c.relax)];
+  const puffs = cycles.flatMap((c) => c.puff);
+  const cal = buildInteractivePuffCalibration(relaxed, puffs, config);
+  const p = { ...config, minSinkRate: config.oceanPuffMinSinkRate };
+  return cal && assessPuffCalibration(cal, puffs, { strain: 1 }, p, relaxed).ok ? cal : null;
+}
+
+/** Like the game: if the first sequence fails the check, a second one (the script's next two cycles). */
+function gameInteractiveCalibration(c: PuffCalibrationInput, config: Config): Calibration | null {
+  const first = interactivePuffCalibration(c.fresh, c.look, c.cycles, config);
+  if (first || config.oceanPuffCalibrationAttempts < 2 || c.retry.length < 2) return first;
+  return interactivePuffCalibration(c.cycles[1].relax, c.look, c.retry, config);
 }
 
 /** The puff calibration fitted against another relaxed face. */
@@ -125,19 +151,26 @@ const previousPuffDetector: PuffVariant["detector"] = (calibration, config) => {
 export const PUFF_VARIANTS: PuffVariant[] = [
   {
     name: "game",
-    calibrate: gamePuffCalibrationWithRetry,
+    calibrate: gameInteractiveCalibration,
+    detector: puffDetector,
+  },
+  {
+    // Before the interactive calibration: the main calibration's relaxed face vs. one
+    // hold, retried once; the face right after a puff then often kept the fish up.
+    name: "single hold, retry",
+    calibrate: singleHoldWithRetry,
     detector: puffDetector,
   },
   {
     // Before the retry and the pucker range above the relaxed face (for faces with
     // a single usable feature, and people who rest with slightly pursed lips).
     name: "one try, fixed pucker range",
-    calibrate: (c, config) => gamePuffCalibration(c.neutral, c.puff, config),
+    calibrate: (c, config) => gamePuffCalibration(c.neutral, c.cycles[0].puff, config),
     detector: fixedRangePuffDetector,
   },
   {
     name: "previous game: calibration alone, mouthPress fallback",
-    calibrate: (c, config) => gamePuffCalibration(c.neutral, c.puff, config),
+    calibrate: (c, config) => gamePuffCalibration(c.neutral, c.cycles[0].puff, config),
     detector: previousPuffDetector,
   },
   {
@@ -150,7 +183,7 @@ export const PUFF_VARIANTS: PuffVariant[] = [
     // The relaxed face drifts between the calibration and the dive; a short read right
     // before the puff fixes that for most, but its noise estimate is too small.
     name: "fresh relaxed read before the puff",
-    calibrate: (c, config) => puffCalibrationFrom(neutralFaceStats(c.fresh), c.puff, config),
+    calibrate: (c, config) => puffCalibrationFrom(neutralFaceStats(c.fresh), c.cycles[0].puff, config),
     detector: puffDetector,
   },
 ];

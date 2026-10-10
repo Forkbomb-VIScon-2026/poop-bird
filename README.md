@@ -323,7 +323,8 @@ separated their puffs from their relaxed face), while pursed lips light up
   the puff calibration is missing or failed. A few people rest with slightly
   pursed lips (0.2 in the calibration, 0.5 between puffs for one participant,
   whose fish floated all the time), so the range starts above the player's
-  resting pucker from the main calibration when that's higher: resting +
+  resting pucker (from the puff calibration's relaxed faces, or the main
+  calibration's without one) when that's higher: resting +
   `oceanFallbackRestSds` (3) SDs + `oceanFallbackRestMargin` (0.05), same
   width.
 - the **puff calibration** below, which learns the player's own scale: some
@@ -347,39 +348,50 @@ separated their puffs from their relaxed face), while pursed lips light up
    case a future model fixes it). The strain calibration only weights its own
    features, so the new ones get strain weight 0 and strain detection is
    unchanged.
-2. **Neutral** comes from the main calibration's relaxed phase (or the
-   default calibration's relaxed read), which also stores each feature's
-   standard deviation.
-3. **Puff phase.** On the first dive in face mode, with the world frozen, we
-   collect `oceanCalibrationSeconds` (3 s) of full puff and drop the first
-   `calibrationSettle`. Pausing restarts the phase; going to the menu or
-   recalibrating abandons it. The phase is summarized with **robust stats**
-   (median and MAD): as the cheeks fill, the lips purse hard for ~0.2 s and
-   then relax, and with mean stats that blip got weight, so the fish only
-   puffed while the face was changing and sank while the puff was held. With
-   the median only what you hold through most of the phase counts.
-4. **Weights.** Geometry moves by a few hundredths while blendshapes move by
-   tenths, so the puff weights are scale-free: a feature counts once its change
-   exceeds `oceanPuffMinSeparation` (1.5) times its noise, with full weight at
-   twice that. Whatever moves for *you* gets picked. The score is the same
-   weighted normalized mean and EMA as strain, but with **no hysteresis**: the
-   fish needs the analog value.
-5. **Quality check.** It fails on low face coverage, summed puff weights below
+2. **Interactive calibration.** On the first dive in face mode, with the
+   world frozen and the fish puffing along, an overlay walks the player
+   through six steps: relax, look around (relaxed), pufferfish face, let it out
+   and relax the lips, pufferfish face again, relax. Puff steps last
+   `oceanCalibrationSeconds` (3 s), relax steps `oceanRelaxSeconds` (3 s); the
+   first `calibrationSettle` of each is dropped. Pausing restarts the step;
+   going to the menu or recalibrating abandons it. The relax steps right
+   **after** each puff matter most: a face just after a puff doesn't go back
+   to the relaxed face from before it (the mouth stays narrower, the lips
+   pressed or a bit pursed, the mouth corners up). When the calibration only
+   knew the relaxed face from the start of the game, those leftovers read as
+   puff and the fish often wouldn't sink: in the face dataset a fifth of the
+   relaxed frames after a puff floated, for some people half. Looking around
+   teaches it which features move with the head.
+3. **Fit** (`buildInteractivePuffCalibration`). All relax steps count as "not
+   puffing". Per feature, "relaxed" is the `oceanPuffRelaxedQuantile` (80%) of
+   those relaxed faces toward the puff side, so most of them score 0, and
+   "full" is the puff **median** (as the cheeks fill, the lips purse hard for
+   ~0.2 s and then relax; with the median only what you hold counts).
+   Geometry moves by a few hundredths while blendshapes move by tenths, so the
+   weights are scale-free: a feature counts once its change exceeds
+   `oceanPuffMinSeparation` (1.5) times its noise (full weight at twice that),
+   and only fully if the puff clears the relaxed edge by `oceanPuffMinGap`
+   (half) of its change. Whatever moves for *you*, and stays put when you
+   relax, gets picked. The score is the same weighted normalized mean and EMA
+   as strain, but with **no hysteresis**: the fish needs the analog value.
+4. **Quality check.** It fails on low face coverage, summed puff weights below
    `oceanMinPuffChange` (0.5, i.e. at least half a feature that clearly moved),
-   or fewer than 60% of puff samples scoring above the hover point. After a
-   failure the overlay says "Not quite!", lets the player relax for 1.5 s and
-   asks **once more** (`oceanPuffCalibrationAttempts`, 2 tries in all). Some
-   faces have a single usable feature: for one bearded participant MediaPipe
-   barely saw the pursed lips (`mouthPucker` ~0.25, mouth width unchanged)
-   and only `eyeMouth` moved, so one weaker hold in five failed the check and
-   left them with the pucker range, which hardly moved their fish. A failure
-   never blocks the game: after the last try the fish follows the pucker range
-   alone, with a toast. A calibration saved before these features existed has no neutral
-   stats for them, so the fish uses the pucker range until you recalibrate
-   with **C**.
-6. A passing puff calibration is saved like the main one, and the toast says
-   which features it watches. **C** clears it, so the next dive samples again.
-   After the face-loss grace, puff drops to 0 and the fish sinks.
+   fewer than 60% of puff samples scoring above the hover point, or fewer than
+   `oceanPuffMinSinkRate` (80%) of the relaxed samples scoring below it, the
+   pucker range included ("your face didn't relax between puffs"). After a
+   failure the overlay says why and runs the steps again
+   (`oceanPuffCalibrationAttempts`, 2 runs in all). A failure never blocks the
+   game: after the last run the fish follows the pucker range alone, with a
+   toast.
+5. **Try it.** A passing calibration is tried out before the run goes on:
+   "float up, then sink", with a ✓ for each (~0.4 s on its side of the hover
+   point). With both, the run continues by itself; **Enter** / "Play!" goes on
+   anyway, **R** / "Redo" runs the calibration again. Players whose fish won't
+   sink see it here, not in the middle of the sea.
+6. The calibration is saved like the main one (`poopbird.puffCalibration.v3`;
+   older single-hold ones are ignored), and the toast says which features it
+   watches. **C** clears it, so the next dive calibrates again. After the
+   face-loss grace, puff drops to 0 and the fish sinks.
 7. **Input.** The fish gets `max(face puff, key puff)`; only one of them is live,
    depending on the mode. In keyboard mode, holding Space, mouse or touch inflates
    the key puff at `oceanKeyInflateRate`; releasing deflates it at
@@ -532,13 +544,16 @@ npm run data:purge  # delete the local copy (everyone, when the VM goes away)
 replays the rest. For strain it reports hits on strain steps, false strain
 while relaxed, looking around and laughing, releases in the middle of a
 strain, and press and release latency. For puff it scores the plain puff
-and the pufferfish face separately, each with a calibration fitted from its
-own first hold: the median puff level while relaxed, at half and at full
-puff, how often the fish sinks while relaxed and rises while puffing, false
-spikes, and how often it would rise while the player just looks around or
-laughs (the strain script's "look" and "laugh" steps). Like the game, a puff
-calibration that fails its quality check isn't used; the second try is fitted
-from the gesture's next hold. The features are computed again from the
+and the pufferfish face separately. Like the game's interactive calibration,
+each script's first two hold → relax cycles (plus the relaxed step before
+them and the start of the strain script's look-around) are the calibration,
+and every variant is scored only on what comes after: the median puff level
+while relaxed, at half and at full puff, how often the fish sinks while
+relaxed and rises while puffing, false spikes, and how often it would rise
+while the player looks around (the look frames no calibration saw) or laughs
+(the strain script's "look" and "laugh" steps). Like the game, a puff
+calibration that fails its quality check isn't used; the second run is fitted
+from the script's next two cycles. The features are computed again from the
 recorded blendshapes and landmarks with the current `extractFeatures` and
 `faceGeometry`, so a new or changed feature scores on every recording. To try a
 detection idea, add a variant to `scripts/eval/variants.ts`; the first entry

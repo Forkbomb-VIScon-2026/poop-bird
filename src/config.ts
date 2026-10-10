@@ -192,7 +192,11 @@ export const CONFIG_SPEC = {
   oceanFallbackMax: { value: 0.5, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Pucker: full puff", hint: "max(mouthPucker, cheekPuff) mapped to puff 1; used with or without a calibration" },
   oceanFallbackRestSds: { value: 3, min: 0, max: 8, step: 0.5, group: "Ocean puff", label: "Pucker: rest SDs", hint: "the pucker range starts this many SDs above the player's resting pucker (if above Pucker: relaxed)" },
   oceanFallbackRestMargin: { value: 0.05, min: 0, max: 0.3, step: 0.01, group: "Ocean puff", label: "Pucker: rest margin", hint: "added on top of the resting pucker + SDs" },
-  oceanPuffCalibrationAttempts: { value: 2, min: 1, max: 4, step: 1, group: "Ocean puff", label: "Puff calibration tries", hint: "pufferfish faces asked for before giving up on the puff calibration" },
+  oceanPuffCalibrationAttempts: { value: 2, min: 1, max: 4, step: 1, group: "Ocean puff", label: "Puff calibration tries", hint: "puff/relax sequences asked for before giving up on the puff calibration" },
+  oceanRelaxSeconds: { value: 3, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Relax step", hint: "s of each relax step in the puff calibration (first calibrationSettle s ignored)" },
+  oceanPuffRelaxedQuantile: { value: 0.8, min: 0.5, max: 1, step: 0.05, group: "Ocean puff", label: "Relaxed edge", hint: "share of the calibration's relaxed faces (also right after a puff) that score 0 on each feature" },
+  oceanPuffMinGap: { value: 0.5, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min puff gap", hint: "a feature gets full weight once the puff clears the relaxed edge by this share of its change" },
+  oceanPuffMinSinkRate: { value: 0.8, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min sink rate", hint: "calibration quality: share of its relaxed faces that must score below the hover point" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;
