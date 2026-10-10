@@ -5,6 +5,16 @@ export type PoopSize = "weak" | "middle" | "large";
 
 type ActiveSound = { source: AudioBufferSourceNode; gain: GainNode };
 
+const CURSE_SOUNDS = SOUND_NAMES.filter((name) => name.startsWith("curse_"));
+
+function shuffle<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items;
+}
+
 /** All game audio is sample-based; no synthesized sound effects. */
 export class Sound {
   private ctx: AudioContext | null = null;
@@ -12,6 +22,9 @@ export class Sound {
   private readonly buffers = new Map<SoundName, AudioBuffer>();
   private readonly active = new Map<SoundName, ActiveSound>();
   private powerLine: ActiveSound | null = null;
+  private cursing: ActiveSound | null = null;
+  private curseBag: SoundName[] = [];
+  private lastCurse: SoundName | null = null;
   muted = false;
 
   /** A real asset takes priority; otherwise use its named bell placeholder. */
@@ -412,10 +425,30 @@ export class Sound {
     this.play("line_snap", volume, delay);
   }
 
+  /** Cycles through the curse recordings in a shuffled order, never the same one twice in a row. */
   curse(): void {
     const volume = 1;
     const delay = 0;
-    this.play("curse", volume, delay);
+    if (this.curseBag.length === 0) {
+      this.curseBag = shuffle([...CURSE_SOUNDS]);
+      if (this.curseBag[0] === this.lastCurse) this.curseBag.push(this.curseBag.shift()!);
+    }
+    const name = this.curseBag.shift()!;
+    this.lastCurse = name;
+
+    // A re-provoked pedestrian starts a new curse; cut the old one off rather than talk over it.
+    const ctx = this.ctx;
+    if (ctx && this.cursing) {
+      this.cursing.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
+      this.cursing.source.stop(ctx.currentTime + 0.15);
+    }
+    const started = this.play(name, volume, delay);
+    this.cursing = started;
+    if (started) {
+      started.source.onended = () => {
+        if (this.cursing === started) this.cursing = null;
+      };
+    }
   }
 
   /** Additional event sounds used by the current gameplay code. */
