@@ -42,17 +42,26 @@ function jitter(i: number, amp: number): number {
   return Math.sin(i * 12.9898) * amp;
 }
 
-function samples(base: Partial<FeatureVector>, n: number, noise = 0.01): FeatureVector[] {
+function samples(
+  base: Partial<FeatureVector>,
+  n: number,
+  noise = 0.01,
+): FeatureVector[] {
   return Array.from({ length: n }, (_, i) => {
     const v = fv(base);
-    for (const f of FEATURE_NAMES) v[f] = Math.max(0, v[f] + jitter(i + f.length, noise));
+    for (const f of FEATURE_NAMES)
+      v[f] = Math.max(0, v[f] + jitter(i + f.length, noise));
     return v;
   });
 }
 
 describe("extractFeatures", () => {
   it("averages left/right pairs and passes single features through", () => {
-    const f = extractFeatures({ browDownLeft: 0.2, browDownRight: 0.6, mouthRollLower: 0.5 });
+    const f = extractFeatures({
+      browDownLeft: 0.2,
+      browDownRight: 0.6,
+      mouthRollLower: 0.5,
+    });
     expect(f.browDown).toBeCloseTo(0.4);
     expect(f.mouthRollLower).toBeCloseTo(0.5);
   });
@@ -99,11 +108,15 @@ describe("featureWeight", () => {
   });
 
   it("grows with the change", () => {
-    expect(featureWeight(0.5, 0.01, 0.04)).toBeGreaterThan(featureWeight(0.2, 0.01, 0.04));
+    expect(featureWeight(0.5, 0.01, 0.04)).toBeGreaterThan(
+      featureWeight(0.2, 0.01, 0.04),
+    );
   });
 
   it("penalizes noisy features", () => {
-    expect(featureWeight(0.3, 0.3, 0.04)).toBeLessThan(featureWeight(0.3, 0.01, 0.04));
+    expect(featureWeight(0.3, 0.3, 0.04)).toBeLessThan(
+      featureWeight(0.3, 0.01, 0.04),
+    );
   });
 });
 
@@ -143,9 +156,19 @@ describe("separationWeight", () => {
 });
 
 describe("calibration weighting", () => {
-  const neutral = samples({ browDown: 0.05, eyeSquint: 0.1, mouthPress: 0.1, eyeBlink: 0.1 }, 40);
-  const strain = samples({ browDown: 0.7, eyeSquint: 0.6, mouthPress: 0.1, eyeBlink: 0.11 }, 40);
-  const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
+  const neutral = samples(
+    { browDown: 0.05, eyeSquint: 0.1, mouthPress: 0.1, eyeBlink: 0.1 },
+    40,
+  );
+  const strain = samples(
+    { browDown: 0.7, eyeSquint: 0.6, mouthPress: 0.1, eyeBlink: 0.11 },
+    40,
+  );
+  const calib = buildCalibration(
+    featureStats(neutral),
+    featureStats(strain),
+    PARAMS,
+  );
 
   it("gives features that didn't move ~zero weight", () => {
     expect(calib.weights.mouthPress).toBe(0);
@@ -159,13 +182,21 @@ describe("calibration weighting", () => {
   });
 
   it("scores the neutral face ~0 and the strain face ~1", () => {
-    expect(rawStrain(fv({ browDown: 0.05, eyeSquint: 0.1 }), calib, 1.3)).toBeCloseTo(0, 1);
-    expect(rawStrain(fv({ browDown: 0.7, eyeSquint: 0.6 }), calib, 1.3)).toBeCloseTo(1, 1);
+    expect(
+      rawStrain(fv({ browDown: 0.05, eyeSquint: 0.1 }), calib, 1.3),
+    ).toBeCloseTo(0, 1);
+    expect(
+      rawStrain(fv({ browDown: 0.7, eyeSquint: 0.6 }), calib, 1.3),
+    ).toBeCloseTo(1, 1);
   });
 
   it("ignores unweighted features entirely", () => {
     const a = rawStrain(fv({ browDown: 0.4, eyeSquint: 0.3 }), calib, 1.3);
-    const b = rawStrain(fv({ browDown: 0.4, eyeSquint: 0.3, mouthPress: 1, noseSneer: 1 }), calib, 1.3);
+    const b = rawStrain(
+      fv({ browDown: 0.4, eyeSquint: 0.3, mouthPress: 1, noseSneer: 1 }),
+      calib,
+      1.3,
+    );
     expect(a).toBeCloseTo(b);
   });
 
@@ -174,7 +205,11 @@ describe("calibration weighting", () => {
   });
 
   it("returns 0 when no feature has weight", () => {
-    const flat: Calibration = { neutral: zeroFeatures(), strain: zeroFeatures(), weights: zeroFeatures() };
+    const flat: Calibration = {
+      neutral: zeroFeatures(),
+      strain: zeroFeatures(),
+      weights: zeroFeatures(),
+    };
     expect(rawStrain(fv({ browDown: 1 }), flat, 1.3)).toBe(0);
   });
 });
@@ -242,9 +277,19 @@ describe("defaultCalibration", () => {
 
 describe("assessCalibration", () => {
   it("accepts a clearly separated calibration", () => {
-    const neutral = samples({ browDown: 0.05, eyeSquint: 0.1, noseSneer: 0.02 }, 40);
-    const strain = samples({ browDown: 0.7, eyeSquint: 0.6, noseSneer: 0.4 }, 40);
-    const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
+    const neutral = samples(
+      { browDown: 0.05, eyeSquint: 0.1, noseSneer: 0.02 },
+      40,
+    );
+    const strain = samples(
+      { browDown: 0.7, eyeSquint: 0.6, noseSneer: 0.4 },
+      40,
+    );
+    const calib = buildCalibration(
+      featureStats(neutral),
+      featureStats(strain),
+      PARAMS,
+    );
     const q = assessCalibration(calib, neutral, strain, PARAMS);
     expect(q.ok).toBe(true);
     expect(q.strainHitRate).toBeGreaterThan(0.9);
@@ -255,17 +300,34 @@ describe("assessCalibration", () => {
   it("rejects a calibration where the faces barely differ", () => {
     const neutral = samples({ browDown: 0.1, eyeSquint: 0.1 }, 40);
     const strain = samples({ browDown: 0.16, eyeSquint: 0.13 }, 40);
-    const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
+    const calib = buildCalibration(
+      featureStats(neutral),
+      featureStats(strain),
+      PARAMS,
+    );
     const q = assessCalibration(calib, neutral, strain, PARAMS);
     expect(q.ok).toBe(false);
     expect(q.reason).toMatch(/strain harder/i);
   });
 
   it("rejects when the face was visible for only part of a phase", () => {
-    const neutral = samples({ browDown: 0.05, eyeSquint: 0.1, noseSneer: 0.02 }, 40);
-    const strain = samples({ browDown: 0.7, eyeSquint: 0.6, noseSneer: 0.4 }, 40);
-    const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
-    const q = assessCalibration(calib, neutral, strain, PARAMS, { neutral: 1, strain: 0.3 });
+    const neutral = samples(
+      { browDown: 0.05, eyeSquint: 0.1, noseSneer: 0.02 },
+      40,
+    );
+    const strain = samples(
+      { browDown: 0.7, eyeSquint: 0.6, noseSneer: 0.4 },
+      40,
+    );
+    const calib = buildCalibration(
+      featureStats(neutral),
+      featureStats(strain),
+      PARAMS,
+    );
+    const q = assessCalibration(calib, neutral, strain, PARAMS, {
+      neutral: 1,
+      strain: 0.3,
+    });
     expect(q.ok).toBe(false);
     expect(q.reason).toMatch(/couldn't see your face/i);
   });
@@ -273,7 +335,11 @@ describe("assessCalibration", () => {
   it("rejects when too few samples were captured (no face)", () => {
     const neutral = samples({ browDown: 0.05 }, 3);
     const strain = samples({ browDown: 0.8 }, 3);
-    const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
+    const calib = buildCalibration(
+      featureStats(neutral),
+      featureStats(strain),
+      PARAMS,
+    );
     expect(assessCalibration(calib, neutral, strain, PARAMS).ok).toBe(false);
   });
 
@@ -283,7 +349,11 @@ describe("assessCalibration", () => {
       ...samples({ browDown: 0.9, eyeSquint: 0.9 }, 12),
       ...samples({ browDown: 0.08, eyeSquint: 0.08 }, 28),
     ];
-    const calib = buildCalibration(featureStats(neutral), featureStats(strain), { minFeatureDelta: 0.04 });
+    const calib = buildCalibration(
+      featureStats(neutral),
+      featureStats(strain),
+      { minFeatureDelta: 0.04 },
+    );
     const q = assessCalibration(calib, neutral, strain, PARAMS);
     expect(q.ok).toBe(false);
   });
@@ -340,18 +410,46 @@ describe("updateHysteresis", () => {
 describe("stepStrain", () => {
   const neutral = samples({ browDown: 0.05 }, 20);
   const strain = samples({ browDown: 0.8 }, 20);
-  const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
-  const p = { featureClampMax: 1.3, emaAlpha: 1, strainOn: 0.45, strainOff: 0.3, faceLossGrace: 0.25 };
+  const calib = buildCalibration(
+    featureStats(neutral),
+    featureStats(strain),
+    PARAMS,
+  );
+  const p = {
+    featureClampMax: 1.3,
+    emaAlpha: 1,
+    strainOn: 0.45,
+    strainOff: 0.3,
+    faceLossGrace: 0.25,
+  };
 
   it("activates on a strain face", () => {
-    const s = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), calib, 1 / 30, p);
+    const s = stepStrain(
+      initialStrainState(),
+      fv({ browDown: 0.8 }),
+      calib,
+      1 / 30,
+      p,
+    );
     expect(s.active).toBe(true);
     expect(s.faceVisible).toBe(true);
   });
 
   it("holds the strain through a short detection dropout", () => {
-    const on = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), calib, 1 / 30, p);
-    const blip = stepStrain(stepStrain(on, null, calib, 1 / 30, p), null, calib, 1 / 30, p);
+    const on = stepStrain(
+      initialStrainState(),
+      fv({ browDown: 0.8 }),
+      calib,
+      1 / 30,
+      p,
+    );
+    const blip = stepStrain(
+      stepStrain(on, null, calib, 1 / 30, p),
+      null,
+      calib,
+      1 / 30,
+      p,
+    );
     expect(blip.faceVisible).toBe(false);
     expect(blip.active).toBe(true);
     const back = stepStrain(blip, fv({ browDown: 0.8 }), calib, 1 / 30, p);
@@ -360,7 +458,13 @@ describe("stepStrain", () => {
   });
 
   it("treats a face missing for longer than the grace period as zero strain", () => {
-    let s = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), calib, 1 / 30, p);
+    let s = stepStrain(
+      initialStrainState(),
+      fv({ browDown: 0.8 }),
+      calib,
+      1 / 30,
+      p,
+    );
     for (let i = 0; i < 9; i++) s = stepStrain(s, null, calib, 1 / 30, p);
     expect(s.faceVisible).toBe(false);
     expect(s.smoothed).toBe(0);
@@ -368,7 +472,13 @@ describe("stepStrain", () => {
   });
 
   it("returns zero strain without a calibration", () => {
-    const s = stepStrain(initialStrainState(), fv({ browDown: 0.8 }), null, 1 / 30, p);
+    const s = stepStrain(
+      initialStrainState(),
+      fv({ browDown: 0.8 }),
+      null,
+      1 / 30,
+      p,
+    );
     expect(s.smoothed).toBe(0);
   });
 });

@@ -12,12 +12,18 @@
 
 /** The features we look at. L/R pairs are averaged into one value. */
 export const FEATURE_SOURCES = {
-  browDown: ["browDownLeft", "browDownRight"],
-  eyeSquint: ["eyeSquintLeft", "eyeSquintRight"],
-  eyeBlink: ["eyeBlinkLeft", "eyeBlinkRight"],
-  noseSneer: ["noseSneerLeft", "noseSneerRight"],
-  cheekSquint: ["cheekSquintLeft", "cheekSquintRight"],
-  mouthPress: ["mouthPressLeft", "mouthPressRight"],
+  browDownLeft: ["browDownLeft"],
+  browDownRight: ["browDownRight"],
+  //eyeSquintLeft: ["eyeSquintLeft"],
+  //eyeSquintRight: ["eyeSquintRight"],
+  // eyeBlink: ["eyeBlinkLeft"],
+  // eyeBlinkRight: ["eyeBlinkRight"],
+  noseSneer: ["noseSneerLeft"],
+  noseSneerRight: ["noseSneerRight"],
+  cheekSquint: ["cheekSquintLeft"],
+  cheekSquintRight: ["cheekSquintRight"],
+  mouthPress: ["mouthPressLeft"],
+  mouthPressRight: ["mouthPressRight"],
   mouthRollLower: ["mouthRollLower"],
   mouthRollUpper: ["mouthRollUpper"],
   mouthShrugUpper: ["mouthShrugUpper"],
@@ -98,7 +104,8 @@ export function featureStats(samples: readonly FeatureVector[]): FeatureStats {
   if (n === 0) return { mean, std, count: 0 };
   for (const s of samples) for (const f of FEATURE_NAMES) mean[f] += s[f];
   for (const f of FEATURE_NAMES) mean[f] /= n;
-  for (const s of samples) for (const f of FEATURE_NAMES) std[f] += (s[f] - mean[f]) ** 2;
+  for (const s of samples)
+    for (const f of FEATURE_NAMES) std[f] += (s[f] - mean[f]) ** 2;
   for (const f of FEATURE_NAMES) std[f] = Math.sqrt(std[f] / n);
   return { mean, std, count: n };
 }
@@ -153,7 +160,11 @@ export interface CalibrationParams {
  * dead zone), scaled down if it is noisy relative to that movement. A feature
  * that moved 0.4 cleanly beats one that moved 0.4 but jitters by ±0.3.
  */
-export function featureWeight(delta: number, noise: number, minFeatureDelta: number): number {
+export function featureWeight(
+  delta: number,
+  noise: number,
+  minFeatureDelta: number,
+): number {
   const change = Math.abs(delta) - minFeatureDelta;
   if (change <= 0) return 0;
   // Separation in "noise units"; ≥ 2 counts as fully reliable.
@@ -224,20 +235,36 @@ export function restoreCalibration(data: unknown, required: readonly FeatureName
 }
 
 /** `(x − neutral) / (strain − neutral)`, clamped to [0, clampMax]. Handles features that decrease. */
-export function normalizeFeature(x: number, neutral: number, strain: number, clampMax: number): number {
+export function normalizeFeature(
+  x: number,
+  neutral: number,
+  strain: number,
+  clampMax: number,
+): number {
   const range = strain - neutral;
   if (Math.abs(range) < 1e-6) return 0;
   return clamp((x - neutral) / range, 0, clampMax);
 }
 
 /** Weighted mean of the normalized features, clamped to 0..1. Unsmoothed. */
-export function rawStrain(features: FeatureVector, calib: Calibration, featureClampMax: number): number {
+export function rawStrain(
+  features: FeatureVector,
+  calib: Calibration,
+  featureClampMax: number,
+): number {
   let sum = 0;
   let weightSum = 0;
   for (const f of FEATURE_NAMES) {
     const w = calib.weights[f];
     if (w <= 0) continue;
-    sum += w * normalizeFeature(features[f], calib.neutral[f], calib.strain[f], featureClampMax);
+    sum +=
+      w *
+      normalizeFeature(
+        features[f],
+        calib.neutral[f],
+        calib.strain[f],
+        featureClampMax,
+      );
     weightSum += w;
   }
   if (weightSum <= 0) return 0;
@@ -375,13 +402,28 @@ export function assessCalibration(
     coverage.neutral < minCoverage ||
     coverage.strain < minCoverage
   ) {
-    return { ...base, ok: false, reason: "I couldn't see your face for long enough. Check the lighting and stay in frame." };
+    return {
+      ...base,
+      ok: false,
+      reason:
+        "I couldn't see your face for long enough. Check the lighting and stay in frame.",
+    };
   }
   if (totalChange < params.minCalibrationChange) {
-    return { ...base, ok: false, reason: "Your strain face looked almost the same as your relaxed face. Strain harder!" };
+    return {
+      ...base,
+      ok: false,
+      reason:
+        "Your strain face looked almost the same as your relaxed face. Strain harder!",
+    };
   }
   if (strainHitRate < 0.6) {
-    return { ...base, ok: false, reason: "Your strain wasn't steady. Hold the strain for the whole countdown." };
+    return {
+      ...base,
+      ok: false,
+      reason:
+        "Your strain wasn't steady. Hold the strain for the whole countdown.",
+    };
   }
   if (base.neutralFalseRate > MAX_NEUTRAL_FALSE_RATE) {
     return { ...base, ok: false, reason: "Your relaxed face was too close to your strain face. Relax completely, then strain harder." };
@@ -396,7 +438,13 @@ export function assessCalibration(
  * same at 15 or 60 detections per second. `alpha` is defined per frame at
  * `refFps` (alpha = 1 → no smoothing).
  */
-export function smoothStrain(prev: number, raw: number, alpha: number, dtSeconds: number, refFps = 30): number {
+export function smoothStrain(
+  prev: number,
+  raw: number,
+  alpha: number,
+  dtSeconds: number,
+  refFps = 30,
+): number {
   const a = clamp(alpha, 0, 1);
   const frames = Math.max(0, dtSeconds) * refFps;
   const effective = 1 - Math.pow(1 - a, frames);
@@ -404,7 +452,12 @@ export function smoothStrain(prev: number, raw: number, alpha: number, dtSeconds
 }
 
 /** Schmitt trigger: turns on at `on`, stays on until below `off`. */
-export function updateHysteresis(active: boolean, value: number, on: number, off: number): boolean {
+export function updateHysteresis(
+  active: boolean,
+  value: number,
+  on: number,
+  off: number,
+): boolean {
   // Guard against a misconfigured off > on: then both act as one threshold.
   const offT = Math.min(off, on);
   return active ? value >= offT : value >= on;
@@ -434,7 +487,13 @@ export interface StrainState {
 }
 
 export function initialStrainState(): StrainState {
-  return { smoothed: 0, raw: 0, active: false, faceVisible: false, missingFor: 0 };
+  return {
+    smoothed: 0,
+    raw: 0,
+    active: false,
+    faceVisible: false,
+    missingFor: 0,
+  };
 }
 
 export interface StrainStepParams {
@@ -464,11 +523,23 @@ export function stepStrain(
 ): StrainState {
   if (features === null) {
     const missingFor = state.missingFor + Math.max(0, dtSeconds);
-    if (missingFor <= p.faceLossGrace) return { ...state, faceVisible: false, missingFor };
-    return { smoothed: 0, raw: 0, active: false, faceVisible: false, missingFor };
+    if (missingFor <= p.faceLossGrace)
+      return { ...state, faceVisible: false, missingFor };
+    return {
+      smoothed: 0,
+      raw: 0,
+      active: false,
+      faceVisible: false,
+      missingFor,
+    };
   }
   const raw = calib ? rawStrain(features, calib, p.featureClampMax) : 0;
   const smoothed = smoothStrain(state.smoothed, raw, p.emaAlpha, dtSeconds);
-  const active = updateHysteresis(state.active, smoothed, p.strainOn, p.strainOff);
+  const active = updateHysteresis(
+    state.active,
+    smoothed,
+    p.strainOn,
+    p.strainOff,
+  );
   return { smoothed, raw, active, faceVisible: true, missingFor: 0 };
 }
