@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -101,6 +101,22 @@ describe("leaderboard", () => {
     const b = await boards();
     expect(b.scores.map((e) => e.score)).toEqual([42]);
     expect((await fetch(new URL(b.faces[0].face!, base))).status).toBe(200);
+  });
+
+  it("drops keyboard runs stored before they stopped counting", async () => {
+    const { id: face } = await (await submit(withFace(42, 0.6))).json();
+    const old = (id: string, score: number) => ({
+      entry: { id, name: "Kb", score, mode: "keyboard", stats: { targets: 0, distance: 1, bestCombo: 0 }, strain: null, face: null, submittedAt: "2026-10-10T20:40:00.000Z" },
+      debug: false,
+      deleteKeyHash: "0".repeat(64),
+    });
+    await writeFile(join(dir, "leaderboard", "00000000000000aa.json"), JSON.stringify(old("00000000000000aa", 9000)));
+    await new Promise((r) => server.close(r));
+    server = createCollector({ dataDir: dir, collectionCode: "code", devToken: TOKEN });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/leaderboard`;
+    expect((await boards()).scores.map((e) => e.id)).toEqual([face]);
+    expect(await readdir(join(dir, "leaderboard"))).toEqual([`${face}.jpg`, `${face}.json`]);
   });
 
   it("keeps runs from debug builds off the public boards", async () => {

@@ -348,7 +348,8 @@ leaderboard: two boards of the runs players chose to submit.
 
 Only runs played with the face count. After a keyboard or touch run the
 game-over screen says so instead of offering to submit, and the collector
-turns away submissions that aren't face-mode runs.
+turns away submissions that aren't face-mode runs. (At first keyboard runs
+were accepted; the collector deletes any it finds when it starts.)
 
 Nothing is sent until the player presses "Submit to the leaderboard" on the
 game-over screen (with a name, 16 characters at most). The face goes along
