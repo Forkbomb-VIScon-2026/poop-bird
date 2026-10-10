@@ -9,7 +9,7 @@ import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
 import { Game } from "./game";
 import { FaceRecorder, type RecorderKind } from "./recorder";
-import { Renderer, drawFrontPage } from "./render";
+import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
@@ -831,6 +831,21 @@ function onGameOver(): void {
   $("go-smashed").textContent = String(game.camerasSmashed);
   $("go-scandals").textContent = String(game.frontPages.length);
   $("go-kids").textContent = String(game.kidsDisarmed + game.pebblesShot);
+  $("go-weddings").textContent = String(game.weddingsRuined);
+
+  // The wedding album: the last ruined wedding if there was one (that's the good one).
+  const wedding = game.weddingPhotos.filter((p) => p.ruined).at(-1) ?? game.weddingPhotos.at(-1) ?? null;
+  show($("go-wedding"), wedding !== null);
+  if (wedding) {
+    const wc = $<HTMLCanvasElement>("go-wedding-canvas");
+    const wctx = wc.getContext("2d");
+    if (wctx) {
+      wctx.setTransform(1, 0, 0, 1, 0, 0);
+      wctx.clearRect(0, 0, wc.width, wc.height);
+      wctx.scale(wc.width / 250, wc.width / 250);
+      drawWeddingPrint(wctx, 2, 2, 240, wedding, renderer.photos.get(wedding.photoId));
+    }
+  }
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -1053,6 +1068,9 @@ function takePhoto(photoId: number): void {
   if (photo) renderer.photos.set(photoId, photo);
 }
 
+/** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
+let weddingFace: Photo | null = null;
+
 function handleGameEvents(): void {
   for (const e of game.events) {
     switch (e.type) {
@@ -1129,6 +1147,39 @@ function handleGameEvents(): void {
       case "kidCried":
         sound.kidCry();
         break;
+      case "weddingArrived":
+        sound.weddingArrived();
+        break;
+      case "weddingBeat":
+        sound.weddingBeat(e.count);
+        break;
+      case "weddingKiss":
+        sound.weddingKiss();
+        // Grab the face now: a player who's on it is straining hardest right at "KISS!".
+        weddingFace = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
+        break;
+      case "weddingRuined":
+        sound.weddingRuined();
+        break;
+      case "weddingMarried":
+        sound.weddingMarried();
+        break;
+      case "weddingPhoto": {
+        sound.shutter();
+        const photo = renderer.captureWedding(game, weddingFace);
+        if (photo) renderer.photos.set(e.photoId, photo);
+        weddingFace = null;
+        break;
+      }
+      case "bouquetThrown":
+        sound.bouquetThrown(e.angry);
+        break;
+      case "bouquetCaught":
+        sound.bouquetCaught();
+        break;
+      case "bouquetHit":
+        sound.bouquetHit();
+        break;
     }
   }
   game.events.length = 0;
@@ -1180,6 +1231,10 @@ window.addEventListener("keydown", (e) => {
     case "k":
       // Debug shortcut: a slingshot kid walks on.
       if (debug?.visible && state === "playing") game.spawnKidNow();
+      break;
+    case "w":
+      // Debug shortcut: a wedding right now.
+      if (debug?.visible && state === "playing") game.spawnWeddingNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
@@ -1259,7 +1314,7 @@ requestAnimationFrame(frame);
 if (DEBUG) {
   Object.assign(window, {
     poopBird: {
-      game, config, tracker,
+      game, config, tracker, renderer,
       get calibration() { return calibration; },
       get puffCalibration() { return puffCalibration; },
       get lastPuffAttempt() { return lastPuffAttempt; },

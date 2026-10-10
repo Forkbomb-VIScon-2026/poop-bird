@@ -840,6 +840,12 @@ svg.face.ready-face {
   filter: drop-shadow(0 5px 0 var(--ink));
 }
 
+.go-wedding {
+  width: 250px;
+  height: 235px;
+  transform: rotate(-1.5deg);
+}
+
 .go-hof-form {
   margin-top: 14px;
   display: flex;

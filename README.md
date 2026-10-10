@@ -30,7 +30,7 @@ Other scripts:
 | `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
-| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy) |
+| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle) |
 | `npm run lint` | ESLint |
 | `npx tsc --noEmit` | Typecheck only |
 | `npm run copy-wasm` | Re-copy the WASM from `node_modules` (also runs before `dev`/`build`) |
@@ -64,6 +64,7 @@ access on anything other than localhost, put it behind HTTPS.
 | **G** | With the debug panel open: spawn the next gate now |
 | **L** | With the debug panel open: spawn a power line now |
 | **K** | With the debug panel open: a slingshot kid walks on |
+| **W** | With the debug panel open: a wedding right now |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration |
 
@@ -112,6 +113,32 @@ there's no countdown.
   the pebble down with a falling poop ("INTERCEPTED!", ×4), or splat the kid
   while he's still armed ("DISARMED!", ×3) and he runs off crying. Later
   kids fire twice. Tunables are in the debug panel's "Slingshot kids" group.
+- **The wedding:** now and then (`weddingChance`, about one city stage in
+  four) a church takes the place of one building, with a wedding on the
+  sidewalk in front: the couple under a flower arch with their names on it,
+  guests, a getaway car and a photographer with an old plate camera. Bells ring and the organ plays
+  "Here comes the bride". As the couple comes up to the bird the
+  photographer counts down in a heart over them, *3… 2… 1…*, and then they
+  **KISS!** for about a second (a ring around the heart runs out). That's the
+  timing puzzle: start straining on the countdown, let go on "KISS!".
+  - Splat the bride or groom mid-kiss and the wedding is **ruined**
+    ("OBJECTION!", ×10): a record scratch, the bride shrieks, the groom
+    faints, the guests gasp and the heart breaks. A moment later she throws
+    her bouquet at the bird ("!" over her head first). It knocks the bird
+    down but doesn't stun it.
+  - Let the kiss go through and they're **married**: confetti, a flight of
+    doves, a fanfare, and the bride tosses her bouquet high over the bird.
+    Fly into it as it comes down to catch it ("YOU'RE NEXT!", ×4).
+  - Splatting the couple before the kiss (×3), the guests, the photographer
+    (his lens gets smudged, and so does the photo) or the car scores like a
+    normal target.
+  - Either way the photographer's flash goes off, and **the official
+    wedding photo** pops up in the corner as a framed print: the couple, the
+    guests and the bird photobombing from the corner, blissfully relieved if
+    it just ruined everything. In face mode the bird has the player's face,
+    grabbed at "KISS!" (when they should be straining hardest). The game-over
+    screen shows the run's last ruined wedding (or the last wedding).
+  Tunables are in the debug panel's "Wedding" group.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage
@@ -288,6 +315,7 @@ build is always the plain one:
   flying through the city first
 - **L** spawns a power line right away (city only)
 - **K** sends a slingshot kid on right away (city only)
+- **W** starts a wedding right away (city only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
@@ -313,8 +341,8 @@ build is always the plain one:
   defaults" and "Copy config JSON" buttons. When you find good values, paste
   them back into `config.ts`.
 
-`window.poopBird` exposes `game`, `config`, `tracker`, `calibration` and
-`puffCalibration` in the console.
+`window.poopBird` exposes `game`, `config`, `tracker`, `renderer`,
+`calibration` and `puffCalibration` in the console.
 
 ## Privacy
 
@@ -325,7 +353,8 @@ build is always the plain one:
   screen, and saved only if you add the run to the local Hall of Fame
   (`localStorage`, top 5).
 - The paparazzi's photos show your face in face mode, and the bird with the
-  keyboard. They stay in memory for the current run and are never stored.
+  keyboard. So does the bird in the wedding photos. They stay in memory for
+  the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
 
@@ -339,11 +368,11 @@ src/
   puff.ts       blendshapes / Space → puff (pure)  puff.test.ts
   swim.ts       buoyancy, drag, spike / pop (pure) swim.test.ts
   face.ts       MediaPipe + webcam, detection loop
-  game.ts       simulation (fixed timestep)
+  game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
   audio.ts      WebAudio synth sounds
   debug.ts      debug / tuning panel
-  snapshot.ts   face crops: peak-strain snapshot, paparazzi photos
+  snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, Hall of Fame
   main.ts       screens, input, loops, calibration flow
 scripts/

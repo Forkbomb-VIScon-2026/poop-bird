@@ -16,6 +16,13 @@
 // tumbles, stunned, and loses its charge and combo. Buildings block pebbles,
 // a falling poop can shoot one down mid-air, and splatting the kid before he
 // lets go disarms him.
+//
+// Once per city stage (or so) there's a wedding: a church, a couple on the
+// sidewalk in front of it, guests and a photographer who counts down
+// "3… 2… 1… KISS!". Splat the couple mid-kiss and the wedding is ruined (a
+// jackpot), and the photo of that moment becomes the official wedding photo.
+// Miss and they're married: confetti, doves, and the bride tosses her bouquet.
+// Ruin it and she throws the bouquet at you instead.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -61,7 +68,7 @@ export interface Rect {
   h: number;
 }
 
-export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "harbour" | "coral" | "rock" | "reef";
+export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "harbour" | "coral" | "rock" | "reef";
 /** Only the stage gates have a top: a solid block from the top of the screen down to the gap. */
 export type TopKind = "harbourArch" | "reefArch";
 
@@ -198,7 +205,68 @@ export interface Pebble {
   from: Target;
 }
 
-export type TargetKind = "car" | "pedestrian" | "statue" | "paparazzo" | "kid";
+export type TargetKind = "car" | "pedestrian" | "statue" | "paparazzo" | "kid" | "bride" | "groom" | "guest" | "photographer";
+
+/**
+ * The wedding's progress. Arriving: the party scrolls in. Countdown: the
+ * photographer counts 3… 2… 1…. Kiss: the jackpot window. After: the
+ * photo's taken and `outcome` says how it went.
+ */
+export type WeddingPhase = "arriving" | "countdown" | "kiss" | "after";
+export type WeddingOutcome = "ruined" | "married";
+
+export interface Wedding {
+  phase: WeddingPhase;
+  /** Seconds in the current phase. */
+  t: number;
+  /** The countdown number showing (3, 2, 1); 0 before and after. */
+  count: number;
+  outcome: WeddingOutcome | null;
+  /** The run's first wedding gets a hint over the couple. */
+  tutorial: boolean;
+  /** "Reto ♥ Nadine", on the banner over the arch. */
+  names: string;
+  /** The couple got splatted before the kiss (they carry on, a bit brown). */
+  early: boolean;
+  /** Set once the bride has thrown (or tossed) her bouquet. */
+  thrown: boolean;
+  /** Set once the arrival music has started (the couple is on screen). */
+  announced: boolean;
+  /** Seconds of the photographer's flash. */
+  flash: number;
+  bride: Target;
+  groom: Target;
+  photographer: Target;
+  guests: Target[];
+  church: Obstacle;
+}
+
+/** The bride's bouquet, in screen space: tossed for the bird to catch, or thrown at it. */
+export interface Bouquet {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  /** Thrown at the bird by a furious bride (it knocks the bird), or tossed to it (catch it for points). */
+  angry: boolean;
+}
+
+/** A released white dove, in screen space (scenery). */
+export interface Dove {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  seed: number;
+}
+
+/** The official photo of a wedding. `photoId` keys the image main.ts composed. */
+export interface WeddingPhoto {
+  photoId: number;
+  ruined: boolean;
+  names: string;
+}
 
 export interface Target {
   x: number;
@@ -217,6 +285,8 @@ export interface Target {
   pap: Paparazzo | null;
   /** Only on slingshot kids. */
   kid: Kid | null;
+  /** Wedding guests and the couple react to how it's going. Set on wedding party members (and the getaway car). */
+  wedding?: Wedding;
 }
 
 export interface Poop {
@@ -291,7 +361,16 @@ export type GameEvent =
   | { type: "bonk" }
   | { type: "pebbleShot"; points: number; combo: number }
   | { type: "ricochet" }
-  | { type: "kidCried" };
+  | { type: "kidCried" }
+  | { type: "weddingArrived" }
+  | { type: "weddingBeat"; count: number }
+  | { type: "weddingKiss" }
+  | { type: "weddingRuined"; points: number }
+  | { type: "weddingMarried" }
+  | { type: "weddingPhoto"; photoId: number; ruined: boolean }
+  | { type: "bouquetThrown"; angry: boolean }
+  | { type: "bouquetCaught"; points: number }
+  | { type: "bouquetHit" };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -339,6 +418,23 @@ const HEADLINES = [
   "FIBRE SHORTAGE: THE HUMAN COST",
   "EXPERTS: \u201CJUST RELAX\u201D",
 ];
+
+const COUPLES = [
+  "Reto \u2665 Nadine",
+  "Beat \u2665 Vreni",
+  "Ueli \u2665 Heidi",
+  "Kevin \u2665 Chantal",
+  "J\u00FCrg \u2665 Sandra",
+  "Luca \u2665 Lea",
+  "Urs \u2665 Brigitte",
+];
+
+const RUIN_MESSAGES = ["OBJECTION!", "SPEAK NOW!", "UNHOLY MATRIMONY!", "TILL DEATH DO US PART!", "SOMETHING BROWN!"];
+const EARLY_MESSAGES = ["Not the dress!", "Wait for the kiss!", "Too early!", "Rude!"];
+const BOUQUET_MESSAGES = ["BRIDEZILLA!", "Right in the face!", "Hell hath no fury…", "She's got an arm!"];
+
+/** Pastel outfits for the wedding guests. */
+const GUEST_COLORS = ["#ff8fab", "#a2d2ff", "#cdb4db", "#ffc8dd", "#bde0fe", "#b9fbc0", "#fde68a"];
 
 const CAR_COLORS = ["#e84a5f", "#2a9df4", "#ffb400", "#5cc96b", "#9b5de5", "#f9844a"];
 const PERSON_COLORS = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#6c5ce7", "#fd79a8", "#00b894"];
@@ -423,13 +519,20 @@ export class Game {
   /** 0..1 white camera flash over the whole screen. */
   flash = 0;
   /** The latest shot, popping up as a polaroid. */
-  polaroid: { photoId: number; life: number } | null = null;
+  polaroid: { photoId: number; life: number; maxLife: number; wedding?: WeddingPhoto } | null = null;
   /** Photos that went to print, in order. */
   frontPages: Tabloid[] = [];
   camerasSmashed = 0;
   kidsDisarmed = 0;
   pebblesShot = 0;
   bonks = 0;
+  wedding: Wedding | null = null;
+  bouquet: Bouquet | null = null;
+  doves: Dove[] = [];
+  /** Official photos of this run's weddings, in order. */
+  weddingPhotos: WeddingPhoto[] = [];
+  weddingsRuined = 0;
+  bouquetsCaught = 0;
   message: { text: string; life: number } | null = null;
   dyingTime = 0;
   /** The run ended on a wire: the bird is drawn charred. */
@@ -451,6 +554,9 @@ export class Game {
   private lastPaparazzoAt = -Infinity;
   private paparazziSeen = 0;
   private lastKidAt = -Infinity;
+  /** This city stage gets a wedding that hasn't happened yet. */
+  private weddingPlanned = false;
+  private weddingsSeen = 0;
 
   events: GameEvent[] = [];
 
@@ -506,6 +612,14 @@ export class Game {
     this.pebblesShot = 0;
     this.bonks = 0;
     this.lastKidAt = -Infinity;
+    this.wedding = null;
+    this.bouquet = null;
+    this.doves = [];
+    this.weddingPhotos = [];
+    this.weddingsRuined = 0;
+    this.bouquetsCaught = 0;
+    this.weddingPlanned = Math.random() < config.weddingChance;
+    this.weddingsSeen = 0;
     this.pendingTabloids = [];
     this.lastPaparazzoAt = -Infinity;
     this.paparazziSeen = 0;
@@ -627,6 +741,8 @@ export class Game {
     this.updateTargets(dt, speed);
     this.updatePoops(dt, speed);
     this.updatePebbles(dt);
+    this.updateWedding(dt);
+    this.updateBouquet(dt);
     this.updateJellies(dt, speed);
     this.updateEffects(dt, speed);
 
@@ -1068,6 +1184,10 @@ export class Game {
     this.decals = [];
     this.jellies = [];
     this.screenSplats = [];
+    this.wedding = null;
+    this.bouquet = null;
+    this.doves = [];
+    if (to === "city") this.weddingPlanned = Math.random() < config.weddingChance;
     this.message = null;
     this.lastGapCenter = 260;
     this.jellySpawnAcc = 0;
@@ -1147,6 +1267,7 @@ export class Game {
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnGate();
       else if (ocean) this.spawnOceanObstacle();
+      else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();
       else this.spawnObstacle();
       this.stageObstacles++;
@@ -1310,14 +1431,15 @@ export class Game {
       if (t.pap) this.updatePaparazzo(t, dt);
       if (t.kid) this.updateKid(t, dt);
     }
-    this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 400);
+    this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city") return;
     this.targetSpawnAcc += dt * config.targetSpawnRate;
     if (this.targetSpawnAcc >= 1) {
       this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
       if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
       else if (this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
-      else this.spawnTarget();
+      // Nobody wanders through the wedding; the road stays busy.
+      else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
   }
 
@@ -1329,7 +1451,8 @@ export class Game {
       this.distance >= config.paparazziMinDistance &&
       this.distance - this.lastPaparazzoAt >= config.paparazziMinGap &&
       !this.targets.some((t) => t.pap?.state === "watching") &&
-      !this.targets.some(kidArmed)
+      !this.targets.some(kidArmed) &&
+      !this.weddingAhead
     );
   }
 
@@ -1389,7 +1512,7 @@ export class Game {
     const photoId = this.nextPhotoId++;
     this.flash = 1;
     this.shake = Math.max(this.shake, 6);
-    this.polaroid = { photoId, life: 2.2 };
+    this.polaroid = { photoId, life: 2.2, maxLife: 2.2 };
     this.message = { text: pick(SNAP_MESSAGES), life: 1.4 };
     const tabloid: Tabloid = { photoId, headline: pick(HEADLINES) };
     this.frontPages.push(tabloid);
@@ -1419,9 +1542,9 @@ export class Game {
     this.events.push({ type: "cameraSmashed" });
   }
 
-  private spawnTarget(): void {
+  private spawnTarget(only?: "car"): void {
     const r = Math.random();
-    const kind: TargetKind = r < 0.5 ? "car" : r < 0.85 ? "pedestrian" : "statue";
+    const kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 0.85 ? "pedestrian" : "statue");
     // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
     const roadY = GROUND_Y + 68;
     let t: Target;
@@ -1455,7 +1578,8 @@ export class Game {
       this.distance >= config.kidMinDistance &&
       this.distance - this.lastKidAt >= config.kidMinGap &&
       !this.targets.some(kidArmed) &&
-      !this.targets.some((t) => t.pap?.state === "watching")
+      !this.targets.some((t) => t.pap?.state === "watching") &&
+      !this.weddingAhead
     );
   }
 
@@ -1726,6 +1850,316 @@ export class Game {
     this.events.push({ type: "bonk" });
   }
 
+  // --- wedding -----------------------------------------------------------------
+
+  /**
+   * The wedding is still to come (the couple hasn't passed the bird yet):
+   * paparazzi, kids and pedestrians keep out of its way. Once it's over
+   * they're back, even while the church is still on screen.
+   */
+  private get weddingAhead(): boolean {
+    return this.wedding !== null && this.wedding.phase !== "after";
+  }
+
+  /** The church takes this stage's next obstacle slot once nothing else is busy on the sidewalk. */
+  private weddingDue(): boolean {
+    return (
+      this.weddingPlanned &&
+      !this.wedding &&
+      this.stageObstacles >= Math.round(config.weddingSlot) &&
+      this.pendingTabloids.length === 0 &&
+      !this.targets.some((t) => t.pap?.state === "watching" || kidArmed(t))
+    );
+  }
+
+  /**
+   * The church (an obstacle like any building) with the wedding party on the
+   * sidewalk in front of it, all just off-screen. Returns the extra room the
+   * next obstacle has to leave.
+   */
+  private spawnWedding(): number {
+    this.weddingPlanned = false;
+    const d = this.difficulty;
+    const gap = ramp(config.obstacleGap, config.obstacleGapMin, d);
+    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, CHURCH_MIN_H);
+    const churchX = this.width + 330;
+    const church: Obstacle = {
+      x: churchX, w: CHURCH_W, gapTop: center - gap / 2, gapBottom: center + gap / 2,
+      bottom: "church", top: null, color: "#f4ecdc", seed: Math.random() * 1000,
+      passed: false, splats: [], gate: null, tabloid: null,
+    };
+    this.obstacles.push(church);
+
+    const coupleX = churchX - WEDDING_COUPLE_DX;
+    const person = (kind: TargetKind, dx: number, w: number, h: number, color: string, facing: 1 | -1): Target => ({
+      x: coupleX + dx, y: GROUND_Y + 20, w, h, kind, speed: 0, color, seed: Math.random() * 1000,
+      splats: [], hitFlash: 0, facing, pap: null, kid: null,
+    });
+    const colors = [...GUEST_COLORS].sort(() => Math.random() - 0.5);
+    const wedding: Wedding = {
+      phase: "arriving", t: 0, count: 0, outcome: null,
+      tutorial: this.weddingsSeen++ === 0,
+      names: pick(COUPLES), early: false, thrown: false, announced: false, flash: 0,
+      groom: person("groom", -15, 28, 70, "#2b2d42", 1),
+      bride: person("bride", 15, 32, 70, "#ffffff", -1),
+      photographer: person("photographer", -165, 36, 60, "#495057", 1),
+      guests: [
+        person("guest", -62, 24, 54, colors[0], 1),
+        person("guest", -92, 24, 54, colors[1], 1),
+        person("guest", 58, 24, 54, colors[2], -1),
+      ],
+      church,
+    };
+    // The getaway car, parked in front of the church.
+    const car: Target = {
+      x: churchX + CHURCH_W / 2, y: GROUND_Y + 68, w: 92, h: 40, kind: "car", speed: 0, color: "#fdfcf7",
+      seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null,
+    };
+    const party = [wedding.photographer, ...wedding.guests, wedding.groom, wedding.bride, car];
+    for (const t of party) t.wedding = wedding;
+    this.targets.push(...party);
+    this.wedding = wedding;
+    return 350;
+  }
+
+  /** Debug: a wedding right now (city only). */
+  spawnWeddingNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "city" || this.wedding) return;
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 280 || o.gate);
+    this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < this.width - 280);
+    this.targets = this.targets.filter((t) => t.kind === "car" || t.x < this.width - 280);
+    const extra = this.spawnWedding();
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + extra + config.obstacleSpacingMin);
+  }
+
+  private setWeddingPhase(w: Wedding, phase: WeddingPhase): void {
+    w.phase = phase;
+    w.t = 0;
+  }
+
+  private updateWedding(dt: number): void {
+    for (const d of this.doves) {
+      d.vy = Math.max(-260, d.vy - 40 * dt);
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+    }
+    this.doves = this.doves.filter((d) => d.y > -60 && d.x > -60 && d.x < this.width + 60);
+
+    const w = this.wedding;
+    if (!w) return;
+    w.t += dt;
+    w.flash = Math.max(0, w.flash - dt);
+    // Over once the church has scrolled off (its party members get culled before that).
+    if (w.church.x + w.church.w < -40) {
+      this.wedding = null;
+      return;
+    }
+    const x = weddingX(w);
+    if (this.phase !== "playing") return;
+    if (!w.announced && x < this.width - 20) {
+      w.announced = true;
+      this.events.push({ type: "weddingArrived" });
+    }
+
+    const lead = config.weddingKissLead;
+    const rel = x - this.bird.x;
+    switch (w.phase) {
+      case "arriving":
+      case "countdown": {
+        if (rel <= lead) {
+          this.setWeddingPhase(w, "kiss");
+          w.count = 0;
+          this.events.push({ type: "weddingKiss" });
+          break;
+        }
+        // The photographer counts down the beats until the couple reaches the kiss point.
+        if (this.speed <= 1) break;
+        const n = Math.ceil((rel - lead) / this.speed / Math.max(0.05, config.weddingBeat));
+        if (n <= 3 && (w.phase === "arriving" || n < w.count)) {
+          if (w.phase === "arriving") this.setWeddingPhase(w, "countdown");
+          w.count = Math.max(1, n);
+          this.events.push({ type: "weddingBeat", count: w.count });
+        }
+        break;
+      }
+      case "kiss":
+        if (w.t >= config.weddingKissTime) this.marry(w);
+        break;
+      case "after":
+        // A furious bride takes a moment to wind up.
+        if (!w.thrown && w.t >= (w.outcome === "ruined" ? WEDDING_WINDUP : 0.45)) this.throwBouquet(w);
+        break;
+    }
+  }
+
+  /** A poop on a member of the wedding party: returns the points multiplier, and whether it ruined the kiss. */
+  private weddingHit(t: Target, w: Wedding): { mult: number; ruin: boolean } {
+    if (t.kind === "bride" || t.kind === "groom") {
+      if (w.phase === "kiss" && !w.outcome) return { mult: config.weddingKissMultiplier, ruin: true };
+      if (w.phase === "arriving" || w.phase === "countdown") {
+        w.early = true;
+        this.floaters.push({ x: t.x, y: t.y - t.h - 50, text: pick(EARLY_MESSAGES), color: "#ffd6e0", size: 20, life: 1.1, maxLife: 1.1 });
+      }
+      return { mult: config.weddingCoupleMultiplier, ruin: false };
+    }
+    if (t.kind === "photographer") {
+      if (!w.outcome) {
+        this.floaters.push({ x: t.x, y: t.y - t.h - 50, text: "LENS SMUDGED!", color: "#7ae582", size: 20, life: 1.2, maxLife: 1.2 });
+      }
+      return { mult: 2, ruin: false };
+    }
+    return { mult: t.kind === "car" ? 1 : 1.5, ruin: false };
+  }
+
+  /** Splatted mid-kiss: the photographer gets the shot of a lifetime. */
+  private ruinWedding(w: Wedding, points: number): void {
+    w.outcome = "ruined";
+    this.setWeddingPhase(w, "after");
+    this.weddingsRuined++;
+    this.shake = Math.max(this.shake, 14);
+    this.message = { text: pick(RUIN_MESSAGES), life: 2.2 };
+    const x = weddingX(w);
+    // The veil and the groom's top hat fly off.
+    for (let i = 0; i < 18; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2;
+      const s = 120 + Math.random() * 220;
+      this.particles.push({
+        x, y: w.bride.y - w.bride.h * 0.8, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 0.7 + Math.random() * 0.5, maxLife: 1.2, size: 2 + Math.random() * 4,
+        color: pick(["#ffffff", "#ffe5ec", "#ffb3c6", "#6b3e14"]), gravity: 500, world: true,
+      });
+    }
+    this.events.push({ type: "weddingRuined", points });
+    this.takeWeddingPhoto(w);
+  }
+
+  /** The kiss went through: they're married. Confetti, doves, and the photo. */
+  private marry(w: Wedding): void {
+    w.outcome = "married";
+    this.setWeddingPhase(w, "after");
+    const x = weddingX(w);
+    const y = w.bride.y - w.bride.h;
+    this.floaters.push({ x, y: y - 60, text: "♥ JUST MARRIED ♥", color: "#ffb3c6", size: 24, life: 1.6, maxLife: 1.6 });
+    for (let i = 0; i < 70; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+      const s = 150 + Math.random() * 300;
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 140, y: y + 20, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 1 + Math.random() * 0.8, maxLife: 1.8, size: 2 + Math.random() * 3,
+        color: pick(["#ff8fab", "#ffd166", "#a2d2ff", "#b9fbc0", "#ffffff", "#cdb4db"]), gravity: 260, world: true,
+      });
+    }
+    for (let i = 0; i < 6; i++) {
+      this.doves.push({
+        x: x + (Math.random() - 0.5) * 80, y: y - 20 - Math.random() * 30,
+        vx: -30 + Math.random() * 110, vy: -110 - Math.random() * 90, seed: Math.random() * 1000,
+      });
+    }
+    this.events.push({ type: "weddingMarried" });
+    this.takeWeddingPhoto(w);
+  }
+
+  private takeWeddingPhoto(w: Wedding): void {
+    const photoId = this.nextPhotoId++;
+    const photo: WeddingPhoto = { photoId, ruined: w.outcome === "ruined", names: w.names };
+    w.flash = 0.3;
+    this.flash = Math.max(this.flash, 0.55);
+    this.weddingPhotos.push(photo);
+    this.polaroid = { photoId, life: 3.4, maxLife: 3.4, wedding: photo };
+    this.events.push({ type: "weddingPhoto", photoId, ruined: photo.ruined });
+  }
+
+  /**
+   * Married: the bride tosses her bouquet high, to come down through the
+   * bird's column (catch it!). Ruined: she throws it at the bird, aimed like
+   * a slingshot pebble.
+   */
+  private throwBouquet(w: Wedding): void {
+    w.thrown = true;
+    const angry = w.outcome === "ruined";
+    const b = this.bird;
+    const hand = bouquetHand(w.bride);
+    const g = config.weddingBouquetGravity;
+    let vx: number;
+    let vy: number;
+    if (angry) {
+      const T = Math.max(0.2, config.weddingThrowTime);
+      vx = (b.x - hand.x) / T;
+      vy = (b.y - hand.y) / T - 0.5 * g * T;
+    } else {
+      // Peaks near the top of the screen, then falls through the bird's column around mid-height.
+      const apex = 110;
+      vy = -Math.sqrt(2 * g * Math.max(40, hand.y - apex));
+      const catchY = 300;
+      const T = (-vy + Math.sqrt(vy * vy + 2 * g * (catchY - hand.y))) / g;
+      vx = (b.x - hand.x) / T;
+    }
+    this.bouquet = { x: hand.x, y: hand.y, vx, vy, rot: 0, angry };
+    this.events.push({ type: "bouquetThrown", angry });
+  }
+
+  private updateBouquet(dt: number): void {
+    const q = this.bouquet;
+    if (!q) return;
+    q.vy += config.weddingBouquetGravity * dt;
+    q.x += q.vx * dt;
+    q.y += q.vy * dt;
+    q.rot += dt * (q.angry ? 14 : 4);
+    if (Math.random() < dt * 25) {
+      this.particles.push({
+        x: q.x, y: q.y, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40,
+        life: 0.5, maxLife: 0.5, size: 1.5 + Math.random() * 2,
+        color: q.angry ? "#ff8fab" : pick(["#fff3b0", "#ffffff", "#ffb3c6"]), gravity: 120, world: false,
+      });
+    }
+    if (q.y > GROUND_Y + 40 || q.x < -80 || q.x > this.width + 80 || q.y < -400) {
+      this.bouquet = null;
+      return;
+    }
+    if (this.phase !== "playing" || this.stage !== "city" || this.transition) return;
+    const reach = this.hitRadius + BOUQUET_R;
+    if ((q.x - this.bird.x) ** 2 + (q.y - this.bird.y) ** 2 >= reach * reach) return;
+    this.bouquet = null;
+    if (q.angry) this.bouquetHit(q);
+    else this.catchBouquet(q);
+  }
+
+  private petalBurst(x: number, y: number, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 60 + Math.random() * 220;
+      this.particles.push({
+        x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40,
+        life: 0.7 + Math.random() * 0.7, maxLife: 1.4, size: 2.5 + Math.random() * 3,
+        color: pick(["#ff8fab", "#ffb3c6", "#ffffff", "#fb6f92", "#b9fbc0"]), gravity: 220, world: true,
+      });
+    }
+  }
+
+  private catchBouquet(q: Bouquet): void {
+    this.bouquetsCaught++;
+    this.combo++;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    const points = Math.round(config.targetPoints * config.weddingBouquetMultiplier * this.comboMultiplier);
+    this.bonus += points;
+    this.bird.stretchV += 8;
+    this.floaters.push({ x: q.x, y: q.y - 46, text: "YOU'RE NEXT! \u{1F48D}", color: "#ffb3c6", size: 26, life: 1.4, maxLife: 1.4 });
+    this.floaters.push({ x: q.x, y: q.y - 16, text: `+${points}`, color: "#ffe14d", size: 22, life: 1.1, maxLife: 1.1 });
+    this.petalBurst(q.x, q.y, 24);
+    this.events.push({ type: "bouquetCaught", points });
+  }
+
+  /** The furious bride's bouquet: a knock and a face full of petals, but no stun. */
+  private bouquetHit(q: Bouquet): void {
+    const b = this.bird;
+    b.vy = Math.max(b.vy, config.weddingBouquetKnock);
+    b.stretchV -= 10;
+    this.shake = Math.max(this.shake, 10);
+    this.message = { text: pick(BOUQUET_MESSAGES), life: 1.6 };
+    this.petalBurst(q.x, q.y, 30);
+    this.events.push({ type: "bouquetHit" });
+  }
+
   // --- poops -------------------------------------------------------------------
 
   private spawnPoop(x: number, y: number, r: number, vy: number, big: boolean): void {
@@ -1777,9 +2211,11 @@ export class Game {
       if (camera) this.smashCamera(t);
       const armed = kidArmed(t);
       if (armed) this.disarmKid(t);
-      const kindMult = camera ? config.paparazziMultiplier : armed ? config.kidMultiplier : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
+      const wed = t.wedding ? this.weddingHit(t, t.wedding) : null;
+      const kindMult = wed ? wed.mult : camera ? config.paparazziMultiplier : armed ? config.kidMultiplier : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
       const points = Math.round(config.targetPoints * kindMult * this.comboMultiplier * (p.big ? 2 : 1));
       this.bonus += points;
+      if (wed?.ruin && t.wedding) this.ruinWedding(t.wedding, points);
       const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
       this.floaters.push({ x: p.x, y: t.y - t.h - 10, text: label, color: "#ffe14d", size: 26, life: 1.1, maxLife: 1.1 });
       this.splatParticles(p.x, p.y, p.r, true);
@@ -1874,9 +2310,51 @@ const BILLBOARD_MIN_LEGS = 40;
 /** The legs' frame covers the middle of the board's width; the board overhangs on both sides. */
 export const BILLBOARD_LEGS_INSET = 0.16;
 
+/** The church: a tower with a spire in the middle of a lower nave. */
+export const CHURCH_W = 170;
+export const CHURCH_TOWER_W = 56;
+export const CHURCH_SPIRE_H = 66;
+/** Room below the gap the church needs (spire, tower and nave). */
+const CHURCH_MIN_H = 200;
+/** Bouquet radius (drawn and for collisions). */
+export const BOUQUET_R = 12;
+/** Seconds the furious bride winds up before she throws. */
+export const WEDDING_WINDUP = 0.9;
+
+/** Key heights of a church obstacle: the spire tip is the gap's bottom edge. */
+export function churchGeometry(o: Obstacle): { cx: number; towerTop: number; naveTop: number } {
+  const towerTop = o.gapBottom + CHURCH_SPIRE_H;
+  return { cx: o.x + o.w / 2, towerTop, naveTop: Math.max(towerTop + 40, GROUND_Y - 150) };
+}
+
+/** The couple stands this far left of the church. */
+const WEDDING_COUPLE_DX = 105;
+
+/**
+ * Screen x of the couple's centre. Derived from the church, which stays in
+ * play until it's off-screen, while the party members get culled earlier.
+ */
+export function weddingX(w: Wedding): number {
+  return w.church.x - WEDDING_COUPLE_DX;
+}
+
+/** Where the bride holds her bouquet (the throw starts here). */
+export function bouquetHand(bride: Target): { x: number; y: number } {
+  return { x: bride.x + bride.facing * 10, y: bride.y - bride.h * 0.55 };
+}
+
 /** Collision rectangles for an obstacle, shared by rendering and physics. */
 export function obstacleRects(o: Obstacle): Rect[] {
   const rects: Rect[] = [];
+  if (o.bottom === "church") {
+    const { cx, towerTop, naveTop } = churchGeometry(o);
+    // The spire is a triangle: a narrow box at the tip and a wider one at the base.
+    rects.push({ x: cx - 9, y: o.gapBottom, w: 18, h: CHURCH_SPIRE_H / 2 });
+    rects.push({ x: cx - 20, y: o.gapBottom + CHURCH_SPIRE_H / 2, w: 40, h: CHURCH_SPIRE_H / 2 });
+    rects.push({ x: cx - CHURCH_TOWER_W / 2, y: towerTop, w: CHURCH_TOWER_W, h: GROUND_Y - towerTop });
+    rects.push({ x: o.x, y: naveTop - 14, w: o.w, h: GROUND_Y - naveTop + 14 });
+    return rects;
+  }
   // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).
   const billboard = o.bottom === "billboard";
   rects.push({ x: o.x, y: o.gapBottom, w: o.w, h: billboard ? BILLBOARD_H : GROUND_Y - o.gapBottom });

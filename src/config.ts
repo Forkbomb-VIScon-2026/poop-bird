@@ -121,6 +121,19 @@ export const CONFIG_SPEC = {
   kidMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Disarm points", hint: "× points for splatting him while he can still shoot (× combo)" },
   kidParryMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Intercept points", hint: "× points for shooting a pebble down with a poop (× combo)" },
 
+  // --- Wedding -------------------------------------------------------------
+  weddingChance: { value: 0.25, min: 0, max: 1, step: 0.05, group: "Wedding", label: "Chance", hint: "chance a city stage has a wedding" },
+  weddingSlot: { value: 2, min: 0, max: 10, step: 1, group: "Wedding", label: "Church slot", hint: "city obstacles before the church (it waits if a paparazzo or kid is busy)" },
+  weddingKissLead: { value: 90, min: 0, max: 400, step: 5, group: "Wedding", label: "Kiss point", hint: "px ahead of the bird where the couple starts kissing (a poop takes a moment to fall)" },
+  weddingKissTime: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Wedding", label: "Kiss length", hint: "s the kiss lasts (the jackpot window)" },
+  weddingBeat: { value: 0.55, min: 0.2, max: 1.5, step: 0.05, group: "Wedding", label: "Countdown beat", hint: "s per 3… 2… 1… beat before the kiss" },
+  weddingKissMultiplier: { value: 10, min: 0, max: 30, step: 0.5, group: "Wedding", label: "Ruined kiss points", hint: "× points for splatting the couple mid-kiss (× combo)" },
+  weddingCoupleMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Wedding", label: "Couple points", hint: "× points for splatting the couple outside the kiss" },
+  weddingBouquetMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Wedding", label: "Bouquet catch", hint: "× points for catching the bride's bouquet" },
+  weddingBouquetGravity: { value: 600, min: 100, max: 2000, step: 50, group: "Wedding", label: "Bouquet gravity", hint: "px/s²" },
+  weddingThrowTime: { value: 0.8, min: 0.3, max: 2, step: 0.05, group: "Wedding", label: "Angry throw time", hint: "s the furious bride's bouquet takes to reach the bird" },
+  weddingBouquetKnock: { value: 260, min: 0, max: 800, step: 10, group: "Wedding", label: "Bouquet knock", hint: "px/s downward speed when her bouquet hits the bird" },
+
   // --- Ocean stage ---------------------------------------------------------
   cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before gate", hint: "then the harbour gate appears" },
   oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the exit gate appears" },
