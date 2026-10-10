@@ -48,6 +48,7 @@ import {
   type PowerLine,
   type Splat,
   type Tabloid,
+  type Rage,
   type Target,
   type Bouquet,
   type Dove,
@@ -3140,9 +3141,12 @@ function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
 }
 
 function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
-  const walk = Math.sin(time * 9 + t.seed) * 0.5;
+  const rage = t.rage;
+  const walk = rage ? 0 : Math.sin(time * 9 + t.seed) * 0.5;
   const h = t.h;
   ctx.save();
+  // Furious: stamping on the spot.
+  if (rage) ctx.translate(0, -Math.abs(Math.sin(time * 14)) * 3);
   ctx.scale(t.facing, 1);
   ctx.lineCap = "round";
   // Legs
@@ -3151,7 +3155,7 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   for (const s of [1, -1]) {
     ctx.beginPath();
     ctx.moveTo(0, -h * 0.38);
-    ctx.lineTo(Math.sin(walk * s) * 10, 0);
+    ctx.lineTo(rage ? s * 6 : Math.sin(walk * s) * 10, 0);
     ctx.stroke();
   }
   // Body
@@ -3160,15 +3164,32 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   roundRect(ctx, -9, -h * 0.75, 18, h * 0.4, 6);
   ctx.fill();
   ctx.stroke();
-  // Arms
+  // Arms: a fist shaken at the bird when angry.
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(0, -h * 0.68);
-  ctx.lineTo(-Math.sin(walk) * 10, -h * 0.42);
+  if (rage) {
+    const fx = 16 + Math.sin(time * 24) * 3;
+    const fy = -h * 1.02 + Math.cos(time * 24) * 3;
+    ctx.lineTo(fx, fy);
+    ctx.stroke();
+    ctx.fillStyle = "#f1c27d";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.68);
+    ctx.lineTo(-7, -h * 0.4);
+  } else {
+    ctx.lineTo(-Math.sin(walk) * 10, -h * 0.42);
+  }
   ctx.stroke();
-  // Head
+  // Head (red in the face when angry)
   ctx.lineWidth = 3;
-  ctx.fillStyle = "#f1c27d";
+  ctx.fillStyle = rage ? "#f2785c" : "#f1c27d";
   ctx.beginPath();
   ctx.arc(0, -h * 0.87, 8, 0, Math.PI * 2);
   ctx.fill();
@@ -3183,8 +3204,62 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   ctx.beginPath();
   ctx.arc(4, -h * 0.87, 1.6, 0, Math.PI * 2);
   ctx.fill();
+  if (rage) {
+    // A furious brow and a shouting mouth.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.8;
+    line(ctx, 1.5, -h * 0.87 - 4.5, 7, -h * 0.87 - 1.5);
+    ctx.beginPath();
+    ctx.ellipse(5, -h * 0.87 + 4, 2, 1.6 + Math.abs(Math.sin(time * 18)), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
   ctx.lineCap = "butt";
+  if (rage) drawRage(ctx, rage, h, time);
+}
+
+/** Steam off the head and a grawlix speech bubble, popping in, over a cursing pedestrian. */
+function drawRage(ctx: CanvasRenderingContext2D, rage: Rage, h: number, time: number): void {
+  // Steam puffs rising off the head.
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  for (let i = 0; i < 2; i++) {
+    const k = (time * 1.6 + i * 0.5) % 1;
+    const side = i === 0 ? -1 : 1;
+    ctx.globalAlpha = 1 - k;
+    ctx.beginPath();
+    ctx.arc(side * (7 + k * 6), -h - 2 - k * 14, 2.5 + k * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // Bubble pops in with a little overshoot, then wobbles.
+  const pop = Math.min(1, rage.t / 0.15);
+  const scale = pop < 1 ? pop * 1.15 : 1 + Math.sin(time * 20) * 0.03;
+  const by = -h - 30;
+  ctx.save();
+  ctx.translate(0, by);
+  ctx.scale(scale, scale);
+  ctx.font = "900 15px 'Trebuchet MS', sans-serif";
+  const w = ctx.measureText(rage.curse).width + 16;
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-4, 11);
+  ctx.lineTo(2, 22);
+  ctx.lineTo(6, 11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  roundRect(ctx, -w / 2, -12, w, 24, 9);
+  ctx.fill();
+  ctx.stroke();
+  // Cover the tail's joint so the bubble reads as one shape.
+  ctx.fillRect(-3, 8, 8, 5);
+  ctx.fillStyle = "#e63946";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(rage.curse, 0, 1);
+  ctx.restore();
 }
 
 function drawStatue(ctx: CanvasRenderingContext2D, t: Target): void {

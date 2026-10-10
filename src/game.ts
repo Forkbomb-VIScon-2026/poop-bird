@@ -441,7 +441,21 @@ export interface Target {
   wedding?: Wedding;
   /** Only on parachutists. */
   chute?: Chute | null;
+  /** Set while a splatted pedestrian stands there cursing at the bird. */
+  rage?: Rage | null;
 }
+
+/** A pedestrian's fit of rage after being splatted. */
+export interface Rage {
+  /** Seconds since it started (restarts on another hit). */
+  t: number;
+  /** The walking speed to resume once it has calmed down. */
+  walk: number;
+  /** The grawlix in the speech bubble. */
+  curse: string;
+}
+
+const CURSES = ["#@$%!", "%&#@!!", "$#!*@", "@#%&$!", "*!#@%"];
 
 export interface Poop {
   x: number;
@@ -520,6 +534,7 @@ export type GameEvent =
   | { type: "pebbleShot"; points: number; combo: number }
   | { type: "ricochet" }
   | { type: "kidCried" }
+  | { type: "curse" }
   | { type: "weddingArrived" }
   | { type: "weddingBeat"; count: number }
   | { type: "weddingKiss" }
@@ -2500,6 +2515,7 @@ export class Game {
       if (t.pap) this.updatePaparazzo(t, dt);
       if (t.kid) this.updateKid(t, dt);
       if (t.chute) this.updateParachutist(t, dt, speed);
+      if (t.rage) this.updateRage(t, dt);
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
@@ -2512,6 +2528,36 @@ export class Game {
       // Nobody wanders through the wedding; the road stays busy.
       else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
+  }
+
+  // --- angry pedestrians ------------------------------------------------------
+
+  /** Some splatted pedestrians stop, turn on the bird and curse; another hit sets them off again. */
+  private provoke(t: Target): void {
+    if (t.kind !== "pedestrian" || t.wedding) return;
+    if (!t.rage) {
+      if (Math.random() >= config.angryChance) return;
+      t.rage = { t: 0, walk: t.speed, curse: pick(CURSES) };
+    } else {
+      t.rage.t = 0;
+      t.rage.curse = pick(CURSES.filter((c) => c !== t.rage?.curse));
+    }
+    t.speed = 0;
+    this.events.push({ type: "curse" });
+  }
+
+  private updateRage(t: Target, dt: number): void {
+    const rage = t.rage;
+    if (!rage) return;
+    rage.t += dt;
+    if (rage.t < config.angryDuration) {
+      t.facing = this.bird.x < t.x ? -1 : 1;
+      return;
+    }
+    // Calmed down (mostly): walk on as before.
+    t.rage = null;
+    t.speed = rage.walk;
+    if (rage.walk !== 0) t.facing = rage.walk < 0 ? -1 : 1;
   }
 
   // --- paparazzi ---------------------------------------------------------------
@@ -3331,6 +3377,7 @@ export class Game {
       this.splatParticles(p.x, p.y, p.r, true);
       this.events.push({ type: "hit", points, combo: this.combo, kind: t.kind });
       this.events.push({ type: "splat", big: p.big });
+      this.provoke(t);
       return true;
     }
     // Obstacles
