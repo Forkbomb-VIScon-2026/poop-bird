@@ -73,54 +73,6 @@
         <div id="puff-calib-bar" class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
       </div>
 
-      <!-- Ocean tutorial: a new player's first dive (the world is frozen until "Got it").
-           [data-face] / [data-keys] parts show in face / keyboard mode only. -->
-      <div id="ocean-tutorial" class="tutorial hidden">
-        <div class="card tutorial-card">
-          <div class="calib-step">New player tips</div>
-          <h2>You're a pufferfish! 🐡</h2>
-          <ul class="tips">
-            <li>
-              <span class="tip-icon">⬆️</span>
-              <span><b data-face>Puff your cheeks and purse your lips</b><b data-keys>Hold <kbd class="kbd-only">Space</kbd><span class="touch-only">the screen</span></b> to blow up and float up.</span>
-            </li>
-            <li data-face>
-              <span class="tip-icon">😗</span>
-              <span><b>Lips pursed, like a kiss.</b> That's what the camera sees: puffed cheeks alone barely move the fish.</span>
-            </li>
-            <li>
-              <span class="tip-icon">⬇️</span>
-              <span><b data-face>Let the air out and relax your lips</b><b data-keys>Let go</b> to shrink and sink. A little puff keeps you level.</span>
-            </li>
-            <li>
-              <svg class="tip-meter" viewBox="0 0 28 60" aria-hidden="true">
-                <rect x="8" y="2" width="12" height="56" rx="5" fill="#fff" stroke="#2b2d42" stroke-width="3" />
-                <rect x="10" y="27" width="8" height="29" rx="3" fill="#ffca3a" />
-                <path d="M3 37 H25" stroke="#3a86ff" stroke-width="3" />
-                <path d="M3 11 H25" stroke="#ef476f" stroke-width="3" />
-              </svg>
-              <span>The meter by the fish shows your puff: the <b class="blue">blue line</b> hovers, the <b class="accent">red line</b> spikes you out.</span>
-            </li>
-            <li>
-              <span class="tip-icon">🪼</span>
-              <span><b>Spiked</b>, you pop jellyfish for points. <b>Not spiked</b>, a jellyfish stings you out.</span>
-            </li>
-            <li>
-              <span class="tip-icon">💥</span>
-              <span>Stay spiked too long and you <b>pop</b>, then sink for a moment.</span>
-            </li>
-            <li>
-              <span class="tip-icon">🪸</span>
-              <span>Dodge the coral, rocks and boat anchors, stay off the sea floor, and reach the far quay to fly again.</span>
-            </li>
-          </ul>
-          <p class="tutorial-try" data-keys>Try it now: hold <kbd class="kbd-only">Space</kbd><span class="touch-only">the screen</span> and watch the fish.</p>
-          <div class="buttons">
-            <button id="btn-tutorial-ok" class="btn primary" data-default="enter">Got it!</button>
-          </div>
-        </div>
-      </div>
-
       <!-- Webcam preview (also used, enlarged, during calibration) -->
       <div id="cam" class="hidden">
         <div class="cam-video-wrap">

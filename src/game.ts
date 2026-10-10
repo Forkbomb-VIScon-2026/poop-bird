@@ -103,8 +103,7 @@ export interface Shore {
  * the bird hops and plunges through the surface, becomes a deflated fish
  * under water (`swapped`) and inflates while the camera follows it down.
  * Breach: the fish shoots up, becomes the bird as it breaks the surface and
- * leaps up to a safe height, gliding until it's over the street. While
- * `Game.holdTransition` is set (tutorial, puff calibration) the dive doesn't finish.
+ * leaps up to a safe height, gliding until it's over the street.
  */
 export interface StageTransition {
   to: Stage;
@@ -690,8 +689,6 @@ export class Game {
 
   stage: Stage = "city";
   transition: StageTransition | null = null;
-  /** Set by main.ts while the ocean tutorial card is up: the dive doesn't finish, and the world holds still. */
-  holdTransition = false;
   /**
    * Set by main.ts while the swim lesson / puff calibration runs in the ocean:
    * the world scrolls on, but no obstacles or jellyfish spawn, the fish can't
@@ -823,7 +820,6 @@ export class Game {
     this.straining = false;
     this.stage = "city";
     this.transition = null;
-    this.holdTransition = false;
     this.calmWater = false;
     this.wasCalm = false;
     this.floorGrace = 0;
@@ -1795,11 +1791,10 @@ export class Game {
   private updateTransition(dt: number): void {
     const tr = this.transition!;
     const b = this.bird;
-    const held = this.holdTransition;
     tr.t += dt;
     if (tr.swapped) tr.sinceSwap += dt;
-    // The world drifts on, so the dive doesn't stop dead (but holds still for the puff calibration).
-    const speed = held ? 0 : this.scrollSpeed * (this.stage === "ocean" ? config.oceanScrollScale : 1);
+    // The world drifts on, so the dive doesn't stop dead.
+    const speed = this.scrollSpeed * (this.stage === "ocean" ? config.oceanScrollScale : 1);
     this.speed = speed;
     this.distance += speed * dt;
     this.scrollWorld(dt, speed);
@@ -1817,7 +1812,7 @@ export class Game {
     const arrived = Math.abs(this.cameraY - end) < 2;
 
     const done = tr.to === "ocean"
-      ? tr.swapped && !held && arrived && tr.sinceSwap >= Math.max(0.5, config.oceanTransformTime)
+      ? tr.swapped && arrived && tr.sinceSwap >= Math.max(0.5, config.oceanTransformTime)
       : tr.swapped && arrived && tr.sinceSwap >= 0.6 && !this.overWater(b.x);
     if (done) {
       this.transition = null;
@@ -1830,8 +1825,7 @@ export class Game {
   /**
    * City → ocean. Before the swap (city y): fall to the water, plunge in and
    * slow down. Once deep enough the bird becomes a deflated fish, which sinks
-   * to cruising depth and inflates: to the hover puff, or while the puff
-   * calibration holds the dive, to however much the player puffs.
+   * to cruising depth and inflates to the hover puff.
    */
   private updateDive(tr: StageTransition, dt: number): void {
     const b = this.bird;
@@ -1854,9 +1848,7 @@ export class Game {
     b.y += b.vy * dt;
     b.rot += (0 - b.rot) * Math.min(1, dt * 5);
     const f = this.fish;
-    const goal = this.holdTransition
-      ? Math.min(1, Math.max(0, this.puffInput))
-      : tr.sinceSwap > 0.25 ? config.oceanHoverPuff : 0;
+    const goal = tr.sinceSwap > 0.25 ? config.oceanHoverPuff : 0;
     f.puff += (goal - f.puff) * (1 - Math.exp(-dt / 0.12));
     this.bubbleTrail(dt, 12);
   }

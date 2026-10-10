@@ -263,67 +263,6 @@ svg.face.puff-face.puffing {
   box-shadow: 0 2px 0 var(--ink);
 }
 
-/* In-game tutorial card (first dive). Right of centre, so the fish and its meter stay in view; below the pause screen. */
-.tutorial {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  pointer-events: none;
-  z-index: 9;
-}
-
-.tutorial-card {
-  pointer-events: auto;
-  max-width: 460px;
-  margin-left: 24vw;
-  padding: 16px 22px 4px;
-  animation: pop 0.25s ease-out;
-}
-
-.tutorial-card h2 {
-  margin: 0 0 8px;
-}
-
-.tips {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  text-align: left;
-  font-size: 16px;
-}
-
-.tips li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 5px 0;
-}
-
-.tip-icon {
-  font-size: 26px;
-  width: 32px;
-  flex: none;
-  text-align: center;
-}
-
-svg.tip-meter {
-  width: 32px;
-  height: 44px;
-  flex: none;
-}
-
-.tutorial-try {
-  font-weight: 800;
-  margin: 10px 0 0;
-}
-
-.blue {
-  color: #3a86ff;
-}
-
 /* Menu option toggle. */
 .opt {
   display: flex;
@@ -1522,18 +1461,6 @@ body.debug-open #cam {
     margin-left: 0;
     margin-bottom: 4vh;
   }
-  .tutorial {
-    align-items: flex-end;
-  }
-  .tutorial-card {
-    margin-left: 0;
-  }
-  .tips {
-    font-size: 14px;
-  }
-  .tips li {
-    padding: 2px 0;
-  }
   #cam.large {
     width: min(70vw, 40vh);
   }
@@ -1664,45 +1591,6 @@ body.debug-open #cam {
   #calib-result-text {
     font-size: 14px;
     margin: 4px 0;
-  }
-
-  /* Ocean tutorial: on the right, clear of the fish, with the tips in two columns. */
-  .tutorial {
-    justify-content: flex-end;
-    padding-right: calc(16px + env(safe-area-inset-right));
-  }
-
-  .tutorial-card {
-    max-width: min(600px, 66vw);
-    margin-left: 0;
-    padding: 10px 14px 0;
-  }
-
-  .tips {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 14px;
-    font-size: 13px;
-  }
-
-  .tips li {
-    gap: 8px;
-    padding: 3px 0;
-  }
-
-  .tip-icon {
-    font-size: 20px;
-    width: 24px;
-  }
-
-  svg.tip-meter {
-    width: 24px;
-    height: 34px;
-  }
-
-  .tutorial-try {
-    font-size: 14px;
-    margin-top: 6px;
   }
 
   /* Game over: title and buttons first, the stats side by side below. */

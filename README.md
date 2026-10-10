@@ -63,7 +63,7 @@ starts the face dataset collector (local credentials `local` /
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / Esc / ⏸ button | Pause |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
-| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). The ocean tutorial takes Enter only, since Space tries out the puff there. Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
+| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
 | **R** | Play again from game over |
 | **K** | Menu: play with the keyboard |
 | **Esc** | Calibration and game over: back to the menu |
@@ -220,16 +220,13 @@ city by city (the debug panel's "Progression" group).
   banners. A fish lying on the sand when the level starts isn't killed by the
   sea floor until it swims off (at most `oceanCalmFloorGrace`, 5 s). Details
   below.
-- **Ocean tutorial** (keyboard mode, or face mode with a saved puff
-  calibration). A new player's first dive stops right after the bird
-  becomes a fish: the world holds still and a "You're a pufferfish!" card
-  explains puffing (in face mode: cheeks puffed *and* lips pursed, since the
-  lips are what the camera picks up), the meter, spikes and jellyfish, popping
-  and the way out.
-  The fish follows your puff meanwhile, so in keyboard mode you can try Space.
-  **Got it** (or Enter) carries on.
-  It shows once per browser; **⚙️ Options → "I'm new here: show tips"** in the
-  menu turns it back on (or off) for the next player.
+- **New players.** In face mode a new player always gets the swim lesson,
+  even with a saved puff calibration (which it then refits). In keyboard mode
+  a new player's first dive also swims on in calm water, under banners on
+  holding Space (or the screen) to puff and the two ocean tips; then the
+  level starts. Neither ever stops the world. The tips show once per browser;
+  **⚙️ Options → "I'm new here: show tips"** in the menu turns them back on
+  (or off) for the next player.
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea

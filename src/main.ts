@@ -162,8 +162,6 @@ let lastGameOverEntryDate: string | null = null;
 let currentSnapshotUrl: string | null = null;
 /** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
 const seenTutorials = loadSeenTutorials();
-/** Dismisses the tutorial on screen (button / Enter); null when none is showing. */
-let dismissTutorial: (() => void) | null = null;
 
 sound.setMuted(storageGet("poopbird.muted.v1") === "1");
 
@@ -790,7 +788,8 @@ async function runSwimLesson(): Promise<void> {
     const reason = quality?.reason ?? "couldn't see your face";
     if (calibrationRuns >= attempts) {
       puffCalibrationTried = true;
-      showToast(`Couldn't read your puff (${reason}): pursed lips only. Recalibrate with C.`, 4000);
+      const fallback = puffCalibration ? "keeping your saved puff" : "pursed lips only";
+      showToast(`Couldn't read your puff (${reason}): ${fallback}. Recalibrate with C.`, 4000);
       break;
     }
     why = `Couldn't read your pufferfish face yet (${reason}).`;
@@ -805,9 +804,10 @@ async function runSwimLesson(): Promise<void> {
   game.calmWater = false;
 }
 
-/** The ocean tips for new players, as banners over the calm water (the face lesson replaces the tutorial card). */
-async function oceanTipBanners(token: number): Promise<boolean> {
+/** The ocean tips for new players, as banners over the calm water, after `intro` if given. */
+async function oceanTipBanners(token: number, intro?: [string, string]): Promise<boolean> {
   const tips: [string, string][] = [
+    ...(intro ? [intro] : []),
     ["SPIKES! 🐡", "Puff past the red line on the meter to spike out. Spiked, you pop jellyfish 🪼"],
     ["WATCH OUT! 🪸", "Not spiked, jellyfish sting. Dodge the coral and rocks, stay off the sea floor."],
   ];
@@ -1018,45 +1018,38 @@ function markTutorialSeen(t: Tutorial): void {
 }
 
 /**
- * The bird just turned into a deflated fish. A new player first gets the
- * ocean tutorial; then puffing up is the rest of the transformation (the
- * puff calibration on the first face-mode dive).
+ * The bird just turned into a deflated fish. In face mode, the swim lesson
+ * when there's no puff calibration yet or the player is new (it ends with the
+ * ocean tips); a new keyboard player gets the tips as banners over calm
+ * water. Everyone else swims right into the level.
  */
-async function onSubmerged(): Promise<void> {
-  const token = flow;
-  // Face mode without a puff calibration: the swim lesson (it also has the new-player tips, as banners).
-  if (needsPuffCalibration()) {
-    void runSwimLesson();
-    return;
-  }
+function onSubmerged(): void {
   const tutorial = !seenTutorials.has("ocean");
-  if (tutorial) await runOceanTutorial(token);
+  if (needsPuffCalibration() || (tutorial && mode === "face" && tracker.ready)) void runSwimLesson();
+  else if (tutorial && mode === "keyboard") void runKeyboardOceanTips();
   else if (mode === "keyboard") showToast(isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
 }
 
 /**
- * Holds the dive with the tutorial card up until the player dismisses it. The
- * fish follows the puff meanwhile, so keyboard players can try Space. Going to
- * the menu or restarting (a new flow token) abandons it unseen.
+ * A new keyboard player's first dive: the fish swims on in calm water (see
+ * Game.calmWater) under banners on how to puff and the ocean tips, then the
+ * level starts. Belongs to the run's flow token, like the swim lesson.
  */
-async function runOceanTutorial(token: number): Promise<void> {
-  const face = mode === "face";
-  const overlay = $("ocean-tutorial");
-  overlay.querySelectorAll<HTMLElement>("[data-face]").forEach((el) => show(el, face));
-  overlay.querySelectorAll<HTMLElement>("[data-keys]").forEach((el) => show(el, !face));
-  game.holdTransition = true;
-  show(overlay, true);
-  armButtonKeys(300);
-  let done = false;
-  dismissTutorial = () => (done = true);
-  while (!done && token === flow) await wait(50);
-  dismissTutorial = null;
-  show(overlay, false);
+async function runKeyboardOceanTips(): Promise<void> {
+  const token = flow;
+  activePuffCalibration = token;
+  abortPuffCalibration = false;
+  game.calmWater = true;
+  while (game.transition && token === flow) await wait(50);
+  const hold = isTouch ? "Hold the screen" : "Hold SPACE";
+  const done = await oceanTipBanners(token, [
+    "SWIM, LITTLE PUFFERFISH! 🐡",
+    `${hold} to blow up and float, let go to shrink and sink. A little puff keeps you level.`,
+  ]);
+  endPuffCalibrationOverlay(token);
   if (token !== flow) return;
-  markTutorialSeen("ocean");
-  game.holdTransition = false;
-  // Keyboard players start at the hover point, whatever they tried out.
-  if (mode === "keyboard") keyPuff = config.oceanHoverPuff;
+  if (done) markTutorialSeen("ocean");
+  game.calmWater = false;
 }
 
 let toastTimer = 0;
@@ -1401,8 +1394,7 @@ function frame(now: number): void {
     accumulator += dt;
     while (accumulator >= STEP) {
       game.straining = straining();
-      // Also while the dive is held, so Space puffs the fish during the tutorial.
-      if (game.swimming || game.holdTransition) {
+      if (game.swimming) {
         // A pop deflates the fish: key puff stays empty while stunned.
         keyPuff = game.stunned
           ? 0
@@ -1482,7 +1474,7 @@ function frame(now: number): void {
     cityStage: game.cityStage,
     birdVy: game.bird.vy,
     stage: game.transition
-      ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`
+      ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}`
       : game.stage,
     puffCalibration,
     puffSource: puffCalibration ? `calibrated (${topFeatureLabels(puffCalibration).join(", ")}) + pucker range` : "pucker range",
@@ -1836,7 +1828,6 @@ on("btn-again", () => {
 });
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
-on("btn-tutorial-ok", () => dismissTutorial?.());
 $<HTMLInputElement>("opt-tips").addEventListener("change", (e) => {
   setNewPlayer((e.target as HTMLInputElement).checked);
 });
