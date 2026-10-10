@@ -126,7 +126,7 @@ export interface Rect {
 }
 
 /** "none": open water down to the sea floor (only under an anchor). */
-export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "coral" | "rock" | "none";
+export type BottomKind = "billboard" | "building" | "tower" | "church" | "coral" | "rock" | "none";
 
 export interface Splat {
   dx: number;
@@ -2037,8 +2037,8 @@ export class Game {
     const tallChance = ramp(config.tallBuildingChance, config.tallBuildingChanceMax, this.stageLevel());
     const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50, tallChance);
 
-    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "chimney", "tower"]);
-    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
+    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "building", "tower"]);
+    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "tower" ? 78 : 96 + Math.random() * 30;
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
