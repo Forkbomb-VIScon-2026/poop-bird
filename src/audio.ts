@@ -346,13 +346,6 @@ export class Sound {
     this.play("kid_cry", volume, delay);
   }
 
-  beep(_high = false): void {
-    const volume = 1;
-    const delay = 0;
-    return; // Currently disabled
-    this.play("beep", volume, delay);
-  }
-
   sadTrombone(): void {
     const volume = 1;
     const delay = 0;
