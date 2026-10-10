@@ -171,9 +171,10 @@ export class Renderer {
     ctx.translate(0, game.stageOffset);
     for (const d of game.decals) drawSplat(ctx, d.x, d.y, d.r, d.seed, 0.45);
     if (game.wedding) drawWeddingBackdrop(ctx, game.wedding, game.time);
-    for (const t of game.targets) if (t.kind !== "car" && !t.chute) this.drawTarget(t, game.time);
     for (const o of game.obstacles) this.drawObstacle(o, game.time);
     for (const l of game.powerLines) this.drawPowerLine(l, game.time);
+    // People stand on the sidewalk, in front of the buildings and poles.
+    for (const t of game.targets) if (t.kind !== "car" && !t.chute) this.drawTarget(t, game.time);
     for (const b of game.balloons) this.drawBalloon(b, game.time);
     // In the air, in front of the buildings.
     for (const t of game.targets) if (t.chute) this.drawTarget(t, game.time);
