@@ -20,6 +20,8 @@ export const SOUND_NAMES = [
   "hit",
   "shutter",
   "camera_beep",
+  "power_down",
+  "drone_crash",
   "smash",
   "slingshot_draw",
   "slingshot_fire",

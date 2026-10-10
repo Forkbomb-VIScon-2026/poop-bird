@@ -10,4 +10,4 @@ For example, add `release.mp3` to override `tmp_release.mp3`.
 
 The old `sounds/` directory is intentionally untouched.
 
-Release sounds use charge intensity: `poop_weak` (<1/3), `poop_middle` (1/3–2/3), `poop_large` (≥2/3). The three supplied WAV files are used directly; no conversion is needed.
+Release sounds are selected by `main.ts` using the configurable `poopSoundMiddle` (default 0.35) and `poopSoundLarge` (default 0.75) charge thresholds: `poop_weak`, `poop_middle`, and `poop_large`. The WAV recordings are used directly.

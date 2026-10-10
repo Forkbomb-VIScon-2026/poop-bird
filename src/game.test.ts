@@ -67,3 +67,35 @@ describe("leaping out", () => {
     });
   }
 });
+
+describe("attract mode", () => {
+  it("flies on its own for a long while and keeps hitting people", () => {
+    const game = new Game(1000);
+    game.startDemo();
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < 120 * 120; i++) {
+      game.stepDemo(1 / 120);
+      minY = Math.min(minY, game.bird.y);
+      maxY = Math.max(maxY, game.bird.y);
+    }
+    expect(game.phase).toBe("playing");
+    expect(game.accidents).toBe(0);
+    expect(game.obstacles).toHaveLength(0);
+    expect(game.targetsHit).toBeGreaterThan(20);
+    expect(game.targetsHit).toBeGreaterThanOrEqual(game.poopsDropped * 0.85);
+    // Clear of the statues' heads, and never pinned to the top of the screen.
+    expect(maxY).toBeLessThan(GROUND_Y - BIRD_RADIUS - 100);
+    expect(minY).toBeGreaterThan(80);
+  });
+
+  it("leaves no trace once reset for a real run", () => {
+    const game = new Game(1000);
+    game.startDemo();
+    for (let i = 0; i < 120 * 10; i++) game.stepDemo(1 / 120);
+    game.reset();
+    expect(game.demo).toBe(false);
+    expect(game.targets).toHaveLength(0);
+    expect(game.score).toBe(0);
+  });
+});

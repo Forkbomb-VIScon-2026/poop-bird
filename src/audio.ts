@@ -114,13 +114,8 @@ export class Sound {
   jellyPop(_combo: number): void { this.play("jelly_pop"); }
   deflate(): void { this.play("deflate"); }
   /** Use the normalized charge (0..1) to choose the matching poop recording. */
-  release(charge: number, _sweet: boolean): void {
-    const sound: SoundName = charge < 1 / 3
-      ? "poop_weak"
-      : charge < 2 / 3
-        ? "poop_middle"
-        : "poop_large";
-    this.play(sound);
+  release(size: "weak" | "middle" | "large", _charge: number, _sweet: boolean): void {
+    this.play(`poop_${size}`);
   }
   accident(): void { this.play("accident"); }
   zap(): void { this.play("zap"); }
@@ -132,6 +127,8 @@ export class Sound {
   hit(_combo: number): void { this.play("hit"); }
   shutter(): void { this.play("shutter"); }
   cameraBeep(_timer: number): void { this.play("camera_beep"); }
+  powerDown(): void { this.play("power_down"); }
+  droneCrash(): void { this.play("drone_crash"); }
   smash(): void { this.play("smash"); }
   slingshotDraw(_windup: number): void { this.play("slingshot_draw", 1, 0.5); }
   slingshotFire(): void { this.play("slingshot_fire"); }
