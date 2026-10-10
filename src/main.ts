@@ -946,7 +946,7 @@ function goToMenu(): void {
   cam.classList.remove("large");
   show(cam, false);
   show(hud, false);
-  game.reset();
+  game.startDemo();
   $<HTMLInputElement>("opt-tips").checked = isNewPlayer();
   showScreen("start");
 }
@@ -1155,12 +1155,19 @@ function frame(now: number): void {
     handleGameEvents();
   } else if (state === "gameover") {
     game.step(dt);
+  } else if (game.demo) {
+    // Start screen (and the loading and calibration cards over it): the bird plays itself.
+    accumulator += dt;
+    while (accumulator >= STEP) {
+      game.stepDemo(STEP);
+      accumulator -= STEP;
+    }
   } else if (state !== "paused") {
     game.idle(dt);
     accumulator = 0;
   }
 
-  renderer.draw(game, state === "playing" ? dt : 0);
+  renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
   const charging = state === "playing" && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);

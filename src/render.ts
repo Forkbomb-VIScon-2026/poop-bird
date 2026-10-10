@@ -247,7 +247,7 @@ export class Renderer {
       this.drawParticles(game);
       // A held dive (tutorial, puff calibration) shows the meter, so the player sees their puff.
       if (ocean && game.holdTransition) this.drawPuffMeter(game);
-    } else if (game.phase === "playing") {
+    } else if (game.phase === "playing" && !game.demo) {
       if (ocean) this.drawPuffMeter(game);
       else this.drawChargeMeter(game);
     }
