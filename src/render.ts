@@ -7,15 +7,15 @@ import {
   SURFACE_Y,
   BILLBOARD_H,
   BILLBOARD_LEGS_INSET,
-  TRANSITION_HOLD_AT,
   BOUQUET_R,
   CHURCH_SPIRE_H,
   CHURCH_TOWER_W,
   WEDDING_WINDUP,
   churchGeometry,
   weddingX,
-  TRANSITION_SWAP_AT,
+  OCEAN_DEPTH,
   VIEW_H,
+  WATER_Y,
   PEBBLE_R,
   obstacleRects,
   pigeonPos,
@@ -159,12 +159,12 @@ export class Renderer {
       ctx.translate((Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
     }
     const ocean = game.stage === "ocean";
-    if (ocean) {
-      this.drawOcean(game);
-    } else {
-      this.drawSky(game);
-      this.drawGround(game);
-    }
+    // The camera looks at the city, the sea below it, or (diving, leaping) both.
+    ctx.save();
+    ctx.translate(0, -game.cameraY);
+    this.drawScenery(game);
+    // Everything else lives in the current stage's coordinates.
+    ctx.translate(0, game.stageOffset);
     for (const d of game.decals) drawSplat(ctx, d.x, d.y, d.r, d.seed, 0.45);
     if (game.wedding) drawWeddingBackdrop(ctx, game.wedding, game.time);
     for (const t of game.targets) if (t.kind !== "car") this.drawTarget(t, game.time);
@@ -177,7 +177,7 @@ export class Renderer {
     for (const j of game.jellies) this.drawJelly(j, game.time, game.spike.spiked);
     this.drawPoops(game);
     for (const p of game.pebbles) drawPebble(this.ctx, p);
-    // During a transition the splash covers the creature, and particles fly over the splash.
+    // During a transition the splash and bubbles fly over the creature.
     if (!game.transition) this.drawParticles(game);
     if (ocean) this.drawFish(game);
     else this.drawBird(game);
@@ -186,13 +186,13 @@ export class Renderer {
     if (game.bouquet) drawBouquet(ctx, game.bouquet);
     if (game.wedding && !game.transition) this.drawWeddingCue(game.wedding, game);
     if (game.transition) {
-      this.drawTransition(game);
       this.drawParticles(game);
     } else if (game.phase === "playing") {
       if (ocean) this.drawPuffMeter(game);
       else this.drawChargeMeter(game);
     }
     this.drawFloaters(game);
+    ctx.restore();
     this.drawScreenSplats(game);
     this.drawPolaroid(game);
     if (game.flash > 0) {
@@ -203,6 +203,183 @@ export class Renderer {
     if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) {
       ctx.fillStyle = `rgba(220,245,255,${Math.min(0.55, game.zapFlash)})`;
       ctx.fillRect(-20, -20, this.width + 40, VIEW_H + 40);
+    }
+  }
+
+  // --- scenery ----------------------------------------------------------------
+
+  /**
+   * The backdrop in city coordinates (the caller has applied the camera). The
+   * sea is drawn OCEAN_DEPTH lower, under the city: in the ocean, while the
+   * camera pans between them, and under the harbour where the street ends.
+   * The city's sky is cut off at the water level, so the two meet at the
+   * surface.
+   */
+  private drawScenery(game: Game): void {
+    const ctx = this.ctx;
+    const cam = game.cameraY;
+    const cityVisible = cam < OCEAN_DEPTH - 0.5;
+    const seaVisible = game.stage === "ocean" || !!game.transition || !!game.shore;
+    if (seaVisible) {
+      ctx.save();
+      ctx.translate(0, OCEAN_DEPTH);
+      this.drawOcean(game);
+      ctx.restore();
+    }
+    if (cityVisible) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-40, -1000, this.width + 80, WATER_Y + 1000);
+      ctx.clip();
+      this.drawSky(game);
+      ctx.restore();
+    }
+    if (game.shore) this.drawQuay(game);
+    if (cityVisible) {
+      this.drawGround(game);
+      if (game.shore) this.drawHarbourSurface(game);
+    }
+  }
+
+  /** The x range of the quay (land) and of the harbour water, in screen x. Without a shore, it's all land. */
+  private landRange(game: Game): { land: [number, number]; water: [number, number] | null } {
+    const s = game.shore;
+    const lo = -40;
+    const hi = this.width + 40;
+    if (!s) return { land: [lo, hi], water: null };
+    const x = Math.min(hi, Math.max(lo, s.x));
+    return s.kind === "dive" ? { land: [lo, x], water: [x, hi] } : { land: [x, hi], water: [lo, x] };
+  }
+
+  /**
+   * The quay: a stone block under the street that ends in a wall at the
+   * shore, down to the sea floor. Above the water it's dry stone with a
+   * bollard at the edge; below, it's tinted blue-green with a weed line.
+   */
+  private drawQuay(game: Game): void {
+    const ctx = this.ctx;
+    const s = game.shore!;
+    const { land } = this.landRange(game);
+    const [x0, x1] = land;
+    if (x1 - x0 < 1) return;
+    const bottom = OCEAN_DEPTH + VIEW_H + 40;
+    const face = s.x;
+    const dir = s.kind === "dive" ? 1 : -1; // the wall faces right (dive) or left (exit)
+
+    // Dry stone above the water, wet stone below.
+    ctx.fillStyle = "#a59f92";
+    ctx.fillRect(x0, GROUND_Y, x1 - x0, WATER_Y - GROUND_Y);
+    const wet = ctx.createLinearGradient(0, WATER_Y, 0, bottom);
+    wet.addColorStop(0, "#5f7f86");
+    wet.addColorStop(0.25, "#3f6673");
+    wet.addColorStop(1, "#1d4256");
+    ctx.fillStyle = wet;
+    ctx.fillRect(x0, WATER_Y, x1 - x0, bottom - WATER_Y);
+
+    // Stone blocks, in offset courses, anchored to the shore so they scroll with it.
+    ctx.strokeStyle = "rgba(43,45,66,0.35)";
+    ctx.lineWidth = 2;
+    const courseH = 30;
+    const blockW = 56;
+    const top = Math.max(GROUND_Y, game.cameraY - courseH);
+    const end = Math.min(bottom, game.cameraY + VIEW_H + courseH);
+    const firstRow = Math.floor((top - GROUND_Y) / courseH);
+    for (let row = firstRow; GROUND_Y + row * courseH < end; row++) {
+      const y = GROUND_Y + row * courseH;
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      const shift = row % 2 ? blockW / 2 : 0;
+      // Vertical joints, counted from the wall face inward.
+      for (let k = 1; ; k++) {
+        const jx = face - dir * (k * blockW - shift);
+        if (jx < x0 - blockW || jx > x1 + blockW) break;
+        if (jx > x0 && jx < x1) {
+          ctx.moveTo(jx, y);
+          ctx.lineTo(jx, y + courseH);
+        }
+      }
+      ctx.stroke();
+    }
+
+    // Weed and slime along the water line.
+    ctx.fillStyle = "#2f7d5b";
+    ctx.beginPath();
+    ctx.moveTo(x0, WATER_Y - 2);
+    for (let x = x0; x <= x1; x += 8) {
+      const seed = Math.floor((x - face) / 8);
+      ctx.lineTo(x, WATER_Y + 6 + rnd(seed + 900) * 10);
+    }
+    ctx.lineTo(x1, WATER_Y - 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // The wall face, with a stone coping on top and a bollard at the edge.
+    if (face > -40 && face < this.width + 40) {
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(face, GROUND_Y);
+      ctx.lineTo(face, bottom);
+      ctx.stroke();
+      ctx.fillStyle = "#c9c3b4";
+      ctx.fillRect(dir === 1 ? face - 26 : face, GROUND_Y - 2, 26, 8);
+      ctx.strokeRect(dir === 1 ? face - 26 : face, GROUND_Y - 2, 26, 8);
+      const bx = face - dir * 40;
+      ctx.fillStyle = "#3d405b";
+      ctx.beginPath();
+      roundRect(ctx, bx - 8, GROUND_Y - 22, 16, 22, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(bx, GROUND_Y - 22, 11, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // A ladder down into the water.
+      const lx = face + dir * 2;
+      ctx.strokeStyle = "#6c757d";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (const rail of [0, 14]) {
+        ctx.moveTo(lx + dir * rail, GROUND_Y + 4);
+        ctx.lineTo(lx + dir * rail, WATER_Y + 70);
+      }
+      for (let y = GROUND_Y + 14; y < WATER_Y + 70; y += 14) {
+        ctx.moveTo(lx, y);
+        ctx.lineTo(lx + dir * 14, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /** The harbour seen from above: a rippling surface at WATER_Y over the water, the sea showing through below. */
+  private drawHarbourSurface(game: Game): void {
+    const ctx = this.ctx;
+    const { water } = this.landRange(game);
+    if (!water || water[1] - water[0] < 1) return;
+    const [x0, x1] = water;
+    const time = game.time;
+    const wave = (x: number) => Math.sin(x * 0.035 + time * 2.4 + this.bgOffset * 0.035) * 2.5;
+    // A light tint just under the surface, fading into the sea below.
+    const g = ctx.createLinearGradient(0, WATER_Y, 0, WATER_Y + 40);
+    g.addColorStop(0, "rgba(202,240,248,0.7)");
+    g.addColorStop(1, "rgba(202,240,248,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, WATER_Y, x1 - x0, 40);
+    ctx.beginPath();
+    ctx.moveTo(x0, WATER_Y + wave(x0));
+    for (let x = x0; x <= x1; x += 12) ctx.lineTo(x, WATER_Y + wave(x));
+    ctx.lineTo(x1, WATER_Y + wave(x1));
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // Glints drifting on the surface.
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    for (let i = 0; i < 10; i++) {
+      const span = this.width + 80;
+      const gx = ((((rnd(i + 950) * span - this.bgOffset) % span) + span) % span) - 40;
+      if (gx < x0 || gx > x1) continue;
+      ctx.fillRect(gx, WATER_Y + 6 + rnd(i + 960) * 14, 10 + rnd(i + 970) * 14, 2);
     }
   }
 
@@ -268,7 +445,20 @@ export class Renderer {
     }
   }
 
+  /** Sidewalk and road, only where there's land (up to the quay's edge). */
   private drawGround(game: Game): void {
+    const ctx = this.ctx;
+    const [x0, x1] = this.landRange(game).land;
+    if (x1 - x0 < 1) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, GROUND_Y - 10, x1 - x0, VIEW_H);
+    ctx.clip();
+    this.drawStreet();
+    ctx.restore();
+  }
+
+  private drawStreet(): void {
     const ctx = this.ctx;
     const w = this.width + 40;
     // Sidewalk
@@ -293,14 +483,11 @@ export class Renderer {
     ctx.moveTo(-20, GROUND_Y);
     ctx.lineTo(w, GROUND_Y);
     ctx.stroke();
-    void game;
   }
 
   // --- obstacles --------------------------------------------------------------
 
   private drawObstacle(o: Obstacle, time: number): void {
-    if (o.bottom === "harbour") return this.drawHarbourGate(o, time);
-    if (o.bottom === "reef") return this.drawReefGate(o, time);
     if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
     if (o.bottom === "church") return drawChurch(this.ctx, o, time);
     const ctx = this.ctx;
@@ -1544,243 +1731,6 @@ export class Renderer {
     }
   }
 
-  /** City → ocean gate: a harbour building whose gap is a doorway into the sea. */
-  private drawHarbourGate(o: Obstacle, time: number): void {
-    const ctx = this.ctx;
-    const [base, top] = obstacleRects(o);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = OUTLINE;
-
-    // The gap: a doorway full of sea, with arrows pointing down.
-    const gx = o.x + 6;
-    const gw = o.w - 12;
-    const gh = o.gapBottom - o.gapTop;
-    const water = ctx.createLinearGradient(0, o.gapTop, 0, o.gapBottom);
-    water.addColorStop(0, "rgba(72,202,228,0.35)");
-    water.addColorStop(1, "rgba(15,95,138,0.6)");
-    ctx.fillStyle = water;
-    ctx.fillRect(gx, o.gapTop, gw, gh);
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 4; i++) {
-      const y = o.gapTop + ((time * 40 + (i * gh) / 4) % gh);
-      ctx.beginPath();
-      for (let x = gx; x <= gx + gw; x += 8) ctx.lineTo(x, y + Math.sin(x * 0.15 + time * 3) * 2);
-      ctx.stroke();
-    }
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2.5;
-    const bob = Math.sin(time * 5) * 5;
-    for (let i = 0; i < 2; i++) {
-      const ay = o.gapTop + gh * (0.35 + i * 0.3) + bob;
-      const ax = o.x + o.w / 2;
-      ctx.beginPath();
-      ctx.moveTo(ax - 16, ay - 8);
-      ctx.lineTo(ax, ay + 8);
-      ctx.lineTo(ax + 16, ay - 8);
-      ctx.lineTo(ax + 10, ay - 12);
-      ctx.lineTo(ax, ay - 2);
-      ctx.lineTo(ax - 10, ay - 12);
-      ctx.closePath();
-      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(time * 6 - i);
-      ctx.fill();
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    // Door frame posts on both sides of the gap
-    ctx.fillStyle = "#e0c097";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    for (const px of [o.x, o.x + o.w - 6]) {
-      ctx.fillRect(px, o.gapTop, 6, gh);
-      ctx.strokeRect(px, o.gapTop, 6, gh);
-    }
-
-    // Upper building with portholes, and a striped lintel over the door.
-    ctx.fillStyle = o.color;
-    roundRect(ctx, top.x, top.y - 5, top.w, top.h + 5, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#ffe8a3";
-    for (let y = top.y + 24; y < top.y + top.h - 70; y += 40) {
-      for (let x = top.x + 26; x < top.x + top.w - 16; x += 38) {
-        ctx.beginPath();
-        ctx.arc(x, y, 9, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-    const lintelY = top.y + top.h - 22;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(top.x, lintelY, top.w, 22);
-    ctx.clip();
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(top.x, lintelY, top.w, 22);
-    ctx.fillStyle = "#e63946";
-    for (let x = top.x - 22; x < top.x + top.w; x += 22) {
-      ctx.beginPath();
-      ctx.moveTo(x, lintelY + 22);
-      ctx.lineTo(x + 11, lintelY + 22);
-      ctx.lineTo(x + 22, lintelY);
-      ctx.lineTo(x + 11, lintelY);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-    ctx.strokeRect(top.x, lintelY, top.w, 22);
-    // Sign
-    if (top.h > 70) {
-      const sy = lintelY - 34;
-      ctx.fillStyle = "#1d3557";
-      roundRect(ctx, top.x + 8, sy, top.w - 16, 28, 6);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 16px 'Trebuchet MS', sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("⚓ HARBOUR", top.x + top.w / 2, sy + 15);
-    }
-
-    // Pier below: stone blocks, a life ring and a bollard.
-    ctx.fillStyle = "#8d99ae";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    roundRect(ctx, base.x, base.y, base.w, base.h + 4, 4);
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(0,0,0,0.2)";
-    ctx.lineWidth = 2;
-    for (let y = base.y + 18, row = 0; y < GROUND_Y; y += 18, row++) {
-      ctx.beginPath();
-      ctx.moveTo(base.x + 3, y);
-      ctx.lineTo(base.x + base.w - 3, y);
-      ctx.stroke();
-      for (let x = base.x + (row % 2 ? 14 : 34); x < base.x + base.w - 4; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, y - 18);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-      }
-    }
-    ctx.fillStyle = "#3d405b";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    roundRect(ctx, base.x + base.w / 2 - 10, base.y - 14, 20, 16, 5);
-    ctx.fill();
-    ctx.stroke();
-    if (base.h > 70) {
-      const rx = base.x + base.w / 2;
-      const ry = base.y + 44;
-      ctx.lineWidth = 9;
-      ctx.strokeStyle = OUTLINE;
-      ctx.beginPath();
-      ctx.arc(rx, ry, 16, 0, Math.PI * 2);
-      ctx.stroke();
-      for (let i = 0; i < 4; i++) {
-        ctx.strokeStyle = i % 2 ? "#fff" : "#ff6b35";
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(rx, ry, 16, (i * Math.PI) / 2, ((i + 1) * Math.PI) / 2);
-        ctx.stroke();
-      }
-    }
-    for (const s of o.splats) drawSplat(ctx, o.x + s.dx, s.dy, s.r, s.seed, 1);
-  }
-
-  /** Ocean → city gate: a reef arch whose gap holds a glowing bubble ring up to the surface. */
-  private drawReefGate(o: Obstacle, time: number): void {
-    const ctx = this.ctx;
-    const [base, top] = obstacleRects(o);
-    const cx = o.x + o.w / 2;
-    const cy = (o.gapTop + o.gapBottom) / 2;
-    const gh = o.gapBottom - o.gapTop;
-
-    // A shaft of surface light through the gap.
-    ctx.fillStyle = `rgba(255,255,220,${0.18 + 0.06 * Math.sin(time * 3)})`;
-    ctx.fillRect(o.x + 4, o.gapTop, o.w - 8, gh);
-
-    // Rock overhang and rock column
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = OUTLINE;
-    ctx.fillStyle = o.color;
-    roundRect(ctx, top.x, top.y - 10, top.w, top.h + 10, 18);
-    ctx.fill();
-    ctx.stroke();
-    roundRect(ctx, base.x, base.y, base.w, base.h + 6, 18);
-    ctx.fill();
-    ctx.stroke();
-    // Kelp hanging from the overhang, coral on the column
-    ctx.strokeStyle = "#2a9d73";
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    for (let i = 0; i < 3; i++) {
-      const kx = top.x + 16 + i * ((top.w - 32) / 2);
-      ctx.beginPath();
-      ctx.moveTo(kx, top.y + top.h - 4);
-      ctx.quadraticCurveTo(kx + Math.sin(time * 2 + i) * 8, top.y + top.h + 10, kx + Math.sin(time * 2 + i + 1) * 5, top.y + top.h + 20);
-      ctx.stroke();
-    }
-    ctx.lineCap = "butt";
-    ctx.fillStyle = "#ff7f6e";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2.5;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.arc(base.x + 18 + i * ((base.w - 36) / 2), base.y + 4, 8, Math.PI, 0);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // The bubble ring
-    const rx = o.w * 0.42;
-    const ry = gh * 0.42;
-    const n = 22;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + time * 0.8;
-      const bx = cx + Math.cos(a) * rx;
-      const by = cy + Math.sin(a) * ry;
-      const br = 4 + (Math.sin(time * 4 + i) + 1) * 1.6;
-      ctx.fillStyle = "rgba(224,251,252,0.55)";
-      ctx.strokeStyle = "rgba(255,255,255,0.95)";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(bx, by, br, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-    // Arrow up
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2.5;
-    const ay = cy + Math.sin(time * 5) * 6;
-    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(time * 6);
-    ctx.beginPath();
-    ctx.moveTo(cx, ay - 18);
-    ctx.lineTo(cx + 16, ay);
-    ctx.lineTo(cx + 6, ay);
-    ctx.lineTo(cx + 6, ay + 16);
-    ctx.lineTo(cx - 6, ay + 16);
-    ctx.lineTo(cx - 6, ay);
-    ctx.lineTo(cx - 16, ay);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    if (top.h > 60) {
-      ctx.font = "900 14px 'Trebuchet MS', sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = OUTLINE;
-      ctx.strokeText("SURFACE", cx, top.y + top.h - 20);
-      ctx.fillStyle = "#e0fbfc";
-      ctx.fillText("SURFACE", cx, top.y + top.h - 20);
-    }
-  }
-
   private drawJelly(j: Jelly, time: number, poppable: boolean): void {
     const ctx = this.ctx;
     const pulse = 1 + Math.sin(time * 3 + j.phase) * 0.08;
@@ -2220,65 +2170,6 @@ export class Renderer {
       ctx.strokeText(label, x + w / 2, y - 12);
       ctx.fillStyle = warn ? "#ff1f4b" : "#ff9f1c";
       ctx.fillText(label, x + w / 2, y - 12);
-    }
-  }
-
-  /** Splash between stages: water rises over the city (dive) or the sky drops over the sea (surface). */
-  private drawTransition(game: Game): void {
-    const tr = game.transition;
-    if (!tr) return;
-    const ctx = this.ctx;
-    const w = this.width + 40;
-    const t = tr.t / tr.duration;
-    const time = game.time;
-    if (!tr.swapped) {
-      const k = Math.min(1, t / TRANSITION_SWAP_AT);
-      const cover = k * k * (3 - 2 * k);
-      const wave = (x: number) => Math.sin(x * 0.025 + time * 9) * 14 + Math.sin(x * 0.06 - time * 5) * 6;
-      ctx.beginPath();
-      if (tr.to === "ocean") {
-        const level = VIEW_H + 40 - cover * (VIEW_H + 110);
-        const g = ctx.createLinearGradient(0, level, 0, VIEW_H);
-        g.addColorStop(0, "#48cae4");
-        g.addColorStop(1, "#0f5f8a");
-        ctx.fillStyle = g;
-        ctx.moveTo(-20, VIEW_H + 20);
-        for (let x = -20; x <= w; x += 16) ctx.lineTo(x, level + wave(x));
-        ctx.lineTo(w, VIEW_H + 20);
-      } else {
-        const level = -40 + cover * (VIEW_H + 110);
-        const g = ctx.createLinearGradient(0, 0, 0, Math.max(1, level));
-        g.addColorStop(0, "#5ec8f2");
-        g.addColorStop(1, "#bfeaf7");
-        ctx.fillStyle = g;
-        ctx.moveTo(-20, -20);
-        for (let x = -20; x <= w; x += 16) ctx.lineTo(x, level + wave(x));
-        ctx.lineTo(w, -20);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.95)";
-      ctx.lineWidth = 8;
-      ctx.stroke();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    } else {
-      // Foam clears between the swap and the hold point.
-      const k = Math.min(1, Math.max(0, (t - TRANSITION_SWAP_AT) / (TRANSITION_HOLD_AT - TRANSITION_SWAP_AT)));
-      const a = (1 - k) * 0.85;
-      if (a > 0.01) {
-        ctx.fillStyle = `rgba(255,255,255,${a * 0.6})`;
-        ctx.fillRect(-20, -20, w, VIEW_H + 40);
-        ctx.fillStyle = `rgba(255,255,255,${a})`;
-        for (let i = 0; i < 18; i++) {
-          const fx = rnd(i + 200) * this.width;
-          const fy = rnd(i + 210) * VIEW_H - k * 200 * (tr.to === "ocean" ? 1 : -1);
-          ctx.beginPath();
-          ctx.arc(fx, fy, 20 + rnd(i + 220) * 40 * (1 - k), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
     }
   }
 }
