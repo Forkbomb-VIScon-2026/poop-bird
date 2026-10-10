@@ -206,6 +206,14 @@ total distance.
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
   floor kills; the surface is a soft ceiling you bump against.
+- **Obstacles.** Coral and rocks rise from the sea floor. Some slots are a
+  boat at anchor instead (`oceanAnchorChance`, 40%): its anchor hangs down on
+  the chain, over coral or a rock (a gap between them) or, for
+  `oceanAnchorOpenChance` (35%) of them, over open water, so you dive under
+  it. The hull dips below the surface, so hugging the surface isn't safe
+  either. The last obstacle before the far quay is never a boat (it would
+  vanish from the harbour as the bird leaps out), and neither is one while a
+  fisherman is out (he rows against the scroll, so it would run into him).
 - **Size is the tradeoff.** The fish, and its hitbox, grow with puff. Rising
   makes you bigger.
 - **Spike-out.** At ~85% puff the spines come out. Spiked, you pop jellyfish
@@ -389,7 +397,7 @@ one that failed.
 overstrain timing, thresholds, EMA, calibration, world scroll, gaps and
 spacing, difficulty ramp, targets and scoring, and the "Ocean" and "Ocean puff"
 groups (stage lengths, buoyancy and drag, hitbox scale, ocean gaps and spacing,
-spike and pop timing, jellyfish, key puff rates, puff calibration and fallback
+anchors, spike and pop timing, jellyfish, key puff rates, puff calibration and fallback
 range).
 
 Start the app with `npm run dev:debug` (or build with `npm run build:debug`),

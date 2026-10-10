@@ -7,6 +7,10 @@ import {
   BIRD_RADIUS,
   GROUND_Y,
   SURFACE_Y,
+  ANCHOR_H,
+  BOAT_DRAFT,
+  BOAT_FREEBOARD,
+  BOAT_W,
   BILLBOARD_H,
   BILLBOARD_LEGS_INSET,
   BOUQUET_R,
@@ -99,6 +103,8 @@ const CLOUDS = Array.from({ length: 9 }, (_, i) => ({
   y: 30 + rnd(i + 20) * 200,
   s: 0.6 + rnd(i + 30) * 0.9,
 }));
+/** Topside paint of the anchored boats in the ocean. */
+const BOAT_COLORS = ["#f8f9fa", "#ffd166", "#4ea8de", "#06d6a0", "#ef8354"];
 // Ocean parallax: far rock silhouettes and mid-distance kelp.
 const FAR_ROCKS = makeSkyline(3, SKYLINE_LEN, 50, 190);
 const KELP = Array.from({ length: 26 }, (_, i) => ({
@@ -557,6 +563,8 @@ export class Renderer {
   // --- obstacles --------------------------------------------------------------
 
   private drawObstacle(o: Obstacle, time: number): void {
+    if (o.anchor) this.drawAnchoredBoat(o);
+    if (o.bottom === "none") return;
     if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
     if (o.bottom === "church") return drawChurch(this.ctx, o, time);
     const ctx = this.ctx;
@@ -2233,6 +2241,166 @@ export class Renderer {
       ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fillRect(base.x + base.w - 12, base.y + 18, 9, Math.max(0, base.h - 18));
     }
+  }
+
+  /**
+   * A boat at anchor: the hull on the surface (painted above the waterline,
+   * red antifouling below, tinted by the water), a cabin and a mast above,
+   * and the chain down to the anchor, whose crown is the gap's top edge.
+   */
+  private drawAnchoredBoat(o: Obstacle): void {
+    const ctx = this.ctx;
+    const cx = o.x + o.w / 2;
+    const keel = SURFACE_Y + BOAT_DRAFT;
+    const deck = SURFACE_Y - BOAT_FREEBOARD;
+    const hl = cx - BOAT_W / 2;
+    const hr = cx + BOAT_W / 2;
+    const top = o.gapTop - ANCHOR_H;
+    const iron = "#56616d";
+
+    // Chain: links alternate face-on (a ring) and edge-on (a bar), down to the anchor's ring.
+    for (let y = keel - 6, i = 0; y < top + 2; y += 10, i++) {
+      if (i % 2 === 0) {
+        ctx.beginPath();
+        ctx.ellipse(cx, y + 6, 4.5, 7, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 4.5;
+        ctx.stroke();
+        ctx.strokeStyle = iron;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else {
+        roundRect(ctx, cx - 2, y, 4, 13, 2);
+        ctx.fillStyle = iron;
+        ctx.fill();
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // Anchor: ring, shank, stock with ball ends, curved arms with flukes.
+    ctx.beginPath();
+    ctx.arc(cx, top + 7, 6.5, 0, Math.PI * 2);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 6.5;
+    ctx.stroke();
+    ctx.strokeStyle = iron;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = iron;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    roundRect(ctx, cx - 5, top + 12, 10, ANCHOR_H - 18, 3);
+    ctx.fill();
+    ctx.stroke();
+    const armY = o.gapTop - 33;
+    ctx.beginPath();
+    ctx.arc(cx, armY, 27, 0.2, Math.PI - 0.2);
+    ctx.lineWidth = 13;
+    ctx.stroke();
+    ctx.strokeStyle = iron;
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 31, o.gapTop - 46);
+      ctx.lineTo(cx + s * 37, o.gapTop - 22);
+      ctx.lineTo(cx + s * 18, o.gapTop - 29);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    roundRect(ctx, cx - 21, top + 15, 42, 9, 4);
+    ctx.fill();
+    ctx.stroke();
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx + s * 22, top + 19.5, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Rust and a strand of weed caught on a fluke.
+    ctx.fillStyle = "rgba(170,90,40,0.55)";
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(cx + (rnd(o.seed + i) - 0.5) * 6, top + 28 + rnd(o.seed + i + 9) * (ANCHOR_H - 50), 1.8 + rnd(o.seed + i + 5) * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const weed = rnd(o.seed + 3) < 0.5 ? -1 : 1;
+    ctx.strokeStyle = "#2a9d73";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx + weed * 33, o.gapTop - 26);
+    ctx.quadraticCurveTo(cx + weed * 42, o.gapTop - 8, cx + weed * 36, o.gapTop + 8);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+
+    // Mast with a pennant, and the cabin: above the water.
+    const color = BOAT_COLORS[Math.floor(rnd(o.seed + 1) * BOAT_COLORS.length)];
+    const mastX = cx - 28;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(mastX, deck);
+    ctx.lineTo(mastX, deck - 74);
+    ctx.stroke();
+    ctx.fillStyle = "#ef476f";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mastX + 2, deck - 74);
+    ctx.lineTo(mastX + 24, deck - 68);
+    ctx.lineTo(mastX + 2, deck - 62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    roundRect(ctx, cx - 6, deck - 26, 54, 28, 5);
+    ctx.fillStyle = "#f1faee";
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#7fd3ea";
+    for (const wx of [cx + 2, cx + 26]) {
+      roundRect(ctx, wx, deck - 19, 15, 10, 3);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Hull: bow on the left, square transom on the right.
+    ctx.beginPath();
+    ctx.moveTo(hl - 8, deck - 8);
+    ctx.lineTo(hr, deck);
+    ctx.lineTo(hr - 5, keel - 8);
+    ctx.quadraticCurveTo(hr - 8, keel, hr - 22, keel);
+    ctx.lineTo(cx - BOAT_W * 0.18, keel);
+    ctx.quadraticCurveTo(hl + 6, keel - 2, hl - 8, deck - 8);
+    ctx.closePath();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = color;
+    ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, SURFACE_Y - deck + 10);
+    ctx.fillStyle = "#c0392b";
+    ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
+    ctx.fillStyle = "#f1faee";
+    ctx.fillRect(hl - 10, SURFACE_Y - 4, BOAT_W + 20, 4);
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, 6);
+    // Seen through the water, the part below the surface is bluer.
+    ctx.fillStyle = "rgba(27,143,181,0.3)";
+    ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
+    ctx.restore();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Hawsepipe where the chain comes out.
+    ctx.fillStyle = OUTLINE;
+    ctx.beginPath();
+    ctx.ellipse(cx, keel - 2, 6, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   private drawJelly(j: Jelly, time: number, poppable: boolean): void {
