@@ -121,7 +121,9 @@ there's no countdown.
   between them (`powerLineChance`). Touching a wire zaps the bird and ends the
   run, and so does hitting a pole. Fly over, under, or (later, when the wires
   stack up to three) between them. Pigeons sit on the wires and are targets
-  too (×2).
+  too (×2). Some of them (`droneChance`) are government surveillance drones:
+  splat one and it drops off the wire and breaks open on the street, wires
+  sparking.
 - **Paparazzi:** now and then a paparazzo walks on with his camera raised.
   The ring over his head fills as he closes in; when it's full (just past the
   bird) he takes your picture. Splat him first to smash the camera (×3).

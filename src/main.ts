@@ -3,7 +3,7 @@
 
 import "./style.css";
 import { config } from "./config";
-import { Sound } from "./audio";
+import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
@@ -946,7 +946,7 @@ function goToMenu(): void {
   cam.classList.remove("large");
   show(cam, false);
   show(hud, false);
-  game.reset();
+  game.startDemo();
   $<HTMLInputElement>("opt-tips").checked = isNewPlayer();
   showScreen("start");
 }
@@ -1171,12 +1171,19 @@ function frame(now: number): void {
     handleGameEvents();
   } else if (state === "gameover") {
     game.step(dt);
+  } else if (game.demo) {
+    // Start screen (and the loading and calibration cards over it): the bird plays itself.
+    accumulator += dt;
+    while (accumulator >= STEP) {
+      game.stepDemo(STEP);
+      accumulator -= STEP;
+    }
   } else if (state !== "paused") {
     game.idle(dt);
     accumulator = 0;
   }
 
-  renderer.draw(game, state === "playing" ? dt : 0);
+  renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
   const charging = state === "playing" && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);
@@ -1235,11 +1242,18 @@ function takePhoto(photoId: number): void {
 /** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
 let weddingFace: Photo | null = null;
 
+/** Which poop sample a release at this charge plays. */
+function poopSize(charge: number): PoopSize {
+  if (charge >= config.poopSoundLarge) return "large";
+  if (charge >= config.poopSoundMiddle) return "middle";
+  return "weak";
+}
+
 function handleGameEvents(): void {
   for (const e of game.events) {
     switch (e.type) {
       case "release":
-        sound.release(e.charge, e.sweet);
+        sound.release(poopSize(e.charge), e.charge, e.sweet);
         buzz(e.sweet ? [15, 40, 25] : Math.round(8 + 20 * e.charge));
         break;
       case "accident":
@@ -1260,6 +1274,13 @@ function handleGameEvents(): void {
       case "zap":
         sound.zap();
         buzz([30, 20, 30, 20, 120]);
+        break;
+      case "droneDown":
+        sound.powerDown();
+        break;
+      case "droneCrashed":
+        sound.droneCrash();
+        buzz([20, 30, 60]);
         break;
       case "gameover":
         onGameOver();
