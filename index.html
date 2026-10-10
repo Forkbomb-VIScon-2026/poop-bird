@@ -62,15 +62,20 @@
         <div id="hud-toast" class="hud-toast hidden"></div>
       </div>
 
-      <!-- Swim lesson and puff calibration banners (first dive in face mode, in calm water) -->
-      <div id="puff-calib" class="puff-calib hidden">
-        <!-- Calibration only: the steps, the current one highlighted (puff steps in red). -->
-        <ol id="puff-calib-timeline" class="puff-timeline hidden"></ol>
-        <!-- The face for this step (or the next one, during a countdown). -->
-        <svg id="puff-calib-face" class="face puff-face hidden"><use id="puff-calib-face-use" href="#face-relaxed" /></svg>
-        <h2 id="puff-calib-title">PUFFERFISH FACE! 🐡</h2>
-        <p id="puff-calib-hint" class="hint">Puff your cheeks and purse your lips, like a kiss. Hold it.</p>
-        <div id="puff-calib-bar" class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
+      <!-- The coach: every tutorial step and the puff calibration, as one banner. On the perch it sits
+           beside the bird (moved into #perch-coach-slot); in the city and the ocean, over the game. -->
+      <div id="coach" class="coach hidden">
+        <!-- Puff calibration only: the steps, the current one highlighted (puff steps in red). -->
+        <ol id="coach-timeline" class="puff-timeline hidden"></ol>
+        <div class="coach-line">
+          <!-- The face for this step (or the next one, during a countdown). -->
+          <svg id="coach-face" class="face coach-face hidden"><use id="coach-face-use" href="#face-relaxed" /></svg>
+          <h2 id="coach-title"></h2>
+        </div>
+        <p id="coach-hint" class="hint"></p>
+        <div id="coach-bar" class="progress hidden"><div id="coach-progress" class="progress-fill"></div></div>
+        <!-- A tutorial's steps: done ones filled, the current one bigger. -->
+        <ol id="coach-dots" class="coach-dots hidden"></ol>
       </div>
 
       <!-- Webcam preview (also used, enlarged, during calibration) -->
@@ -163,14 +168,8 @@
            In face mode the webcam (#cam, moved into #perch-cam-slot) and a strain gauge sit beside the bird. -->
       <section id="screen-ready" class="screen hidden passthrough">
         <div id="perch" class="perch">
-          <!-- One short instruction, with the face it asks for (face mode). -->
-          <div class="perch-text">
-            <div class="perch-line">
-              <svg id="perch-face" class="face perch-face"><use id="perch-face-use" href="#face-strained" /></svg>
-              <div class="ready-text" id="ready-text"></div>
-            </div>
-            <div class="ready-sub" id="ready-sub"></div>
-          </div>
+          <!-- The coach (#coach) goes here while the bird is on the perch. -->
+          <div id="perch-coach-slot" class="perch-coach-slot"></div>
           <div id="perch-you" class="perch-you">
             <div class="perch-arrow" id="perch-arrow" aria-hidden="true">
               <svg viewBox="-4 -4 68 48">

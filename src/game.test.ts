@@ -104,6 +104,34 @@ describe("calm water", () => {
   });
 });
 
+describe("calm city", () => {
+  it("spawns no obstacles and bounces the bird off the street, while cars still come", () => {
+    const game = new Game(1000);
+    game.calmCity = true;
+    for (let i = 0; i < 60 * 30; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    expect(game.obstacles).toHaveLength(0);
+    expect(game.bird.y).toBeLessThan(GROUND_Y - BIRD_RADIUS);
+    game.spawnCarNow();
+    expect(game.targets.some((t) => t.kind === "car")).toBe(true);
+  });
+
+  it("brings the first obstacle a full delay after it ends", () => {
+    const game = new Game(1000);
+    game.calmCity = true;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    game.calmCity = false;
+    const from = game.distance;
+    for (let i = 0; i < 60 * 30 && game.obstacles.length === 0; i++) {
+      // Held in the air: without calm, the street would end the run.
+      Object.assign(game.bird, { y: 240, vy: 0 });
+      game.step(1 / 60);
+    }
+    expect(game.obstacles.length).toBeGreaterThan(0);
+    expect(game.distance - from).toBeGreaterThan(config.firstObstacleDelay - 50);
+  });
+});
+
 describe("leaping out", () => {
   /** Dives in, then brings the far quay up `ahead` px in front of the fish at depth `y`. */
   function leapFrom(ahead: number, y: number, puff: number): Game {
