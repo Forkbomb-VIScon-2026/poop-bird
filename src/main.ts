@@ -73,6 +73,11 @@ const screens = {
 };
 const hud = $("hud");
 const cam = $("cam");
+const rotateScreen = $("screen-rotate");
+
+/** A phone or tablet: no hover, coarse pointer. Swaps key hints for touch wording (CSS `.touch`). */
+const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+document.body.classList.toggle("touch", isTouch);
 
 function show(el: HTMLElement, visible: boolean): void {
   el.classList.toggle("hidden", !visible);
@@ -132,7 +137,8 @@ let lastFace: FaceFrame | null = null;
 let lastFaceTime = 0;
 let lastFaceSeen = 0;
 let keyHeld = false;
-let pointerHeld = false;
+/** Pointers (fingers, mouse) held down on the canvas. Any one of them holds. */
+const heldPointers = new Set<number>();
 let best = loadBest();
 let lastGameOverEntryDate: string | null = null;
 let currentSnapshotUrl: string | null = null;
@@ -145,7 +151,7 @@ sound.setMuted(storageGet("poopbird.muted.v1") === "1");
 
 /** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
 function manualHeld(): boolean {
-  return mode === "keyboard" && (keyHeld || pointerHeld);
+  return mode === "keyboard" && (keyHeld || heldPointers.size > 0);
 }
 
 /** The single "is the player straining?" signal: the face in face mode, Space / pointer in keyboard mode. */
@@ -258,8 +264,16 @@ function updateStrainBars(): void {
   // Short grace period so a single dropped frame doesn't flash the warning.
   const lost = mode === "face" && tracker.ready && performance.now() - lastFaceSeen > 300;
   show($("cam-noface"), lost);
-  if (state === "calibrated") updateStrainCheck(value, active);
+  if (state === "calibrated") {
+    updateStrainCheck(value, active);
+    // Give the detector a moment to warm up before judging its speed.
+    const slow = performance.now() - strainCheckSince > 3000 && tracker.detectionRate < config.slowDetectionRate;
+    show($("calib-slow"), slow);
+  }
 }
+
+/** When the strain check opened (for the slow-tracking warning). */
+let strainCheckSince = 0;
 
 /** The "try it" checklist on the calibration result: strain once, then relax once. */
 const strainCheck = { strained: false, relaxed: false };
@@ -548,6 +562,7 @@ function topFeatureLabels(cal: Calibration): string[] {
 type CalibrationResult = "saved" | "reading" | "default" | ReturnType<typeof assessCalibration>;
 
 function showCalibrationResult(result: CalibrationResult): void {
+  if (state !== "calibrated") strainCheckSince = performance.now();
   state = "calibrated";
   showScreen("calibrate");
   show(hud, false);
@@ -589,7 +604,7 @@ function showCalibrationResult(result: CalibrationResult): void {
   }
   const anyway = typeof result === "object" && !result.ok;
   calibrationFailed = anyway;
-  playBtn.innerHTML = anyway ? "Play anyway" : "Play! <small>(Enter)</small>";
+  playBtn.innerHTML = anyway ? "Play anyway" : 'Play! <small class="kbd-only">(Enter)</small>';
   playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);
 }
 
@@ -758,7 +773,7 @@ async function onSubmerged(): Promise<void> {
     if (token !== flow) return;
   }
   if (needsPuffCalibration()) void runPuffCalibration();
-  else if (mode === "keyboard" && !tutorial) showToast("Hold SPACE to puff up 🐡");
+  else if (mode === "keyboard" && !tutorial) showToast(isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
 }
 
 /**
@@ -850,7 +865,7 @@ function startReady(ocean = false): void {
   renderer.photos.clear();
   snapshot.reset();
   keyHeld = false;
-  pointerHeld = false;
+  heldPointers.clear();
   keyPuff = 0;
   hideToast();
   show(hud, true);
@@ -872,12 +887,25 @@ function startReady(ocean = false): void {
 }
 
 function updateReady(): void {
+  if (needsRotate()) return;
   if (!straining()) readyArmed = true;
   else if (readyArmed) {
     state = "playing";
     showScreen(null);
     sound.beep(true);
   }
+}
+
+function toggleMute(): void {
+  storageSet("poopbird.muted.v1", sound.toggleMute() ? "1" : "0");
+  updateMuteButton();
+  showToast(sound.muted ? "🔇 Muted" : "🔊 Sound on", 1200);
+}
+
+function updateMuteButton(): void {
+  const btn = $("btn-hud-mute");
+  btn.textContent = sound.muted ? "🔇" : "🔊";
+  btn.setAttribute("aria-label", sound.muted ? "Unmute" : "Mute");
 }
 
 function togglePause(): void {
@@ -1058,7 +1086,7 @@ function updateHud(): void {
     hudCache.score = score;
     $("hud-score").textContent = String(score);
   }
-  const shownBest = Math.max(best, state === "playing" ? score : 0);
+  const shownBest = Math.max(best, state === "playing" || state === "paused" ? score : 0);
   if (shownBest !== hudCache.best) {
     hudCache.best = shownBest;
     $("hud-best").textContent = String(shownBest);
@@ -1093,6 +1121,7 @@ function frame(now: number): void {
   lastTime = now;
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
+  updateRotatePrompt();
   if (state === "ready") updateReady();
   if (state === "playing") {
     accumulator += dt;
@@ -1181,21 +1210,26 @@ function handleGameEvents(): void {
     switch (e.type) {
       case "release":
         sound.release(e.charge, e.sweet);
+        buzz(e.sweet ? [15, 40, 25] : Math.round(8 + 20 * e.charge));
         break;
       case "accident":
         sound.accident();
+        buzz([60, 40, 120]);
         break;
       case "splat":
         sound.splat(e.big);
         break;
       case "hit":
         sound.hit(e.combo);
+        buzz(12);
         break;
       case "crash":
         sound.splat(true);
+        buzz(200);
         break;
       case "zap":
         sound.zap();
+        buzz([30, 20, 30, 20, 120]);
         break;
       case "gameover":
         onGameOver();
@@ -1224,6 +1258,7 @@ function handleGameEvents(): void {
         break;
       case "pop":
         sound.deflate();
+        buzz(120);
         break;
       case "jellyPopped":
         sound.jellyPop(e.combo);
@@ -1246,6 +1281,7 @@ function handleGameEvents(): void {
         break;
       case "bonk":
         sound.bonk();
+        buzz(80);
         break;
       case "pebbleShot":
         sound.pebbleShot(e.combo);
@@ -1332,8 +1368,7 @@ window.addEventListener("keydown", (e) => {
       togglePause();
       break;
     case "m":
-      storageSet("poopbird.muted.v1", sound.toggleMute() ? "1" : "0");
-      showToast(sound.muted ? "🔇 Muted" : "🔊 Sound on", 1200);
+      toggleMute();
       break;
     case "r":
       if (state === "gameover") startReady();
@@ -1390,16 +1425,16 @@ canvas.addEventListener("pointerdown", (e) => {
   if (state !== "playing" && state !== "ready") return;
   e.preventDefault();
   sound.unlock();
-  pointerHeld = true;
+  heldPointers.add(e.pointerId);
   canvas.setPointerCapture?.(e.pointerId);
 });
 for (const type of ["pointerup", "pointercancel"] as const) {
-  window.addEventListener(type, () => (pointerHeld = false));
+  window.addEventListener(type, (e) => heldPointers.delete(e.pointerId));
 }
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("blur", () => {
   keyHeld = false;
-  pointerHeld = false;
+  heldPointers.clear();
 });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && state === "playing") togglePause();
@@ -1409,17 +1444,34 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 // --- Buttons -------------------------------------------------------------------------------
 
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
-on("btn-face", () => void startFaceMode());
-on("btn-keyboard", startKeyboardMode);
+on("btn-face", () => {
+  goLandscape();
+  void startFaceMode();
+});
+on("btn-keyboard", () => {
+  goLandscape();
+  startKeyboardMode();
+});
+on("btn-hud-mute", toggleMute);
+on("btn-hud-pause", togglePause);
 on("btn-loading-retry", () => void startFaceMode());
 on("btn-loading-keyboard", startKeyboardMode);
-on("btn-calib-play", playAfterCalibration);
+on("btn-calib-play", () => {
+  goLandscape();
+  playAfterCalibration();
+});
 on("btn-calib-retry", () => void runCalibration());
-on("btn-calib-keyboard", startKeyboardMode);
+on("btn-calib-keyboard", () => {
+  goLandscape();
+  startKeyboardMode();
+});
 on("btn-calib-cancel", goToMenu);
 on("btn-resume", togglePause);
 on("btn-pause-menu", goToMenu);
-on("btn-again", () => startReady());
+on("btn-again", () => {
+  goLandscape();
+  startReady();
+});
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
 on("btn-tutorial-ok", () => dismissTutorial?.());
@@ -1443,8 +1495,43 @@ document.addEventListener("click", (e) => {
   if ((e.target as HTMLElement).closest("button, .opt")) (document.activeElement as HTMLElement | null)?.blur();
 });
 
+// --- Phones: landscape, haptics -------------------------------------------------------------
+
+/**
+ * Touch devices: go fullscreen and lock to landscape, where the browser allows
+ * it (Android Chrome; iOS Safari can't, so the rotate prompt covers that).
+ * Must run inside a tap.
+ */
+function goLandscape(): void {
+  if (!isTouch || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+  document.documentElement
+    .requestFullscreen({ navigationUI: "hide" })
+    .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape"))
+    .catch(() => {});
+}
+
+const portraitQuery = window.matchMedia("(orientation: portrait)");
+
+/** A phone held upright during a run: the playfield would be too narrow to see what's coming. */
+function needsRotate(): boolean {
+  return isTouch && portraitQuery.matches && (state === "ready" || state === "playing" || state === "paused");
+}
+
+function updateRotatePrompt(): void {
+  const rotate = needsRotate();
+  if (rotate && state === "playing") togglePause();
+  show(rotateScreen, rotate);
+}
+
+/** A short buzz on phones that support it (not iOS). Muting silences it too. */
+function buzz(pattern: number | number[]): void {
+  if (sound.muted || !isTouch) return;
+  navigator.vibrate?.(pattern);
+}
+
 // --- Boot ----------------------------------------------------------------------------------
 
+updateMuteButton();
 goToMenu();
 requestAnimationFrame(frame);
 
