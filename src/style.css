@@ -203,13 +203,22 @@ canvas#game {
   background: #4cc9f0;
 }
 
-.puff-calib-step {
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-shadow: 0 2px 0 var(--ink);
-  min-height: 1.2em;
+/* The face to make: relaxed, or the pufferfish face (cheeks puffed, lips pursed). */
+svg.face.puff-face {
+  width: clamp(56px, 11vh, 88px);
+  height: clamp(56px, 11vh, 88px);
+  margin: 0 auto 4px;
+  filter: drop-shadow(0 3px 0 rgba(43, 45, 66, 0.6));
+}
+
+svg.face.puff-face.puffing {
+  animation: puff-breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes puff-breathe {
+  50% {
+    transform: scale(1.08);
+  }
 }
 
 /* Calibration timeline: what's coming, so a switch never comes as a surprise. */
@@ -246,41 +255,6 @@ canvas#game {
   opacity: 1;
   transform: scale(1.12);
   box-shadow: 0 2px 0 var(--ink);
-}
-
-/* Practice step: the checks tick green as the fish floats up, then sinks. */
-.puff-check {
-  list-style: none;
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin: 10px 0 0;
-  padding: 0;
-}
-
-.puff-check li {
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 2px solid var(--ink);
-  background: #fff;
-  color: var(--ink);
-  font-weight: 800;
-  opacity: 0.75;
-}
-
-.puff-check li.done {
-  background: #3ddc84;
-  opacity: 1;
-}
-
-.puff-check li.done::after {
-  content: " ✓";
-}
-
-.puff-calib-buttons {
-  justify-content: center;
-  margin-top: 12px;
-  pointer-events: auto;
 }
 
 /* In-game tutorial card (first dive). Right of centre, so the fish and its meter stay in view; below the pause screen. */

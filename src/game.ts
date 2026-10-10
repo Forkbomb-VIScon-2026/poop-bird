@@ -860,8 +860,10 @@ export class Game {
       return;
     }
     // Calm water just ended: the fish may be lying on the sea floor, so it gets a moment to swim off it.
+    // Once it has, the floor is deadly again.
     if (this.wasCalm && !this.calmWater) this.floorGrace = config.oceanCalmFloorGrace;
     this.wasCalm = this.calmWater;
+    if (!this.onSeaFloor) this.floorGrace = 0;
     this.floorGrace = Math.max(0, this.floorGrace - dt);
     const alive = this.phase === "playing";
     const ocean = this.stage === "ocean";

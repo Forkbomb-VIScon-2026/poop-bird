@@ -82,6 +82,10 @@ describe("calm water", () => {
     for (let i = 0; i < 60 * 3; i++) game.step(1 / 60);
     expect(game.phase).toBe("playing");
     expect(game.onSeaFloor).toBe(false);
+    // Off the floor once, the floor kills again.
+    game.puffInput = 0;
+    for (let i = 0; i < 60 * 6 && game.phase === "playing"; i++) game.step(1 / 60);
+    expect(game.phase).not.toBe("playing");
   });
 
   it("brings the first obstacle a full delay after it ends", () => {

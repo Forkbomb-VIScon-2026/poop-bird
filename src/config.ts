@@ -174,7 +174,7 @@ export const CONFIG_SPEC = {
   oceanSpacingMin: { value: 400, min: 150, max: 1200, step: 10, group: "Ocean", label: "Spacing (hardest)", hint: "px" },
   oceanGapJump: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max gap jump", hint: "px the gap centre may move between obstacles" },
   oceanFirstObstacleDelay: { value: 600, min: 0, max: 3000, step: 50, group: "Ocean", label: "First obstacle after", hint: "px after each stage change" },
-  oceanCalmFloorGrace: { value: 2, min: 0, max: 5, step: 0.5, group: "Ocean", label: "Floor grace after lesson", hint: "s after the swim lesson's calm water in which the sea floor doesn't kill yet" },
+  oceanCalmFloorGrace: { value: 5, min: 0, max: 10, step: 0.5, group: "Ocean", label: "Floor grace after lesson", hint: "s after the swim lesson in which a fish lying on the sea floor isn't killed by it (ends once it swims off)" },
   oceanSpikeThreshold: { value: 0.85, min: 0.3, max: 1, step: 0.01, group: "Ocean", label: "Spike threshold", hint: "puff level that spikes the fish out" },
   oceanSpikeRelease: { value: 0.05, min: 0, max: 0.3, step: 0.01, group: "Ocean", label: "Spike release margin", hint: "spikes retract below threshold − this (no flicker)" },
   oceanSpikeMaxHold: { value: 1.5, min: 0.2, max: 5, step: 0.05, group: "Ocean", label: "Max spiked time", hint: "s spiked before a pop accident" },
