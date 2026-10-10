@@ -605,7 +605,6 @@ function showCalibrationResult(result: CalibrationResult): void {
   $("calib-step").textContent = "Strain check";
 
   armButtonKeys(300);
-  retryBtn.textContent = calibrationIsDefault ? "Calibrate" : "Recalibrate";
   if (result === "saved") {
     $("calib-prompt").textContent = "Welcome back!";
     text.textContent = "New player? Recalibrate.";
@@ -616,7 +615,7 @@ function showCalibrationResult(result: CalibrationResult): void {
     setPrimary(playBtn, retryBtn);
   } else if (result === "default") {
     $("calib-prompt").textContent = "Try your strain 💩";
-    text.textContent = "Bar acting up? Calibrate it to your face.";
+    text.textContent = "Bar acting up? Recalibrate it to your face.";
     setPrimary(playBtn, retryBtn);
   } else if (result.ok) {
     $("calib-prompt").textContent = "Nice strain! 💪";
