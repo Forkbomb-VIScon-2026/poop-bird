@@ -1,5 +1,6 @@
 // Canvas rendering. Simple shapes, chunky outlines, no image assets.
 
+import { initialChargeState } from "./charge";
 import { config } from "./config";
 import {
   BIRD_RADIUS,
@@ -43,6 +44,9 @@ import {
 
 /** A captured photo: a face crop from the webcam, or a crop of the game canvas around the bird. */
 export type Photo = HTMLCanvasElement;
+
+/** What drawBird reads, so a bird can be drawn outside the game (the strain check's meter). */
+type BirdLook = Pick<Game, "bird" | "charge" | "stunned" | "phase" | "overstrainProgress" | "zapped" | "zapFlash" | "time">;
 
 const OUTLINE = "#2b2d42";
 /** Pigeons are drawn at this scale (their hit radius is PIGEON_R in game.ts). */
@@ -141,6 +145,52 @@ export class Renderer {
       game.bird.relief = relief;
     }
     return out;
+  }
+
+  /**
+   * The strain check's bird, perched on the live meter at `at` (0..1 across
+   * the canvas) and charged by the live strain, so the player sees that
+   * straining is what drives the bird before the run starts. `relief` shows
+   * its relieved face (after letting go of a strain).
+   */
+  drawMeterBird(canvas: HTMLCanvasElement, at: number, strain: number, relief: boolean, time: number): void {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = Math.round(canvas.clientWidth * dpr);
+    const h = Math.round(canvas.clientHeight * dpr);
+    if (w <= 0 || h <= 0) return;
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    const octx = canvas.getContext("2d");
+    if (!octx) return;
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.clearRect(0, 0, w, h);
+    const charge = Math.max(0, Math.min(1, strain));
+    // Room for the fully puffed bird plus its sweat drops.
+    const s = h / (BIRD_RADIUS * 3.2);
+    const half = BIRD_RADIUS * 1.6 * s;
+    // Over the fill's end, but whole on the canvas near either end of the bar.
+    const x = Math.max(half, Math.min(w - half, at * w));
+    // The bird puffs up around its centre (drawBird), so lift it as it grows: its belly
+    // (plus the outline) stays resting on the bottom edge, never sinking into the bar.
+    const belly = BIRD_RADIUS * (1 + charge * 0.28) + 2;
+    octx.setTransform(s, 0, 0, s, x, h - belly * s);
+    const look: BirdLook = {
+      bird: { x: 0, y: 0, vy: 0, rot: Math.sin(time * 2.5) * 0.06, stretch: 1, stretchV: 0, relief: relief ? 1 : 0, flap: 0 },
+      charge: { ...initialChargeState(), charge },
+      stunned: false,
+      phase: "playing",
+      overstrainProgress: 0,
+      zapped: false,
+      zapFlash: 0,
+      time,
+    };
+    const main = this.ctx;
+    this.ctx = octx;
+    try {
+      this.drawBird(look);
+    } finally {
+      this.ctx = main;
+    }
   }
 
   /** Fits the canvas to its CSS size. Returns the logical width (height is always VIEW_H). */
@@ -1061,7 +1111,7 @@ export class Renderer {
 
   // --- bird -------------------------------------------------------------------
 
-  private drawBird(game: Game): void {
+  private drawBird(game: BirdLook): void {
     if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) return this.drawZappedBird(game);
     const ctx = this.ctx;
     const b = game.bird;
@@ -1260,7 +1310,7 @@ export class Renderer {
   }
 
   /** The cartoon X-ray frame of an electrocution: glowing outline, skeleton inside. */
-  private drawZappedBird(game: Game): void {
+  private drawZappedBird(game: BirdLook): void {
     const ctx = this.ctx;
     const b = game.bird;
     const r = BIRD_RADIUS;
@@ -1420,8 +1470,7 @@ export class Renderer {
   // --- paparazzi ----------------------------------------------------------------
 
   /**
-   * The paparazzo's timer: a ring with a camera that fills as he closes in,
-   * and on the run's first one a bouncing "SPLAT HIM!" arrow.
+   * The paparazzo's timer: a ring with a camera that fills as he closes in.
    */
   private drawPaparazzoTimer(t: Target, game: Game): void {
     const p = t.pap;
@@ -1462,31 +1511,6 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(x, y + 1, 2.2, 0, Math.PI * 2);
     ctx.fill();
-
-    if (!p.tutorial) return;
-    const bob = Math.sin(game.time * 6) * 5;
-    const ay = y - r - 16 + bob;
-    ctx.fillStyle = "#ffd60a";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(x - 9, ay - 14);
-    ctx.lineTo(x + 9, ay - 14);
-    ctx.lineTo(x + 9, ay - 4);
-    ctx.lineTo(x + 16, ay - 4);
-    ctx.lineTo(x, ay + 10);
-    ctx.lineTo(x - 16, ay - 4);
-    ctx.lineTo(x - 9, ay - 4);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.font = "900 24px 'Trebuchet MS', sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = 6;
-    ctx.strokeText("💩 SPLAT HIM!", x, ay - 34);
-    ctx.fillStyle = "#ffd60a";
-    ctx.fillText("💩 SPLAT HIM!", x, ay - 34);
   }
 
   /** The fresh shot pops up as a polaroid in the top corner. */
