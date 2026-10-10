@@ -93,7 +93,7 @@ for (const variant of STRAIN_VARIANTS) {
 console.log("PUFF  median puff level while relaxed / at half puff / at full puff (ideal 0 / ~0.5 / 1);");
 console.log("      sink / rise = relaxed frames below / puff frames above the hover point (ideal 100%);");
 console.log("      spike = frames at or above the spike threshold (ideal 0). Each gesture gets its own calibration,");
-console.log("      from its first hold: plain puff, and the pufferfish face (cheeks puffed, lips pursed).\n");
+console.log("      from its first hold: plain puff, and the pufferfish face (puffing the cheeks while pursing the lips).\n");
 const GESTURE_TITLES: Record<PuffGesture, string> = { plain: "plain puff", fish: "pufferfish face" };
 for (const gesture of ["plain", "fish"] as const) {
   for (const variant of PUFF_VARIANTS) {

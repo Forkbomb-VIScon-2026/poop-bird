@@ -10,6 +10,7 @@ import {
   newParticipantCode,
   newSessionId,
   FISH_PUFF_LABELS,
+  fishScript,
   PARTICIPANT_RE,
   PLAIN_PUFF_LABELS,
   PUFF_LABELS,
@@ -104,27 +105,29 @@ describe("scripts", () => {
     expect(strainScript(seeded(7))).toEqual(a);
   });
 
-  it("record plain puffs and the pufferfish face, with pulses long enough to react to", () => {
-    const steps = puffScript(seeded(3));
-    const labels = new Set(steps.map((s) => s.label));
-    for (const l of [...PLAIN_PUFF_LABELS, ...FISH_PUFF_LABELS]) expect(labels.has(l)).toBe(true);
-    const pulses = steps.filter((s) => s.label === "puffPulse" || s.label === "fishPulse" || s.label === "puffRelax");
-    expect(pulses).toHaveLength(16);
-    for (const p of pulses) {
-      expect(p.seconds).toBeGreaterThanOrEqual(2);
-      expect(p.seconds).toBeLessThanOrEqual(3);
+  it("record plain puffs and the pufferfish face apart, with pulses long enough to react to", () => {
+    const plain = puffScript(seeded(3));
+    const fish = fishScript(seeded(3));
+    expect(new Set(plain.map((s) => s.label))).toEqual(new Set([...PLAIN_PUFF_LABELS, "ready", "neutral", "relax", "puffRelax"]));
+    expect(new Set(fish.map((s) => s.label))).toEqual(new Set([...FISH_PUFF_LABELS, "ready", "neutral", "relax", "puffRelax"]));
+    for (const steps of [plain, fish]) {
+      const pulses = steps.filter((s) => s.label.endsWith("Pulse") || s.label === "puffRelax");
+      expect(pulses).toHaveLength(8);
+      for (const p of pulses) {
+        expect(p.seconds).toBeGreaterThanOrEqual(2);
+        expect(p.seconds).toBeLessThanOrEqual(3);
+      }
     }
-    // Plain puffs first, so the start of the segment matches older sessions.
-    expect(steps.findIndex((s) => s.label === "fullPuff")).toBeLessThan(steps.findIndex((s) => s.label === "fishPuff"));
+    expect(fish.find((s) => s.label === "fishPuff")?.prompt).toMatch(/puff.*purse/i);
   });
 
   it("beep high exactly on strain and puff steps", () => {
     for (const s of strainScript(seeded())) expect(s.beep === "high").toBe(STRAINED.includes(s.label));
-    for (const s of puffScript(seeded())) expect(s.beep === "high").toBe(PUFF_LABELS.includes(s.label));
+    for (const s of [...puffScript(seeded()), ...fishScript(seeded())]) expect(s.beep === "high").toBe(PUFF_LABELS.includes(s.label));
   });
 
   it("keep a full session under 3 minutes", () => {
-    const total = [calibrationScript(3), strainScript(seeded()), puffScript(seeded())]
+    const total = [calibrationScript(3), strainScript(seeded()), puffScript(seeded()), fishScript(seeded())]
       .flat()
       .reduce((a, s) => a + s.seconds, 0);
     expect(total).toBeGreaterThan(90);

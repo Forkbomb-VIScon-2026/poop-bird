@@ -12,6 +12,7 @@ import {
   PARTICIPANT_RE,
   SegmentRecorder,
   calibrationScript,
+  fishScript,
   newParticipantCode,
   newSessionId,
   puffScript,
@@ -88,7 +89,7 @@ function profile(): SessionProfile {
 
 function chosenSegments(): SegmentName[] {
   const picked = [...document.querySelectorAll<HTMLInputElement>('input[name="segments"]:checked')].map((i) => i.value);
-  return ["calibration", ...(["strain", "puff"] as const).filter((s) => picked.includes(s))];
+  return ["calibration", ...(["strain", "puff", "fish"] as const).filter((s) => picked.includes(s))];
 }
 
 $("btn-profile").addEventListener("click", async () => {
@@ -180,17 +181,64 @@ $("btn-record").addEventListener("click", () => {
 
 // --- 4. Recording -------------------------------------------------------------------
 
-const SEGMENT_TITLES: Record<SegmentName, string> = { calibration: "Calibration", strain: "Straining", puff: "Puffing" };
+const SEGMENT_TITLES: Record<SegmentName, string> = {
+  calibration: "Calibration", strain: "Straining", puff: "Puffing", fish: "Pufferfish face",
+};
+/** Parts that start after a break, when the participant presses the button (calibration runs straight into strain). */
+const BREAKS: Partial<Record<SegmentName, { text: string; button: string }>> = {
+  puff: { text: "Next: puffing your cheeks.", button: "Start puffing" },
+  fish: {
+    text: "Next: the pufferfish face. Puff your cheeks while pursing your lips, like a kiss, and keep the lips pursed while you puff.",
+    button: "Start pufferfish face",
+  },
+};
 let aborted = false;
 let wakeLock: { release(): Promise<void> } | null = null;
+let endBreak: ((go: boolean) => void) | null = null;
 
 $("btn-abort").addEventListener("click", () => {
   aborted = true;
+  endBreak?.(false);
 });
+$("btn-continue").addEventListener("click", () => endBreak?.(true));
 
 function scriptFor(name: SegmentName) {
   if (name === "calibration") return calibrationScript(config.calibrationSeconds);
-  return name === "strain" ? strainScript() : puffScript();
+  if (name === "strain") return strainScript();
+  return name === "puff" ? puffScript() : fishScript();
+}
+
+function updateFaceBadge(now: number): void {
+  const face = lastFace && now - lastFace.time < 400;
+  $("record-face").classList.toggle("lost", !face);
+  $("record-face").textContent = face ? "Face found" : "Can't see your face";
+}
+
+/** Waits for the button between two parts; resolves false if the participant stopped. Nothing is recorded meanwhile. */
+function takeBreak(text: string, button: string, seconds: number): Promise<boolean> {
+  $("record-prompt").textContent = "Break";
+  $("record-prompt").classList.remove("go");
+  $("record-hint").textContent = `${text} About ${Math.round(seconds / 5) * 5} s. Take a breath and press the button when you're ready.`;
+  $("record-left").textContent = "";
+  const go = $<HTMLButtonElement>("btn-continue");
+  go.textContent = button;
+  go.hidden = false;
+  go.focus();
+  let waiting = true;
+  const tick = (now: number) => {
+    if (!waiting) return;
+    updateFaceBadge(now);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return new Promise((resolve) => {
+    endBreak = (next) => {
+      endBreak = null;
+      waiting = false;
+      go.hidden = true;
+      resolve(next);
+    };
+  });
 }
 
 async function record(): Promise<void> {
@@ -208,6 +256,8 @@ async function record(): Promise<void> {
   let done = 0;
   for (const [i, rec] of recorders.entries()) {
     $("record-part").textContent = `Part ${i + 1} of ${recorders.length} · ${SEGMENT_TITLES[rec.name]}`;
+    const pause = i > 0 ? BREAKS[rec.name] : undefined;
+    if (pause && !(await takeBreak(pause.text, pause.button, rec.duration))) break;
     if (!(await runSegment(rec, done, total))) break;
     done += rec.duration;
   }
@@ -247,9 +297,7 @@ function runSegment(rec: SegmentRecorder, before: number, total: number): Promis
       const into = rec.elapsed(now);
       $("record-left").textContent = `${Math.ceil(step.start + step.seconds - into)} s`;
       $("record-progress").style.width = `${((before + into) / total) * 100}%`;
-      const face = lastFace && now - lastFace.time < 400;
-      $("record-face").classList.toggle("lost", !face);
-      $("record-face").textContent = face ? "Face found" : "Can't see your face";
+      updateFaceBadge(now);
       requestAnimationFrame(tick);
     };
     tick();

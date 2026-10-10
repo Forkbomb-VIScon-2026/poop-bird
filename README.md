@@ -403,15 +403,22 @@ participant through about 3 minutes:
    light. The code is remembered on the device; on another device people can
    type it in so their sessions stay together.
 3. A camera check (face found, distance, brightness, detection rate).
-4. The game's calibration (relax, strain, same prompts and timing) plus a
-   "relax again" phase, then a strain script (pulses of random length, a light
-   strain, a long hold, looking around, laughing) and a puff script (full and
-   half puff, pulses, puffing while looking around), then the same with the
-   **pufferfish face** (cheeks puffed *and* lips pursed). Every step beeps:
-   high for strain or puff, low for relax. The pufferfish face is a candidate
-   gesture for the ocean: plain puffs barely move what MediaPipe reports
-   (`cheekPuff` stays 0 and the geometry moves about as much as a relaxed face
-   drifts), while pursed lips light up `mouthPucker`.
+4. The parts, each one a segment of the session:
+   - the game's calibration (relax, strain, same prompts and timing) plus a
+     "relax again" phase, running straight into
+   - a strain script (pulses of random length, a light strain, a long hold,
+     looking around, laughing),
+   - a break, then a puff script (full and half puff, pulses, puffing while
+     looking around),
+   - a break, then the same with the **pufferfish face** (segment `fish`):
+     puffing the cheeks while pursing the lips, like a kiss.
+
+   Each break explains the next part and waits for its start button; nothing
+   is recorded meanwhile. Every step beeps: high for strain or puff, low for
+   relax. The pufferfish face is a candidate gesture for the ocean: plain
+   puffs barely move what MediaPipe reports (`cheekPuff` stays 0 and the
+   geometry moves about as much as a relaxed face drifts), while pursed lips
+   light up `mouthPucker`.
 5. The upload, with a "Delete this session" button and a fallback to save the
    file when the upload fails. Then **Next person** starts over at consent
    with a fresh participant code (for one shared device at a collection
