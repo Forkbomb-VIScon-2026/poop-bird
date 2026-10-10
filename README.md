@@ -63,18 +63,20 @@ starts the face dataset collector (local credentials `local` /
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / Esc / ⏸ button | Pause |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
+| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). The ocean tutorial takes Enter only, since Space tries out the puff there. Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
 | **R** | Play again from game over |
+| **K** | Menu: play with the keyboard |
+| **Esc** | Calibration and game over: back to the menu |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
 | **G** | With the debug panel open: the stage's waterfront comes next |
 | **L** | With the debug panel open: spawn a power line now |
-| **K** | With the debug panel open: a slingshot kid walks on |
+| **K** | With the debug panel open, while playing: a slingshot kid walks on |
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
-| **Enter** | Play after calibration; close the ocean tutorial |
 
 ### On phones and tablets
 

@@ -8,6 +8,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { Game } from "./game";
+import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
@@ -85,6 +86,15 @@ function show(el: HTMLElement, visible: boolean): void {
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
+  // Game over gets longer: players often die mid-press, and shouldn't skip their score.
+  armButtonKeys(name === "gameover" ? 800 : 300);
+}
+
+/** Enter / Space / R… press buttons only after this time, so a press from the previous screen can't. */
+let buttonKeysArmedAt = 0;
+
+function armButtonKeys(ms: number): void {
+  buttonKeysArmedAt = performance.now() + ms;
 }
 
 // --- State ------------------------------------------------------------------------
@@ -594,6 +604,7 @@ function showCalibrationResult(result: CalibrationResult): void {
   card.classList.remove("strain");
   $("calib-step").textContent = "Strain check";
 
+  armButtonKeys(300);
   retryBtn.textContent = calibrationIsDefault ? "Calibrate" : "Recalibrate";
   if (result === "saved") {
     $("calib-prompt").textContent = "Welcome back!";
@@ -618,7 +629,9 @@ function showCalibrationResult(result: CalibrationResult): void {
   }
   const anyway = typeof result === "object" && !result.ok;
   calibrationFailed = anyway;
-  playBtn.innerHTML = anyway ? "Play anyway" : 'Play! <small class="kbd-only">(Enter)</small>';
+  playBtn.textContent = anyway ? "Play anyway" : "Play!";
+  decorate(playBtn);
+  decorate(retryBtn);
   playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);
 }
 
@@ -803,6 +816,7 @@ async function runOceanTutorial(token: number): Promise<void> {
   show($("tutorial-next"), needsPuffCalibration());
   game.holdTransition = true;
   show(overlay, true);
+  armButtonKeys(300);
   let done = false;
   dismissTutorial = () => (done = true);
   while (!done && token === flow) await wait(50);
@@ -1429,8 +1443,24 @@ function isTyping(e: Event): boolean {
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
 }
 
+/** Something focused that handles Enter itself (a Tab-focused button, the options toggle…). */
+function focusHandlesEnter(): boolean {
+  const el = document.activeElement;
+  return !!el && el !== document.body && el.matches("button, summary, a, select, input, textarea");
+}
+
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
+  // A screen's yellow button takes Enter and Space; some buttons take more keys (data-keys).
+  if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const name = keyName(e);
+    const btn = name === "Enter" && focusHandlesEnter() ? null : buttonForKey(name);
+    if (btn) {
+      e.preventDefault();
+      if (performance.now() >= buttonKeysArmedAt) pressFromKey(btn);
+      return;
+    }
+  }
   const key = e.key.toLowerCase();
   if (e.code === "Space") {
     e.preventDefault();
@@ -1445,9 +1475,6 @@ window.addEventListener("keydown", (e) => {
       break;
     case "m":
       toggleMute();
-      break;
-    case "r":
-      if (state === "gameover") startReady();
       break;
     case "d":
       debug?.toggle();
@@ -1490,10 +1517,6 @@ window.addEventListener("keydown", (e) => {
     case "c":
       void recalibrate();
       break;
-    case "enter":
-      if (state === "calibrated") playAfterCalibration();
-      else if (state === "playing") dismissTutorial?.();
-      break;
   }
 });
 
@@ -1523,6 +1546,7 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 
 // --- Buttons -------------------------------------------------------------------------------
 
+decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
 on("btn-face", () => {
   goLandscape();
