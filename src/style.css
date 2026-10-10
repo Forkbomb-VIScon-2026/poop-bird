@@ -228,6 +228,22 @@ canvas#game {
   display: block;
 }
 
+/* Locked face (and, in debug builds, the crop detection runs on), positioned by main.ts. */
+.cam-box {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.cam-lock {
+  border: 2px solid #3ddc84;
+  border-radius: 6px;
+}
+
+.cam-crop {
+  border: 1px dashed rgba(255, 255, 255, 0.7);
+}
+
 .cam-noface {
   position: absolute;
   inset: 0;

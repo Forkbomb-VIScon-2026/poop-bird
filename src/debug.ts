@@ -2,6 +2,7 @@
 // every tunable in config.ts.
 
 import { CONFIG_SPEC, config, defaultConfig, resetConfig, setConfigValue, type ConfigKey } from "./config";
+import { storageGet, storageSet } from "./storage";
 import {
   FEATURE_NAMES,
   GEOMETRY_FEATURE_NAMES,
@@ -60,6 +61,8 @@ export class DebugPanel {
   private puffSection!: HTMLElement;
   private lastText = 0;
   visible = false;
+  /** Outline the locked face and the detection crop on the webcam preview. */
+  showFaceLock = storageGet(FACE_LOCK_KEY) === "1";
 
   constructor(
     el: HTMLElement,
@@ -86,6 +89,14 @@ export class DebugPanel {
     quick.append(button("🐡 Start as pufferfish (O)", () => this.onStartOcean()));
     quick.append(button("⏺ Record a dataset session", () => this.onOpenRecorder()));
     quick.append(button("🗑 Forget calibration", () => this.onForgetCalibration()));
+    const faceLock = button("", () => {
+      this.showFaceLock = !this.showFaceLock;
+      storageSet(FACE_LOCK_KEY, this.showFaceLock ? "1" : "0");
+      label();
+    });
+    const label = () => (faceLock.textContent = `🎯 Face lock box: ${this.showFaceLock ? "on" : "off"}`);
+    label();
+    quick.append(faceLock);
     el.append(quick);
     el.append(h3("Stats"));
     this.statsEl = div("dbg-stats");
@@ -378,6 +389,8 @@ function h3(text: string): HTMLElement {
   e.textContent = text;
   return e;
 }
+
+const FACE_LOCK_KEY = "poopbird.debug.faceLockBox.v1";
 
 function div(cls: string): HTMLDivElement {
   const e = document.createElement("div");
