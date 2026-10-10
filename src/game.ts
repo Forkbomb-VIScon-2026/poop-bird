@@ -912,9 +912,10 @@ export class Game {
       b.rot = wound + (targetRot - wound) * Math.min(1, dt * 10);
     }
 
-    // Over the harbour: the game takes over and dives the bird in.
+    // Over the harbour: the game takes over and dives the bird in (right away if it touches the water).
     const s = this.shore;
-    if (this.phase === "playing" && s?.kind === "dive" && b.x - s.x >= DIVE_TAKEOVER) {
+    const touches = this.overWater(b.x) && b.y + BIRD_RADIUS >= WATER_Y;
+    if (this.phase === "playing" && s?.kind === "dive" && (b.x - s.x >= DIVE_TAKEOVER || touches)) {
       this.startTransition("ocean");
       return;
     }
