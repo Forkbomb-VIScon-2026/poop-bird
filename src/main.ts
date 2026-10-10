@@ -255,7 +255,6 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   const token = ++flow;
   sound.unlock();
   mode = "face";
-  updateModeLabel();
   if (!tracker.ready) {
     state = "loading";
     showScreen("loading");
@@ -280,7 +279,6 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
       show($("loading-spinner"), false);
       show($("loading-error"), true);
       mode = "keyboard";
-      updateModeLabel();
       return;
     }
   }
@@ -294,7 +292,6 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
 function startKeyboardMode(): void {
   sound.unlock();
   mode = "keyboard";
-  updateModeLabel();
   tracker.stopCamera();
   show(cam, false);
   startReady();
@@ -723,7 +720,6 @@ function startOceanRun(): void {
   if (state === "menu") {
     sound.unlock();
     mode = "keyboard";
-    updateModeLabel();
     tracker.stopCamera();
   } else if (state === "calibrated") {
     if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
@@ -968,11 +964,6 @@ function updateHud(): void {
   }
 }
 
-function updateModeLabel(): void {
-  $("hud-mode").textContent = mode === "face" ? "😣 face" : "⌨️ keyboard";
-  $("hud-mute").textContent = sound.muted ? "🔇 M" : "🔊 M";
-}
-
 // --- Main loop ---------------------------------------------------------------------------
 
 const STEP = 1 / 120;
@@ -1166,7 +1157,7 @@ window.addEventListener("keydown", (e) => {
       break;
     case "m":
       storageSet("poopbird.muted.v1", sound.toggleMute() ? "1" : "0");
-      updateModeLabel();
+      showToast(sound.muted ? "🔇 Muted" : "🔊 Sound on", 1200);
       break;
     case "r":
       if (state === "gameover") startReady();
@@ -1261,7 +1252,6 @@ document.addEventListener("click", (e) => {
 
 // --- Boot ----------------------------------------------------------------------------------
 
-updateModeLabel();
 goToMenu();
 requestAnimationFrame(frame);
 

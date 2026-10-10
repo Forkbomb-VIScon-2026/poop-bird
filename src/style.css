@@ -110,15 +110,6 @@ canvas#game {
   animation: wobble 0.5s ease-out;
 }
 
-.hud-keys {
-  position: absolute;
-  left: 16px;
-  bottom: 8px;
-  font-size: 12px;
-  color: #fff;
-  opacity: 0.85;
-}
-
 .hud-toast {
   position: absolute;
   /* Centred without transform, so the pop animation's scale doesn't fight it. */
@@ -1167,8 +1158,5 @@ body.debug-open #cam {
 
   .hud-score {
     font-size: 34px;
-  }
-  .hud-keys {
-    display: none;
   }
 }
