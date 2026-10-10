@@ -52,9 +52,8 @@ export interface Rect {
 }
 
 export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "harbour" | "coral" | "rock" | "reef";
-export type TopKind = "sign" | "balloons" | "girder" | "harbourArch" | "chain" | "net" | "hull" | "reefArch";
-/** Tops that are one solid block from the top of the screen down to the gap. */
-const SOLID_TOPS: ReadonlySet<TopKind> = new Set(["girder", "harbourArch", "net", "hull", "reefArch"]);
+/** Only the stage gates have a top: a solid block from the top of the screen down to the gap. */
+export type TopKind = "harbourArch" | "reefArch";
 
 export interface Splat {
   dx: number;
@@ -69,7 +68,7 @@ export interface Obstacle {
   gapTop: number;
   gapBottom: number;
   bottom: BottomKind;
-  top: TopKind;
+  top: TopKind | null;
   color: string;
   seed: number;
   passed: boolean;
@@ -988,12 +987,11 @@ export class Game {
     const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50);
 
     const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "chimney", "tower"]);
-    const top: TopKind = pick(["sign", "balloons", "girder"]);
     const w = bottom === "billboard" ? BILLBOARD_W : bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom, top, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
+      bottom, top: null, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
       passed: false, splats: [], gate: null, tabloid,
     });
   }
@@ -1001,14 +999,11 @@ export class Game {
   private spawnOceanObstacle(): void {
     const gap = ramp(config.oceanGap, config.oceanGapMin, this.difficulty);
     const center = this.pickGapCenter(gap, SURFACE_Y, 40, config.oceanGapJump);
-    const gapTop = center - gap / 2;
     const bottom: BottomKind = pick(["coral", "coral", "rock"]);
-    // A ship's hull only looks right near the surface.
-    const top: TopKind = gapTop < 170 ? pick(["hull", "chain", "net"]) : pick(["chain", "net", "chain"]);
-    const w = top === "hull" ? 130 : bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    const w = bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
     this.obstacles.push({
-      x: this.width + 40, w, gapTop, gapBottom: center + gap / 2,
-      bottom, top, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
+      x: this.width + 40, w, gapTop: center - gap / 2, gapBottom: center + gap / 2,
+      bottom, top: null, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
       passed: false, splats: [], gate: null, tabloid: null,
     });
   }
@@ -1309,7 +1304,6 @@ export class Game {
 
 // --- geometry helpers ----------------------------------------------------------
 
-export const SIGN_H = 64;
 /** The roadside billboard: a board at the bottom of the gap on steel legs (see obstacleRects). */
 export const BILLBOARD_W = 230;
 export const BILLBOARD_H = 140;
@@ -1323,16 +1317,8 @@ export function obstacleRects(o: Obstacle): Rect[] {
   // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).
   const billboard = o.bottom === "billboard";
   rects.push({ x: o.x, y: o.gapBottom, w: o.w, h: billboard ? BILLBOARD_H : GROUND_Y - o.gapBottom });
-  // Top part hangs down to the gap.
-  const cx = o.x + o.w / 2;
-  if (SOLID_TOPS.has(o.top)) {
-    rects.push({ x: o.x - 6, y: 0, w: o.w + 12, h: o.gapTop });
-  } else {
-    const hangH = Math.min(SIGN_H, o.gapTop);
-    // Cable(s) from the top of the screen.
-    rects.push({ x: cx - 4, y: 0, w: 8, h: o.gapTop - hangH });
-    rects.push({ x: o.x - 8, y: o.gapTop - hangH, w: o.w + 16, h: hangH });
-  }
+  // A gate's top hangs down to the gap.
+  if (o.top) rects.push({ x: o.x - 6, y: 0, w: o.w + 12, h: o.gapTop });
   if (billboard) {
     const inset = o.w * BILLBOARD_LEGS_INSET;
     const legsTop = o.gapBottom + BILLBOARD_H;

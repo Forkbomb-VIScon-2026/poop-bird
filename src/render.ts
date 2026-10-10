@@ -266,10 +266,9 @@ export class Renderer {
   private drawObstacle(o: Obstacle, time: number): void {
     if (o.bottom === "harbour") return this.drawHarbourGate(o, time);
     if (o.bottom === "reef") return this.drawReefGate(o, time);
-    if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o, time);
+    if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
     const ctx = this.ctx;
-    const rects = obstacleRects(o);
-    const base = rects[0];
+    const [base] = obstacleRects(o);
     ctx.lineWidth = 3;
     ctx.strokeStyle = OUTLINE;
 
@@ -344,85 +343,6 @@ export class Renderer {
       // Door at the bottom
       ctx.fillStyle = "#3d405b";
       ctx.fillRect(base.x + base.w / 2 - 10, GROUND_Y - 26, 20, 26);
-    }
-
-    // Top part
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    if (o.top === "girder") {
-      const r = rects[1];
-      ctx.fillStyle = "#f4a259";
-      ctx.fillRect(r.x, r.y - 5, r.w, r.h + 5);
-      ctx.strokeRect(r.x, r.y - 5, r.w, r.h + 5);
-      // Lattice
-      ctx.strokeStyle = "#b5651d";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      for (let y = r.y; y < r.y + r.h - 4; y += 28) {
-        ctx.moveTo(r.x + 4, y);
-        ctx.lineTo(r.x + r.w - 4, Math.min(y + 28, r.y + r.h));
-        ctx.moveTo(r.x + r.w - 4, y);
-        ctx.lineTo(r.x + 4, Math.min(y + 28, r.y + r.h));
-      }
-      ctx.stroke();
-      // Hazard stripe at the bottom edge
-      ctx.fillStyle = "#2b2d42";
-      ctx.fillRect(r.x, r.y + r.h - 10, r.w, 10);
-      ctx.fillStyle = "#ffd166";
-      for (let x = r.x; x < r.x + r.w; x += 16) ctx.fillRect(x, r.y + r.h - 10, 8, 10);
-    } else {
-      const cable = rects[1];
-      const box = rects[2];
-      ctx.strokeStyle = "#2b2d42";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(cable.x + cable.w / 2, -5);
-      ctx.lineTo(cable.x + cable.w / 2, box.y + 4);
-      ctx.stroke();
-      if (o.top === "sign") {
-        const sway = Math.sin(time * 1.5 + o.seed) * 0.04;
-        ctx.save();
-        ctx.translate(box.x + box.w / 2, box.y);
-        ctx.rotate(sway);
-        ctx.fillStyle = "#ef476f";
-        roundRect(ctx, -box.w / 2, 0, box.w, box.h, 8);
-        ctx.fill();
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 20px 'Trebuchet MS', sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const words = ["EAT!", "SALE", "HOTEL", "PIZZA", "BAR", "LOL"];
-        ctx.fillText(words[Math.floor(rnd(o.seed) * words.length)], 0, box.h / 2 + 1);
-        ctx.restore();
-      } else {
-        // Balloon cluster
-        const cx = box.x + box.w / 2;
-        const colors = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93"];
-        const pos = [
-          [-26, 18], [0, 10], [26, 18], [-14, 38], [14, 38],
-        ];
-        pos.forEach(([dx, dy], i) => {
-          const bob = Math.sin(time * 2 + i + o.seed) * 2;
-          ctx.strokeStyle = OUTLINE;
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(cx, box.y);
-          ctx.lineTo(cx + dx, box.y + dy + bob);
-          ctx.stroke();
-          ctx.fillStyle = colors[(i + Math.floor(o.seed)) % colors.length];
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.ellipse(cx + dx, box.y + dy + bob, 16, 19, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-          ctx.fillStyle = "rgba(255,255,255,0.5)";
-          ctx.beginPath();
-          ctx.ellipse(cx + dx - 5, box.y + dy + bob - 6, 4, 6, -0.5, 0, Math.PI * 2);
-          ctx.fill();
-        });
-      }
     }
 
     for (const s of o.splats) drawSplat(ctx, o.x + s.dx, s.dy, s.r, s.seed, 1);
@@ -1055,10 +975,9 @@ export class Renderer {
     }
   }
 
-  private drawSeaObstacle(o: Obstacle, time: number): void {
+  private drawSeaObstacle(o: Obstacle): void {
     const ctx = this.ctx;
-    const rects = obstacleRects(o);
-    const base = rects[0];
+    const [base] = obstacleRects(o);
     ctx.lineWidth = 3;
     ctx.strokeStyle = OUTLINE;
 
@@ -1105,144 +1024,6 @@ export class Renderer {
       }
       ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fillRect(base.x + base.w - 12, base.y + 18, 9, Math.max(0, base.h - 18));
-    }
-
-    // Top part
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    if (o.top === "net") {
-      const r = rects[1];
-      ctx.fillStyle = "rgba(214,190,140,0.35)";
-      ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(r.x, r.y, r.w, r.h);
-      ctx.clip();
-      ctx.strokeStyle = "#8d6e4a";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      const sway = Math.sin(time * 1.2 + o.seed) * 4;
-      for (let k = -r.h; k < r.w + r.h; k += 16) {
-        ctx.moveTo(r.x + k, r.y);
-        ctx.lineTo(r.x + k + r.h * 0.7 + sway, r.y + r.h);
-        ctx.moveTo(r.x + k, r.y);
-        ctx.lineTo(r.x + k - r.h * 0.7 + sway, r.y + r.h);
-      }
-      ctx.stroke();
-      ctx.restore();
-      ctx.strokeStyle = "#5c4326";
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(r.x, r.y + r.h - 2);
-      ctx.lineTo(r.x + r.w, r.y + r.h - 2);
-      ctx.moveTo(r.x + 2, r.y);
-      ctx.lineTo(r.x + 2, r.y + r.h);
-      ctx.moveTo(r.x + r.w - 2, r.y);
-      ctx.lineTo(r.x + r.w - 2, r.y + r.h);
-      ctx.stroke();
-      // Lead weights and floats
-      ctx.fillStyle = "#495057";
-      for (let x = r.x + 8; x < r.x + r.w - 4; x += 22) {
-        ctx.beginPath();
-        ctx.arc(x, r.y + r.h - 2, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = "#ff8c42";
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 2;
-      for (let x = r.x + 12; x < r.x + r.w; x += 30) {
-        ctx.beginPath();
-        ctx.ellipse(x, SURFACE_Y - 2, 8, 6, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    } else if (o.top === "hull") {
-      const r = rects[1];
-      ctx.fillStyle = "#8b5a2b";
-      roundRect(ctx, r.x, r.y - 10, r.w, r.h + 10, 22);
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(0,0,0,0.25)";
-      ctx.lineWidth = 2;
-      for (let y = r.y + 14; y < r.y + r.h - 26; y += 14) {
-        ctx.beginPath();
-        ctx.moveTo(r.x + 4, y);
-        ctx.lineTo(r.x + r.w - 4, y);
-        ctx.stroke();
-      }
-      // Anti-fouling paint and barnacles
-      ctx.save();
-      roundRect(ctx, r.x, r.y - 10, r.w, r.h + 10, 22);
-      ctx.clip();
-      ctx.fillStyle = "#c0392b";
-      ctx.fillRect(r.x, r.y + r.h - 24, r.w, 24);
-      ctx.restore();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 3;
-      roundRect(ctx, r.x, r.y - 10, r.w, r.h + 10, 22);
-      ctx.stroke();
-      ctx.fillStyle = "#f1faee";
-      for (let i = 0; i < 6; i++) {
-        ctx.beginPath();
-        ctx.arc(r.x + 14 + rnd(o.seed + i) * (r.w - 28), r.y + r.h - 6 - rnd(o.seed + i + 9) * 14, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else {
-      // Anchor on a chain
-      const cable = rects[1];
-      const box = rects[2];
-      const cx = cable.x + cable.w / 2;
-      ctx.strokeStyle = "#6c757d";
-      ctx.lineWidth = 3;
-      for (let y = -6, i = 0; y < box.y + 6; y += 11, i++) {
-        ctx.beginPath();
-        if (i % 2) ctx.ellipse(cx, y, 2, 6, 0, 0, Math.PI * 2);
-        else ctx.ellipse(cx, y, 5, 7, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      const sway = Math.sin(time * 1.1 + o.seed) * 0.05;
-      ctx.save();
-      ctx.translate(cx, box.y);
-      ctx.rotate(sway);
-      const h = box.h;
-      const aw = box.w / 2;
-      ctx.strokeStyle = OUTLINE;
-      ctx.fillStyle = "#6c757d";
-      ctx.lineWidth = 3;
-      // Ring, stock, shank
-      ctx.beginPath();
-      ctx.arc(0, 6, 6, 0, Math.PI * 2);
-      ctx.stroke();
-      roundRect(ctx, -aw * 0.55, 14, aw * 1.1, 8, 3);
-      ctx.fill();
-      ctx.stroke();
-      roundRect(ctx, -5, 12, 10, h - 16, 3);
-      ctx.fill();
-      ctx.stroke();
-      // Arms and flukes
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = OUTLINE;
-      ctx.beginPath();
-      ctx.arc(0, h - 26, aw * 0.85, Math.PI * 0.15, Math.PI * 0.85);
-      ctx.stroke();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "#6c757d";
-      ctx.stroke();
-      for (const sx of [-1, 1]) {
-        ctx.fillStyle = "#6c757d";
-        ctx.strokeStyle = OUTLINE;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        const fx = sx * aw * 0.82;
-        const fy = h - 26 + Math.sin(Math.PI * 0.15) * aw * 0.85;
-        ctx.moveTo(fx, fy - 12);
-        ctx.lineTo(fx + sx * 9, fy - 2);
-        ctx.lineTo(fx - sx * 3, fy + 4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-      ctx.restore();
     }
   }
 

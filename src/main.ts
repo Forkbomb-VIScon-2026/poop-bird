@@ -8,7 +8,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
 import { Game } from "./game";
-import { FaceRecorder, PUFF_SCRIPT } from "./recorder";
+import { FaceRecorder, type RecorderKind } from "./recorder";
 import { Renderer, drawFrontPage } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
@@ -88,7 +88,7 @@ const sound = new Sound();
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
 const debug = DEBUG
-  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), () => recordFace(), forgetCalibration)
+  ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), recordFace, forgetCalibration)
   : null;
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
 
@@ -180,8 +180,8 @@ tracker.onFrame((frame) => {
 
 let faceRecorder: FaceRecorder | null = null;
 
-/** Records a scripted puff clip (raw features + landmarks) and downloads it for offline tuning. */
-function recordFace(): void {
+/** Records a scripted puff or strain clip (raw features + landmarks) and downloads it for offline tuning. */
+function recordFace(kind: RecorderKind = "puff"): void {
   if (faceRecorder) return;
   if (mode !== "face" || !tracker.ready) {
     debug?.setRecordPrompt("Start a face-mode game first");
@@ -190,7 +190,10 @@ function recordFace(): void {
   }
   // Freeze the game so the clip doesn't cost a life.
   if (state === "playing") togglePause();
-  faceRecorder = new FaceRecorder(PUFF_SCRIPT, (prompt, seconds) => debug?.setRecordPrompt(`${prompt} (${seconds} s)`));
+  faceRecorder = new FaceRecorder(kind, (step) => {
+    debug?.setRecordPrompt(`${step.prompt} (${step.seconds} s)`);
+    if (step.cue) sound.beep(step.cue === "strain");
+  });
 }
 
 function finishFaceRecording(): void {

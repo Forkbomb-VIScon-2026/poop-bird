@@ -2,6 +2,7 @@
 // every tunable in config.ts.
 
 import { CONFIG_SPEC, config, defaultConfig, resetConfig, setConfigValue, type ConfigKey } from "./config";
+import type { RecorderKind } from "./recorder";
 import {
   FEATURE_NAMES,
   GEOMETRY_FEATURE_NAMES,
@@ -66,7 +67,7 @@ export class DebugPanel {
     el: HTMLElement,
     private onRecalibrate: () => void,
     private onStartOcean: () => void,
-    private onRecordFace: () => void,
+    private onRecordFace: (kind: RecorderKind) => void,
     private onForgetCalibration: () => void,
   ) {
     this.el = el;
@@ -91,7 +92,8 @@ export class DebugPanel {
     // Shortcut buttons first, so they don't need scrolling past the sliders.
     const quick = div("dbg-buttons");
     quick.append(button("🐡 Start as pufferfish (O)", () => this.onStartOcean()));
-    quick.append(button("⏺ Record puff clip", () => this.onRecordFace()));
+    quick.append(button("⏺ Record strain clip", () => this.onRecordFace("strain")));
+    quick.append(button("⏺ Record puff clip", () => this.onRecordFace("puff")));
     quick.append(button("🗑 Forget calibration", () => this.onForgetCalibration()));
     el.append(quick);
     this.recordEl = div("dbg-record hidden");
