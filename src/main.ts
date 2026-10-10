@@ -1245,6 +1245,13 @@ function handleGameEvents(): void {
         sound.zap();
         buzz([30, 20, 30, 20, 120]);
         break;
+      case "droneDown":
+        sound.powerDown();
+        break;
+      case "droneCrashed":
+        sound.droneCrash();
+        buzz([20, 30, 60]);
+        break;
       case "gameover":
         onGameOver();
         break;

@@ -522,6 +522,35 @@ export class Sound {
     o.stop(t + 0.06);
   }
 
+  /** A pigeon drone's motor winding down as it drops off the wire. */
+  powerDown(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const dur = 0.55;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(1400, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + dur);
+    g.gain.setValueAtTime(0.08, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
+  /** A pigeon drone hits the street: metal crunch, then its wires shorting out. */
+  droneCrash(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(t, 0.15, 600, 0.4, "lowpass");
+    this.noiseBurst(t, 0.1, 3000, 0.3, "bandpass");
+    for (let i = 0; i < 4; i++) this.blip(t + 0.04 + i * 0.05 + Math.random() * 0.03, 1800 + Math.random() * 1800, 0.035);
+    for (let i = 0; i < 5; i++) this.noiseBurst(t + 0.25 + i * 0.07 + Math.random() * 0.04, 0.04, 5000, 0.18, "highpass");
+  }
+
   /** Camera smashed: glass crunch and tinkle. */
   smash(): void {
     const ctx = this.ctx;
