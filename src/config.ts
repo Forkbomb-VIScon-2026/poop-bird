@@ -138,6 +138,8 @@ export const CONFIG_SPEC = {
   poopGravity: { value: 1000, min: 100, max: 3000, step: 50, group: "Targets", label: "Poop gravity", hint: "px/s² (separate from the bird so aiming stays the same)" },
   targetSpawnRate: { value: 0.55, min: 0, max: 3, step: 0.05, group: "Targets", label: "Spawn rate", hint: "targets per second" },
   statueChance: { value: 0.05, min: 0, max: 0.5, step: 0.01, group: "Targets", label: "Statue chance", hint: "share of street targets that are statues (skipped where they'd overlap a building or pole)" },
+  angryChance: { value: 0.4, min: 0, max: 1, step: 0.05, group: "Targets", label: "Angry chance", hint: "share of splatted pedestrians that stop and curse at the bird (one already cursing always does again)" },
+  angryDuration: { value: 2.2, min: 0.5, max: 6, step: 0.1, group: "Targets", label: "Angry time", hint: "seconds a cursing pedestrian stands and shakes a fist before walking on" },
   targetPoints: { value: 50, min: 0, max: 500, step: 5, group: "Targets", label: "Points per hit", hint: "base; cars ×1, pedestrians ×1.5, statue ×2" },
   comboStep: { value: 0.5, min: 0, max: 2, step: 0.05, group: "Targets", label: "Combo step", hint: "multiplier added per consecutive hit" },
   comboMax: { value: 5, min: 1, max: 20, step: 0.5, group: "Targets", label: "Combo max", hint: "multiplier cap" },

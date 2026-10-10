@@ -1378,6 +1378,9 @@ function handleGameEvents(): void {
       case "kidCried":
         sound.kidCry();
         break;
+      case "curse":
+        sound.curse();
+        break;
       case "weddingArrived":
         sound.weddingArrived();
         break;

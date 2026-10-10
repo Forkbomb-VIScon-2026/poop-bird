@@ -119,6 +119,9 @@ there's no countdown.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
+  Some splatted pedestrians (`angryChance`) stop, turn on the bird and curse:
+  red in the face, shaking a fist, a `#@$%!` bubble and a `curse` sound, for
+  `angryDuration` seconds before walking on. Hitting one again restarts it.
 - **Power lines:** from the second city on (after the first dive), some city
   obstacles are a run of poles with wires sagging between them
   (`powerLineChance`). Touching a wire zaps the bird and ends the run, and so

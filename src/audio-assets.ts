@@ -30,6 +30,7 @@ export const SOUND_NAMES = [
   "pebble_shot",
   "ricochet",
   "kid_cry",
+  "curse",
   "beep",
   "sad_trombone",
   "wedding_arrived",
