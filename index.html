@@ -172,10 +172,14 @@
                 <svg class="face"><use href="#face-relaxed" /></svg>
                 <span>relaxed</span>
               </div>
-              <div class="strain-bar big meter-bar">
-                <div id="calib-strain-fill" class="strain-fill"></div>
-                <div id="calib-strain-on" class="strain-mark on"></div>
-                <div id="calib-strain-off" class="strain-mark off"></div>
+              <div class="meter-track">
+                <!-- The bird perches on the bar's fill and strains along with the player (main.ts updateMeterBird). -->
+                <canvas id="calib-bird" class="meter-bird" aria-hidden="true"></canvas>
+                <div class="strain-bar big meter-bar">
+                  <div id="calib-strain-fill" class="strain-fill"></div>
+                  <div id="calib-strain-on" class="strain-mark on"></div>
+                  <div id="calib-strain-off" class="strain-mark off"></div>
+                </div>
               </div>
               <div class="meter-end" id="meter-strained">
                 <svg class="face"><use href="#face-strained" /></svg>
