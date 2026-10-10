@@ -702,9 +702,9 @@ const LESSON_STEPS: readonly PuffStep[] = [
 ];
 
 /**
- * The calibration, when the lesson's reading wasn't clear: slower, with a
- * look-around (so features that move with the head don't count as a puff),
- * a timeline of the steps and a countdown before every switch.
+ * The calibration, when the lesson's reading wasn't clear: with a look-around
+ * (so features that move with the head don't count as a puff) and a timeline
+ * of the steps, and the fish shows each step.
  */
 const CALIBRATION_STEPS: readonly PuffStep[] = [
   { kind: "relax", label: "Relax", title: "RELAX", hint: "Relaxed face, lips loose." },
@@ -749,7 +749,7 @@ async function runSwimLesson(): Promise<void> {
       calibrationRuns++;
       scriptedPuff = game.fish.puff;
       scriptTarget = SCRIPT_RELAX;
-      setPuffOverlay("LET'S CALIBRATE 🐡", `${why} Follow the steps; a countdown warns you before each switch.`, null);
+      setPuffOverlay("LET'S CALIBRATE 🐡", `${why} Follow the steps above.`, null);
       showTimeline(steps);
       if (!(await waitPlaying(token, 3500))) return abandonPuffCalibration(token);
     }

@@ -200,9 +200,9 @@ total distance.
   your measured puff meanwhile (pursed lips, as there's no puff calibration
   yet), and your face is sampled. If the reading is clear, the calibration is
   used right away and the level starts. If not, a slower **calibration** runs,
-  with a timeline of its steps, a look-around and a 3 s countdown ("LET IT
-  OUT IN 3…") before every switch; there the fish shows each step (puffs up and floats, shrinks and
-  sinks) whatever your face does. New players then get the ocean tips as two
+  with a timeline of its steps (so the next switch is never a surprise) and
+  a look-around; there the fish shows each step (puffs up and floats, shrinks
+  and sinks) whatever your face does. New players then get the ocean tips as two
   banners. A fish lying on the sand when the level starts isn't killed by the
   sea floor until it swims off (at most `oceanCalmFloorGrace`, 5 s). Details
   below.
@@ -367,14 +367,15 @@ separated their puffs from their relaxed face), while pursed lips light up
    player through `LESSON_STEPS`: relax, pucker & puff, let it out, again, each
    with a pictogram of the face (`#face-relaxed`, `#face-puffed`). The fish
    follows the measured puff (the pucker range), which playtesters found more
-   intuitive than a scripted fish. The steps follow each other directly
-   (`oceanLessonHeadsUp`, 0 s, after play-testing). With a clear reading
-   (the quality check below) the level starts right away. If not,
-   `CALIBRATION_STEPS` run: relax, look around, then the same two cycles, with
-   a timeline of the steps and a countdown before each switch (`oceanCalibrationHeadsUp`,
-   3 s), since the playtesters found the quick switches overwhelming. There the
-   fish is driven by the script (puff 0.75 on puff steps, 0.05 otherwise), so
-   the player sees what each step does whatever the camera reads. Puff steps last `oceanCalibrationSeconds` (3.5 s), the others
+   intuitive than a scripted fish. With a clear reading (the quality check
+   below) the level starts right away. If not, `CALIBRATION_STEPS` run: relax,
+   look around, then the same two cycles, with a timeline of the steps so the
+   player sees the next switch coming. There the fish is driven by the script
+   (puff 0.75 on puff steps, 0.05 otherwise), so the player sees what each
+   step does whatever the camera reads. After play-testing, neither has a
+   countdown before a switch (`oceanLessonHeadsUp`, `oceanCalibrationHeadsUp`:
+   0 s; the countdown is still there for higher values). Puff steps last
+   `oceanCalibrationSeconds` (3.5 s), the others
    `oceanRelaxSeconds` (3.5 s); the first `calibrationSettle` of each is
    dropped. Pausing restarts the step; going to the menu or recalibrating
    abandons it. The relax steps right
