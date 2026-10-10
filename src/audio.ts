@@ -419,7 +419,6 @@ export class Sound {
   }
 
   /** Additional event sounds used by the current gameplay code. */
-  beep(_high = false): void { /* this.play("beep"); */ }
   powerDown(): void { this.play("power_down"); }
   smash(): void { this.play("smash"); }
   weddingArrived(): void { this.play("wedding_arrived"); }
