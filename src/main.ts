@@ -3,12 +3,13 @@
 
 import "./style.css";
 import { config } from "./config";
-import { Sound } from "./audio";
+import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
-import { Game } from "./game";
-import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
+import { Game, wireAt } from "./game";
+import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
+import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
@@ -85,6 +86,15 @@ function show(el: HTMLElement, visible: boolean): void {
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
+  // Game over gets longer: players often die mid-press, and shouldn't skip their score.
+  armButtonKeys(name === "gameover" ? 800 : 300);
+}
+
+/** Enter / Space / R… press buttons only after this time, so a press from the previous screen can't. */
+let buttonKeysArmedAt = 0;
+
+function armButtonKeys(ms: number): void {
+  buttonKeysArmedAt = performance.now() + ms;
 }
 
 // --- State ------------------------------------------------------------------------
@@ -603,7 +613,7 @@ function showCalibrationResult(result: CalibrationResult): void {
   card.classList.remove("strain");
   $("calib-step").textContent = "Strain check";
 
-  retryBtn.textContent = calibrationIsDefault ? "Calibrate" : "Recalibrate";
+  armButtonKeys(300);
   if (result === "saved") {
     $("calib-prompt").textContent = "Welcome back!";
     text.textContent = "New player? Recalibrate.";
@@ -614,7 +624,7 @@ function showCalibrationResult(result: CalibrationResult): void {
     setPrimary(playBtn, retryBtn);
   } else if (result === "default") {
     $("calib-prompt").textContent = "Try your strain 💩";
-    text.textContent = "Bar acting up? Calibrate it to your face.";
+    text.textContent = "Bar acting up? Recalibrate it to your face.";
     setPrimary(playBtn, retryBtn);
   } else if (result.ok) {
     $("calib-prompt").textContent = "Nice strain! 💪";
@@ -627,7 +637,9 @@ function showCalibrationResult(result: CalibrationResult): void {
   }
   const anyway = typeof result === "object" && !result.ok;
   calibrationFailed = anyway;
-  playBtn.innerHTML = anyway ? "Play anyway" : 'Play! <small class="kbd-only">(Enter)</small>';
+  playBtn.textContent = anyway ? "Play anyway" : "Play!";
+  decorate(playBtn);
+  decorate(retryBtn);
   playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);
 }
 
@@ -1034,6 +1046,7 @@ async function runOceanTutorial(token: number): Promise<void> {
   overlay.querySelectorAll<HTMLElement>("[data-keys]").forEach((el) => show(el, !face));
   game.holdTransition = true;
   show(overlay, true);
+  armButtonKeys(300);
   let done = false;
   dismissTutorial = () => (done = true);
   while (!done && token === flow) await wait(50);
@@ -1177,7 +1190,7 @@ function goToMenu(): void {
   cam.classList.remove("large");
   show(cam, false);
   show(hud, false);
-  game.reset();
+  game.startDemo();
   $<HTMLInputElement>("opt-tips").checked = isNewPlayer();
   showScreen("start");
 }
@@ -1194,7 +1207,9 @@ function onGameOver(): void {
     best = score;
     saveBest(best);
   }
-  $("go-title").textContent = pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
+  $("go-title").textContent = game.trophy !== null
+    ? pick(["Hooked!", "Reeled in!", "Gone fishing.", "Fish and chips!"])
+    : pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
   $("go-score").textContent = String(score);
   show($("go-newbest"), newBest);
   $("go-best").textContent = String(best);
@@ -1221,6 +1236,20 @@ function onGameOver(): void {
     }
   }
   $("go-balloons").textContent = String(game.balloonsPopped);
+  $("go-lines").textContent = String(game.anglersSnapped);
+
+  // Landed by the fisherman: his trophy photo.
+  show($("go-trophy"), game.trophy !== null);
+  if (game.trophy !== null) {
+    const tc = $<HTMLCanvasElement>("go-trophy-canvas");
+    const tctx = tc.getContext("2d");
+    if (tctx) {
+      tctx.setTransform(1, 0, 0, 1, 0, 0);
+      tctx.clearRect(0, 0, tc.width, tc.height);
+      tctx.scale(tc.width / 250, tc.width / 250);
+      drawTrophyPrint(tctx, 2, 2, 240, renderer.photos.get(game.trophy));
+    }
+  }
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -1391,18 +1420,45 @@ function frame(now: number): void {
     handleGameEvents();
   } else if (state === "gameover") {
     game.step(dt);
+  } else if (game.demo) {
+    // Start screen (and the loading and calibration cards over it): the bird plays itself.
+    accumulator += dt;
+    while (accumulator >= STEP) {
+      game.stepDemo(STEP);
+      accumulator -= STEP;
+    }
   } else if (state !== "paused") {
     game.idle(dt);
     accumulator = 0;
   }
 
-  renderer.draw(game, state === "playing" ? dt : 0);
+  renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
   const charging = state === "playing" && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);
   if (activePuffCalibration === null) {
     sound.setBurble(state === "playing" && game.swimming && !game.stunned ? game.fish.puff : -1);
   }
+
+  // Only audible during active city gameplay, and only when part of a line
+  // is actually visible. Distance is to the nearest point on any visible wire.
+  let powerLineProximity = 0;
+  if (state === "playing" && game.stage === "city" && game.phase === "playing") {
+    const { x, y } = game.bird;
+    const audibleRange = config.powerLineAudioRange;
+    for (const line of game.powerLines) {
+      const right = line.x + line.span * (line.poles - 1);
+      if (right < 0 || line.x > game.width) continue;
+      const nearestX = Math.max(0, Math.min(game.width, Math.max(line.x, Math.min(right, x))));
+      for (let i = 0; i < line.wires.length; i++) {
+        const wire = wireAt(line, i, nearestX);
+        if (!wire) continue;
+        const distance = Math.hypot(nearestX - x, wire.y - y);
+        powerLineProximity = Math.max(powerLineProximity, 1 - distance / audibleRange);
+      }
+    }
+  }
+  sound.setPowerLineProximity(powerLineProximity);
 
   updateHud();
   updateStrainBars();
@@ -1423,6 +1479,7 @@ function frame(now: number): void {
     stun: game.charge.stun,
     scrollSpeed: game.speed,
     difficulty: game.difficulty,
+    cityStage: game.cityStage,
     birdVy: game.bird.vy,
     stage: game.transition
       ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`
@@ -1455,11 +1512,18 @@ function takePhoto(photoId: number): void {
 /** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
 let weddingFace: Photo | null = null;
 
+/** Which poop sample a release at this charge plays. */
+function poopSize(charge: number): PoopSize {
+  if (charge >= config.poopSoundLarge) return "large";
+  if (charge >= config.poopSoundMiddle) return "middle";
+  return "weak";
+}
+
 function handleGameEvents(): void {
   for (const e of game.events) {
     switch (e.type) {
       case "release":
-        sound.release(e.charge, e.sweet);
+        sound.release(poopSize(e.charge), e.charge, e.sweet);
         buzz(e.sweet ? [15, 40, 25] : Math.round(8 + 20 * e.charge));
         break;
       case "accident":
@@ -1480,6 +1544,13 @@ function handleGameEvents(): void {
       case "zap":
         sound.zap();
         buzz([30, 20, 30, 20, 120]);
+        break;
+      case "droneDown":
+        sound.powerDown();
+        break;
+      case "droneCrashed":
+        sound.droneCrash();
+        buzz([20, 30, 60]);
         break;
       case "gameover":
         onGameOver();
@@ -1542,6 +1613,9 @@ function handleGameEvents(): void {
       case "kidCried":
         sound.kidCry();
         break;
+      case "curse":
+        sound.curse();
+        break;
       case "weddingArrived":
         sound.weddingArrived();
         break;
@@ -1591,6 +1665,30 @@ function handleGameEvents(): void {
       case "threaded":
         sound.hit(4);
         break;
+      case "anglerCast":
+        sound.anglerCast();
+        break;
+      case "anglerHooked":
+        sound.anglerHooked();
+        buzz([40, 30, 40]);
+        break;
+      case "anglerReel":
+        sound.reelClick();
+        break;
+      case "anglerLanded": {
+        sound.splash();
+        buzz(200);
+        const photo = renderer.captureTrophy(game);
+        if (photo) renderer.photos.set(e.photoId, photo);
+        break;
+      }
+      case "anglerPhoto":
+        sound.shutter();
+        break;
+      case "lineSnapped":
+        sound.lineSnap();
+        buzz(60);
+        break;
     }
   }
   game.events.length = 0;
@@ -1603,8 +1701,24 @@ function isTyping(e: Event): boolean {
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
 }
 
+/** Something focused that handles Enter itself (a Tab-focused button, the options toggle…). */
+function focusHandlesEnter(): boolean {
+  const el = document.activeElement;
+  return !!el && el !== document.body && el.matches("button, summary, a, select, input, textarea");
+}
+
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
+  // A screen's yellow button takes Enter and Space; some buttons take more keys (data-keys).
+  if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const name = keyName(e);
+    const btn = name === "Enter" && focusHandlesEnter() ? null : buttonForKey(name);
+    if (btn) {
+      e.preventDefault();
+      if (performance.now() >= buttonKeysArmedAt) pressFromKey(btn);
+      return;
+    }
+  }
   const key = e.key.toLowerCase();
   if (e.code === "Space") {
     e.preventDefault();
@@ -1619,9 +1733,6 @@ window.addEventListener("keydown", (e) => {
       break;
     case "m":
       toggleMute();
-      break;
-    case "r":
-      if (state === "gameover") startReady();
       break;
     case "d":
       debug?.toggle();
@@ -1650,6 +1761,10 @@ window.addEventListener("keydown", (e) => {
       // Debug shortcut: a hot-air balloon floats in.
       if (debug?.visible && state === "playing") game.spawnBalloonNow();
       break;
+    case "h":
+      // Debug shortcut: a fisherman rows in (ocean only).
+      if (debug?.visible && state === "playing") game.spawnAnglerNow();
+      break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
       if (debug?.visible) startOceanRun();
@@ -1659,10 +1774,6 @@ window.addEventListener("keydown", (e) => {
       break;
     case "c":
       void recalibrate();
-      break;
-    case "enter":
-      if (state === "calibrated") playAfterCalibration();
-      else if (state === "playing") dismissTutorial?.();
       break;
   }
 });
@@ -1693,6 +1804,7 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 
 // --- Buttons -------------------------------------------------------------------------------
 
+decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
 on("btn-face", () => {
   goLandscape();

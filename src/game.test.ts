@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { BIRD_RADIUS, GROUND_Y, Game, WATER_Y } from "./game";
+import { afterEach, describe, expect, it } from "vitest";
+import { config, ramp } from "./config";
+import {
+  ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects,
+} from "./game";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
 function atHarbour(edge: number, y: number, vy: number): Game {
@@ -122,8 +125,139 @@ describe("leaping out", () => {
       expect(game.phase).toBe("playing");
       expect(game.stage).toBe("city");
       expect(game.transition).toBeNull();
+      expect(game.cityStage).toBe(2);
       expect(game.overWater(game.bird.x)).toBe(false);
       expect(game.bird.y + BIRD_RADIUS).toBeLessThan(GROUND_Y - 100);
     });
   }
+});
+
+describe("anchored boats", () => {
+  const saved = { chance: config.oceanAnchorChance, open: config.oceanAnchorOpenChance, jelly: config.oceanJellyRate };
+  afterEach(() => {
+    config.oceanAnchorChance = saved.chance;
+    config.oceanAnchorOpenChance = saved.open;
+    config.oceanJellyRate = saved.jelly;
+  });
+
+  for (const open of [false, true]) {
+    it(`keep the gap clear ${open ? "over open water" : "over coral and rocks"}`, () => {
+      config.oceanAnchorChance = 1;
+      config.oceanAnchorOpenChance = open ? 1 : 0;
+      const game = new Game(1000);
+      const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
+      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"]();
+      // (stageObstacles stays 0 here, so none of them is the stage's last.)
+      for (const o of game.obstacles) {
+        expect(o.anchor).toBe(true);
+        expect(o.bottom === "none").toBe(open);
+        expect(o.gapBottom).toBeLessThanOrEqual(GROUND_Y);
+        expect(o.gapBottom - o.gapTop).toBeGreaterThanOrEqual(gap - 1e-6);
+        // The boat sits on the surface, and the anchor hangs below it, above the gap.
+        expect(o.gapTop - SURFACE_Y).toBeGreaterThan(ANCHOR_H);
+        const rects = obstacleRects(o);
+        expect(Math.min(...rects.map((r) => r.y))).toBeLessThan(SURFACE_Y);
+        for (const r of rects) expect(r.y + r.h <= o.gapTop + 1e-6 || r.y >= o.gapBottom - 1e-6).toBe(true);
+      }
+    });
+  }
+
+  it("stay away while a fisherman is out", () => {
+    config.oceanAnchorChance = 1;
+    const game = new Game(1000);
+    game["spawnAngler"]();
+    for (let i = 0; i < 50; i++) game["spawnOceanObstacle"]();
+    expect(game.obstacles.some((o) => o.anchor)).toBe(false);
+  });
+
+  /** In the ocean, alone with an anchor over open water right at the fish, which hovers at `y`. */
+  function underBoat(y: number): Game {
+    config.oceanJellyRate = 0;
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    expect(game.stage).toBe("ocean");
+    const w = 70;
+    game.obstacles = [{
+      x: game.bird.x - w / 2, w, gapTop: 260, gapBottom: GROUND_Y, bottom: "none", color: "#000", seed: 1,
+      passed: false, splats: [], tabloid: null, anchor: true,
+    }];
+    Object.assign(game.bird, { y, vy: 0 });
+    game.puffInput = config.oceanHoverPuff;
+    return game;
+  }
+
+  it("stop a fish hugging the surface", () => {
+    const game = underBoat(SURFACE_Y);
+    game.step(1 / 60);
+    expect(game.phase).not.toBe("playing");
+  });
+
+  it("let a fish swim under the anchor", () => {
+    const game = underBoat(380);
+    for (let i = 0; i < 30; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+  });
+});
+
+describe("shipwrecks", () => {
+  const saved = { wreck: config.oceanWreckChance, anchor: config.oceanAnchorChance };
+  afterEach(() => {
+    config.oceanWreckChance = saved.wreck;
+    config.oceanAnchorChance = saved.anchor;
+  });
+
+  for (const anchor of [0, 1]) {
+    it(`stay low, with only a short mast above the hull${anchor ? " (under an anchor)" : ""}`, () => {
+      config.oceanWreckChance = 1;
+      config.oceanAnchorChance = anchor;
+      // The anchor tests above cover anchors over open water.
+      const open = config.oceanAnchorOpenChance;
+      config.oceanAnchorOpenChance = 0;
+      const game = new Game(1000);
+      const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
+      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"]();
+      config.oceanAnchorOpenChance = open;
+      for (const o of game.obstacles) {
+        expect(o.bottom).toBe("wreck");
+        expect(o.gapBottom - o.gapTop).toBeGreaterThanOrEqual(gap - 1e-6);
+        const deck = GROUND_Y - WRECK_HULL_H;
+        const mast = deck - o.gapBottom;
+        expect(mast).toBeGreaterThanOrEqual(WRECK_MAST_MIN - 1e-6);
+        expect(mast).toBeLessThanOrEqual(WRECK_MAST_MAX + 1e-6);
+        for (const r of obstacleRects(o)) expect(r.y + r.h <= o.gapTop + 1e-6 || r.y >= o.gapBottom - 1e-6).toBe(true);
+      }
+    });
+  }
+});
+
+describe("attract mode", () => {
+  it("flies on its own for a long while and keeps hitting people", () => {
+    const game = new Game(1000);
+    game.startDemo();
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < 120 * 120; i++) {
+      game.stepDemo(1 / 120);
+      minY = Math.min(minY, game.bird.y);
+      maxY = Math.max(maxY, game.bird.y);
+    }
+    expect(game.phase).toBe("playing");
+    expect(game.accidents).toBe(0);
+    expect(game.obstacles).toHaveLength(0);
+    expect(game.targetsHit).toBeGreaterThan(20);
+    expect(game.targetsHit).toBeGreaterThanOrEqual(game.poopsDropped * 0.85);
+    // Clear of the statues' heads, and never pinned to the top of the screen.
+    expect(maxY).toBeLessThan(GROUND_Y - BIRD_RADIUS - 100);
+    expect(minY).toBeGreaterThan(80);
+  });
+
+  it("leaves no trace once reset for a real run", () => {
+    const game = new Game(1000);
+    game.startDemo();
+    for (let i = 0; i < 120 * 10; i++) game.stepDemo(1 / 120);
+    game.reset();
+    expect(game.demo).toBe(false);
+    expect(game.targets).toHaveLength(0);
+    expect(game.score).toBe(0);
+  });
 });

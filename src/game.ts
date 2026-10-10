@@ -36,6 +36,12 @@
 // basket drops, and the passengers bail out under parachutes, drifting down
 // as targets. The basket is solid: flying into it ends the run. Slipping
 // through the ropes between envelope and basket untouched pays a bonus.
+//
+// Now and then a fisherman rows across the ocean's surface and casts his hook
+// down to the fish's depth. The hook always catches: he reels the fish in and
+// the run ends with his trophy photo. Crossing his line above the hook while
+// spiked snags it on the spines: he hauls on it until it parts, and with the
+// pull suddenly gone he topples backwards into his boat.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -53,6 +59,12 @@ import {
 export const VIEW_H = 600;
 export const GROUND_Y = 520;
 export const BIRD_RADIUS = 22;
+/** × the target spawn rate in attract mode, so there's always someone to hit. */
+const DEMO_SPAWN_SCALE = 2.2;
+/** Top fraction of the gap-centre range that makes a tall building (see pickGapCenter). */
+const TALL_FRACTION = 0.4;
+/** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
+const DEMO_MAX_RISE = 300;
 /** Collision radius is a bit smaller than the drawn bird, to feel fair. */
 const BIRD_HIT_RADIUS = 16;
 /** Ocean: the water surface (a soft ceiling). The sea floor is GROUND_Y. */
@@ -113,7 +125,8 @@ export interface Rect {
   h: number;
 }
 
-export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "coral" | "rock";
+/** "none": open water down to the sea floor (only under an anchor). */
+export type BottomKind = "billboard" | "building" | "tower" | "church" | "coral" | "rock" | "wreck" | "none";
 
 export interface Splat {
   dx: number;
@@ -134,6 +147,8 @@ export interface Obstacle {
   splats: Splat[];
   /** Set when `bottom` is "billboard": the published front page it shows. */
   tabloid: Tabloid | null;
+  /** Ocean: a boat floats at the surface with its anchor hanging down to `gapTop`. */
+  anchor: boolean;
 }
 
 /** A paparazzo's photo that made it to print. `photoId` keys the image main.ts captured. */
@@ -177,6 +192,48 @@ export interface Jelly {
 }
 
 /**
+ * The fisherman's state. Rowing: his boat comes in along the surface. Casting:
+ * a "!" and the bobber plops in. Fishing: the hook sinks to the depth the fish
+ * was at when he cast, and he jigs it gently there. Leaving: the hook went
+ * past and he reels in. Hooked: the fish bit and he's reeling it up. Landed: he
+ * got it (the run is over). Tugging: the line snagged on the spines and he's
+ * hauling on it. Snapped: it parted; he tumbled backwards into his boat, his
+ * hat flew off, and the cut-off end sinks away with the hook.
+ */
+export type AnglerState = "rowing" | "casting" | "fishing" | "leaving" | "hooked" | "landed" | "tugging" | "snapped";
+
+export interface Angler {
+  state: AnglerState;
+  /** Seconds in the current state. */
+  t: number;
+  /** Screen x of the boat's centre. His rod tip is ANGLER_TIP_DX ahead (left) of it. */
+  x: number;
+  /** The hook, in ocean y. */
+  hookX: number;
+  hookY: number;
+  hookVy: number;
+  /** The depth he cast the hook to (the fish's depth when he cast). */
+  target: number;
+  /** Closest the hook came to the fish (for the "close one" bonus). */
+  closest: number;
+  dodged: boolean;
+  /** Hooked: where the fish bit; it's reeled up from there. */
+  fromY: number;
+  /** 0..1 how far the hooked fish has been reeled in. */
+  reel: number;
+  /** Tugging: where the line is snagged on the fish. Snapped: the cut-off end, sinking away with the hook. */
+  cutX: number;
+  cutY: number;
+  /** Snapped: the cut end of the line still on his rod, whipping back up (ocean y). */
+  stubY: number;
+  /** His sou'wester once it's flown off into the water, drifting on the surface (screen x). */
+  hatX: number;
+  /** Seconds until the next click of the reel's ratchet. */
+  click: number;
+  seed: number;
+}
+
+/**
  * A run of wooden poles (city) with wires sagging between them. Poles stand
  * `span` px apart; every wire hangs from all poles at the same height.
  */
@@ -204,6 +261,21 @@ export interface Pigeon {
   startle: number;
   /** Set once it's hit: it flies off, splattered (screen space). */
   flyer: { x: number; y: number; vx: number; vy: number } | null;
+  /** Set when a hit downs it instead: it was a surveillance drone all along. */
+  wreck: DroneWreck | null;
+}
+
+/** A downed pigeon drone: it tumbles off its wire, then lies broken on the street, sparking. */
+export interface DroneWreck {
+  /** Screen space; y is the street once it's landed. */
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  spin: number;
+  /** Seconds since it hit the street, or -1 while it's still falling. */
+  landed: number;
 }
 
 /**
@@ -369,7 +441,21 @@ export interface Target {
   wedding?: Wedding;
   /** Only on parachutists. */
   chute?: Chute | null;
+  /** Set while a splatted pedestrian stands there cursing at the bird. */
+  rage?: Rage | null;
 }
+
+/** A pedestrian's fit of rage after being splatted. */
+export interface Rage {
+  /** Seconds since it started (restarts on another hit). */
+  t: number;
+  /** The walking speed to resume once it has calmed down. */
+  walk: number;
+  /** The grawlix in the speech bubble. */
+  curse: string;
+}
+
+const CURSES = ["#@$%!", "%&#@!!", "$#!*@", "@#%&$!", "*!#@%"];
 
 export interface Poop {
   x: number;
@@ -428,6 +514,8 @@ export type GameEvent =
   | { type: "hit"; points: number; combo: number; kind: TargetKind | "pigeon" }
   | { type: "crash" }
   | { type: "zap" }
+  | { type: "droneDown" }
+  | { type: "droneCrashed" }
   | { type: "gameover" }
   | { type: "gateEntered"; to: Stage }
   | { type: "submerged" }
@@ -446,6 +534,7 @@ export type GameEvent =
   | { type: "pebbleShot"; points: number; combo: number }
   | { type: "ricochet" }
   | { type: "kidCried" }
+  | { type: "curse" }
   | { type: "weddingArrived" }
   | { type: "weddingBeat"; count: number }
   | { type: "weddingKiss" }
@@ -459,7 +548,13 @@ export type GameEvent =
   | { type: "chuteOpen" }
   | { type: "basketLanded" }
   | { type: "burner" }
-  | { type: "threaded"; points: number };
+  | { type: "threaded"; points: number }
+  | { type: "anglerCast" }
+  | { type: "anglerHooked" }
+  | { type: "anglerReel" }
+  | { type: "anglerLanded"; photoId: number }
+  | { type: "anglerPhoto" }
+  | { type: "lineSnapped"; points: number };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -505,6 +600,9 @@ const BALLOON_COLORS: [string, string][] = [
 ];
 const CHUTE_COLORS = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f78c6b"];
 
+const CAUGHT_MESSAGES = ["CATCH OF THE DAY!", "REELED IN!", "Fish and chips!", "Hook, line and sinker", "Dinner is served", "Should've puffed!"];
+const SNAPPED_TEXT = ["LINE CUT!", "SNAPPED!", "SNIP!"];
+
 const SNAP_MESSAGES = ["SNAP!", "SAY CHEESE!", "CAUGHT ON CAMERA!", "*CLICK*", "GOT YOU!"];
 
 const HEADLINES = [
@@ -541,6 +639,8 @@ const PERSON_COLORS = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#6c5ce7", "#fd79a8", "#
 const BUILDING_COLORS = ["#c8553d", "#588b8b", "#8e7dbe", "#d4a373", "#6d8a96", "#b56576"];
 const CORAL_COLORS = ["#ff7f6e", "#ff9f43", "#f368e0", "#ee5a6f", "#ffb86b"];
 const ROCK_COLORS = ["#6b7b8c", "#7d6e63", "#5f6f7a"];
+/** Waterlogged timber, greyed and greened by the years. */
+const WRECK_COLORS = ["#8a6440", "#7b5b3a", "#74604a"];
 const JELLY_HUES = [320, 285, 200, 340];
 
 export type GamePhase = "playing" | "dying" | "over";
@@ -553,6 +653,18 @@ export const PIGEON_R = 16;
 export const PEBBLE_R = 5;
 /** A kid stops shooting once he's this close to (or behind) the bird. */
 const KID_MIN_AHEAD = 70;
+/** The fisherman's rod tip is this far ahead (left) of his boat's centre. */
+export const ANGLER_TIP_DX = 117;
+/** Hook radius for collisions. */
+export const HOOK_R = 7;
+/** Seconds he hauls on a line snagged on the spines before it parts. */
+export const ANGLER_TUG_TIME = 0.35;
+/** Seconds the fisherman lies on his back in the boat after the line snaps, before he sits up again. */
+export const ANGLER_TOPPLE_TIME = 1.4;
+/** How far behind (right of) the boat's centre his hat lands in the water. */
+export const ANGLER_HAT_DX = 110;
+/** Extra room after the fisherman's slot before the next ocean obstacle. */
+const ANGLER_ROOM = 320;
 
 export class Game {
   width = 1000;
@@ -612,6 +724,8 @@ export class Game {
   speed = 0;
   /** Seconds since the current stage began (gravity grace restarts after surfacing). */
   stageTime = 0;
+  /** Which city stage this is (1 = the first, 2 = after the first dive, …): new hazards come in with later ones. */
+  cityStage = 1;
 
   obstacles: Obstacle[] = [];
   powerLines: PowerLine[] = [];
@@ -635,7 +749,7 @@ export class Game {
   /** 0..1 white camera flash over the whole screen. */
   flash = 0;
   /** The latest shot, popping up as a polaroid. */
-  polaroid: { photoId: number; life: number; maxLife: number; wedding?: WeddingPhoto } | null = null;
+  polaroid: { photoId: number; life: number; maxLife: number; wedding?: WeddingPhoto; trophy?: boolean } | null = null;
   /** Photos that went to print, in order. */
   frontPages: Tabloid[] = [];
   camerasSmashed = 0;
@@ -650,6 +764,10 @@ export class Game {
   weddingsRuined = 0;
   bouquetsCaught = 0;
   balloonsPopped = 0;
+  angler: Angler | null = null;
+  anglersSnapped = 0;
+  /** The run ended on the fisherman's line: the trophy photo's id. */
+  trophy: number | null = null;
   message: { text: string; life: number } | null = null;
   dyingTime = 0;
   /** The run ended on a wire: the bird is drawn charred. */
@@ -674,8 +792,16 @@ export class Game {
   /** This city stage gets a wedding that hasn't happened yet. */
   private weddingPlanned = false;
   private weddingsSeen = 0;
+  /** This ocean stage gets a fisherman who hasn't shown up yet. */
+  private anglerPlanned = false;
 
   events: GameEvent[] = [];
+
+  /**
+   * Start-screen attract mode: the bird flies itself over a city of plain
+   * targets (no buildings or specials) and every poop lands on someone.
+   */
+  demo = false;
 
   constructor(width: number) {
     this.resize(width);
@@ -688,6 +814,7 @@ export class Game {
   }
 
   reset(): void {
+    this.demo = false;
     this.phase = "playing";
     this.time = 0;
     this.runTime = 0;
@@ -709,6 +836,7 @@ export class Game {
     this.jelliesPopped = 0;
     this.speed = 0;
     this.stageTime = 0;
+    this.cityStage = 1;
     this.obstacles = [];
     this.powerLines = [];
     this.balloons = [];
@@ -735,6 +863,10 @@ export class Game {
     this.pebblesShot = 0;
     this.bonks = 0;
     this.balloonsPopped = 0;
+    this.angler = null;
+    this.anglersSnapped = 0;
+    this.trophy = null;
+    this.anglerPlanned = false;
     this.lastKidAt = -Infinity;
     this.wedding = null;
     this.bouquet = null;
@@ -764,7 +896,22 @@ export class Game {
     return Math.min(1, this.distance / Math.max(1, config.difficultyRamp));
   }
 
+  /**
+   * Per-stage difficulty of a hazard that first shows up in city stage
+   * `first`: 0 there, rising each city stage to 1 at `cityStagesToHardest`.
+   */
+  stageLevel(first = 1): number {
+    const hardest = Math.round(config.cityStagesToHardest);
+    if (hardest <= first) return this.cityStage >= first ? 1 : 0;
+    return Math.min(1, Math.max(0, (this.cityStage - first) / (hardest - first)));
+  }
+
+  private get powerLinesAllowed(): boolean {
+    return this.cityStage >= Math.round(config.powerLineFirstCity);
+  }
+
   get scrollSpeed(): number {
+    if (this.demo) return config.scrollSpeed;
     return ramp(config.scrollSpeed, config.scrollSpeedMax, this.difficulty);
   }
 
@@ -837,6 +984,57 @@ export class Game {
     return this.charge.charge >= 1 ? Math.min(1, this.charge.fullHold / Math.max(1e-3, config.overstrainTime)) : 0;
   }
 
+  /** Resets into the start screen's attract mode (see `demo`). */
+  startDemo(): void {
+    this.reset();
+    this.demo = true;
+  }
+
+  /** One attract-mode step: the autopilot strains and lets go, and steers each poop onto a target. */
+  stepDemo(dt: number): void {
+    this.straining = this.autopilot();
+    this.step(dt);
+    // A long strain would send it to the top of the screen: hop, don't launch.
+    this.bird.vy = Math.max(this.bird.vy, -DEMO_MAX_RISE);
+    for (const p of this.poops) {
+      const aim = this.aim(p.x, p.y, p.vy, p.vx, 700);
+      if (aim) p.vx += (aim.vx - p.vx) * Math.min(1, dt * 10);
+    }
+    // Nobody listens on the start screen.
+    this.events = [];
+  }
+
+  /** Strain while sinking, let go over a target (or before the bird gets too low). */
+  private autopilot(): boolean {
+    const b = this.bird;
+    const c = this.charge.charge;
+    if (c > 0) {
+      const vy = 140 + c * 260 + Math.max(0, b.vy * 0.2); // as in release()
+      const onTarget = c >= 0.3 && this.aim(b.x - 4, b.y + BIRD_RADIUS * 0.8, vy, 0, 120) !== null;
+      return !onTarget && this.charge.fullHold < 0.85 && b.y < 390;
+    }
+    return b.y > 210 && b.vy > 0;
+  }
+
+  /**
+   * The target a poop at (x, y) falling at vy would hit with the least change
+   * to its screen vx, and the vx that gets it there; null if that change is
+   * more than `maxChange`.
+   */
+  private aim(x: number, y: number, vy: number, vx: number, maxChange: number): { target: Target; vx: number } | null {
+    const g = config.poopGravity;
+    let best: { target: Target; vx: number } | null = null;
+    for (const t of this.targets) {
+      const dy = t.y - t.h * 0.5 - y;
+      if (dy <= 0) continue;
+      const time = (-vy + Math.sqrt(vy * vy + 2 * g * dy)) / g;
+      const need = (t.x + (t.speed - this.speed) * time - x) / time;
+      if (Math.abs(need - vx) > maxChange) continue;
+      if (!best || Math.abs(need - vx) < Math.abs(best.vx - vx)) best = { target: t, vx: need };
+    }
+    return best;
+  }
+
   /** Menus / countdown: the bird hovers in place and effects keep animating. */
   idle(dt: number): void {
     this.time += dt;
@@ -867,7 +1065,9 @@ export class Game {
     this.floorGrace = Math.max(0, this.floorGrace - dt);
     const alive = this.phase === "playing";
     const ocean = this.stage === "ocean";
-    const speed = alive ? this.scrollSpeed * (ocean ? config.oceanScrollScale : 1) : 0;
+    // The world holds still while the fisherman reels in a hooked fish.
+    const reeling = this.angler?.state === "hooked";
+    const speed = alive && !reeling ? this.scrollSpeed * (ocean ? config.oceanScrollScale : 1) : 0;
     this.speed = speed;
     if (alive) {
       this.distance += speed * dt;
@@ -875,7 +1075,7 @@ export class Game {
     }
 
     if (ocean) {
-      if (alive && !this.calmWater) this.updateSpike(dt);
+      if (alive && !reeling && !this.calmWater) this.updateSpike(dt);
       this.updateFish(dt);
     } else {
       if (alive) this.updateCharge(dt);
@@ -891,11 +1091,13 @@ export class Game {
     this.updateWedding(dt);
     this.updateBouquet(dt);
     this.updateJellies(dt, speed);
+    this.updateAngler(dt, speed);
     this.updateEffects(dt, speed);
 
     if (this.phase === "dying") {
       this.dyingTime += dt;
-      if (this.dyingTime > 1.3 && this.bird.y >= this.floorY() - this.bodyRadius - 1) {
+      const landed = this.angler?.state === "landed";
+      if (landed ? this.dyingTime > 2.6 : this.dyingTime > 1.3 && this.bird.y >= this.floorY() - this.bodyRadius - 1) {
         this.phase = "over";
         this.events.push({ type: "gameover" });
       }
@@ -1031,6 +1233,7 @@ export class Game {
   }
 
   private crash(cause: "crash" | "zap" = "crash"): void {
+    if (this.demo) return;
     this.phase = "dying";
     this.dyingTime = 0;
     this.shake = 12;
@@ -1056,7 +1259,8 @@ export class Game {
     const { x, y } = this.bird;
     const r = this.hitRadius;
     for (const o of this.obstacles) {
-      if (o.x > x + 80 || o.x + o.w < x - 80) continue;
+      const span = obstacleSpan(o);
+      if (span.left > x + 80 || span.right < x - 80) continue;
       for (const rect of obstacleRects(o)) if (circleRect(x, y, r, rect)) return true;
     }
     for (const l of this.powerLines) {
@@ -1149,6 +1353,12 @@ export class Game {
     f.spikes += ((spiked ? 1 : 0) - f.spikes) * Math.min(1, dt * (spiked ? 22 : 10));
     f.flare = Math.max(0, f.flare - dt);
 
+    const a = this.angler;
+    if (a && (a.state === "hooked" || a.state === "landed")) {
+      this.reelFish(a, dt);
+      return;
+    }
+
     const target = dying ? 260 : targetSwimVelocity(input, config);
     b.vy = applyWaterDrag(b.vy, target, dt, Math.max(0.02, config.oceanDragTime));
     b.y += b.vy * dt;
@@ -1217,7 +1427,7 @@ export class Game {
       j.y = j.baseY + Math.sin(this.time * 1.6 + j.phase) * 14;
     }
     this.jellies = this.jellies.filter((j) => j.x > -80);
-    if (this.stage !== "ocean" || this.phase !== "playing") return;
+    if (this.stage !== "ocean" || this.phase !== "playing" || this.angler?.state === "hooked") return;
 
     // Popping (spiked) or getting stung (not spiked).
     const r = this.hitRadius;
@@ -1246,7 +1456,11 @@ export class Game {
       const sx = this.width + 50;
       const clear =
         this.shore?.kind !== "exit" &&
-        this.obstacles.every((o) => o.x > sx + 70 || o.x + o.w < sx - 70) &&
+        !this.anglerBusy &&
+        this.obstacles.every((o) => {
+          const span = obstacleSpan(o);
+          return span.left > sx + 70 || span.right < sx - 70;
+        }) &&
         (this.gateSpawned || this.nextObstacleAt - this.distance > 220);
       if (clear) {
         this.jellySpawnAcc = (Math.random() - 0.5) * 0.6;
@@ -1279,6 +1493,256 @@ export class Game {
     }
     j.r = 0; // removed by the caller
     this.events.push({ type: "jellyPopped", points, combo: this.combo });
+  }
+
+  // --- fisherman -------------------------------------------------------------------
+
+  /** True while the fisherman is a threat: no jellyfish crowd his hook. */
+  private get anglerBusy(): boolean {
+    const s = this.angler?.state;
+    return s === "rowing" || s === "casting" || s === "fishing" || s === "tugging" || s === "hooked";
+  }
+
+  private anglerDue(before: number): boolean {
+    return (
+      this.anglerPlanned &&
+      !this.angler &&
+      this.stageObstacles >= Math.round(config.anglerSlot) &&
+      this.stageObstacles < before - 1
+    );
+  }
+
+  /** His boat rows in from the right. Returns the extra room it needs before the next obstacle. */
+  private spawnAngler(): number {
+    this.anglerPlanned = false;
+    this.angler = {
+      state: "rowing", t: 0, x: this.width + ANGLER_TIP_DX + 60,
+      hookX: 0, hookY: SURFACE_Y, hookVy: 0, target: SURFACE_Y,
+      closest: Infinity, dodged: false, fromY: 0, reel: 0, cutX: 0, cutY: 0, stubY: 0,
+      hatX: 0, click: 0, seed: Math.random() * 1000,
+    };
+    return ANGLER_ROOM;
+  }
+
+  /** Debug: a fisherman rows in right now (ocean only). */
+  spawnAnglerNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.angler) return;
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
+    this.jellies = this.jellies.filter((j) => j.x < this.width - 200);
+    this.spawnAngler();
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + ANGLER_ROOM + config.oceanSpacingMin);
+  }
+
+  private setAnglerState(a: Angler, state: AnglerState): void {
+    a.state = state;
+    a.t = 0;
+  }
+
+  private updateAngler(dt: number, speed: number): void {
+    const a = this.angler;
+    if (!a) return;
+    a.t += dt;
+    const b = this.bird;
+    // He rows against the scroll (but slower), so his line sweeps toward the fish.
+    const rowing = a.state === "rowing" || a.state === "casting" || a.state === "fishing" || a.state === "leaving";
+    a.x -= (speed - (rowing ? config.anglerRow : 0)) * dt;
+    const tipX = a.x - ANGLER_TIP_DX;
+    const playing = this.phase === "playing" && this.stage === "ocean" && !this.transition;
+    const r = this.hitRadius;
+
+    switch (a.state) {
+      case "rowing":
+        a.hookX = tipX;
+        if (!playing) break;
+        if (tipX - b.x < 160) this.setAnglerState(a, "leaving");
+        else if (tipX - b.x < config.anglerCastRange && tipX < this.width - 20) this.setAnglerState(a, "casting");
+        break;
+      case "casting":
+        a.hookX = tipX;
+        // The rod whips forward, then the bobber plops in and the hook sinks to where the fish is now.
+        if (a.t >= 0.5) {
+          this.setAnglerState(a, "fishing");
+          a.hookY = SURFACE_Y;
+          a.hookVy = 0;
+          a.target = Math.max(SURFACE_Y + 60, Math.min(GROUND_Y - 40, b.y));
+          this.ripple(tipX, 5);
+          this.events.push({ type: "anglerCast" });
+        }
+        break;
+      case "fishing": {
+        a.hookX = tipX + Math.sin(this.time * 2 + a.seed) * 3;
+        // Sinks to his depth, then he jigs it gently up and down there.
+        const jig = a.target + Math.sin(a.t * 1.6 + a.seed) * config.anglerJig;
+        a.hookY = Math.min(SURFACE_Y + config.anglerSinkSpeed * a.t, jig);
+        if (!playing) break;
+        const dist = Math.hypot(a.hookX - b.x, a.hookY - b.y);
+        // The hook always catches, spikes or not.
+        if (dist < r + HOOK_R) {
+          this.hookFish(a);
+          break;
+        }
+        // Spines snag the line above it.
+        const reach = r * config.oceanJellyPopReach * 0.8;
+        if (this.spike.spiked && Math.abs(a.hookX - b.x) < reach && b.y < a.hookY - 14 && b.y + reach > SURFACE_Y) {
+          this.setAnglerState(a, "tugging");
+          a.cutX = b.x;
+          a.cutY = b.y;
+          a.click = 0;
+          break;
+        }
+        a.closest = Math.min(a.closest, dist);
+        if (a.hookX < b.x - r - 20) {
+          if (!a.dodged && a.closest < r + HOOK_R + 26) {
+            a.dodged = true;
+            this.bonus += Math.round(config.targetPoints * config.anglerCloseMultiplier);
+            this.floaters.push({ x: b.x, y: b.y - 46, text: "CLOSE ONE!", color: "#bde0fe", size: 20, life: 0.9, maxLife: 0.9 });
+          }
+          this.setAnglerState(a, "leaving");
+        }
+        break;
+      }
+      case "leaving":
+        // Reels the empty hook back in.
+        a.hookX = tipX;
+        a.hookY = Math.max(SURFACE_Y, a.hookY - 260 * dt);
+        break;
+      case "hooked": {
+        a.reel = Math.min(1, a.reel + dt / Math.max(0.3, config.anglerReelTime));
+        // The boat swings round over the fish.
+        a.x += (a.hookX + ANGLER_TIP_DX - a.x) * Math.min(1, dt * 4);
+        a.click -= dt;
+        if (a.click <= 0) {
+          a.click = 0.09 - a.reel * 0.04;
+          this.events.push({ type: "anglerReel" });
+        }
+        if (a.reel >= 1) this.landFish(a);
+        break;
+      }
+      case "landed":
+        a.x += (a.hookX + ANGLER_TIP_DX - a.x) * Math.min(1, dt * 4);
+        // The camera flash: he takes his trophy photo.
+        if (this.trophy !== null && a.t >= 0.8 && !this.polaroid) {
+          this.flash = 0.7;
+          this.polaroid = { photoId: this.trophy, life: 2.4, maxLife: 2.4, trophy: true };
+          this.events.push({ type: "anglerPhoto" });
+        }
+        break;
+      case "tugging": {
+        // The line's snagged on the fish: he hauls on it, the hook dangling below, until it parts.
+        a.cutX = b.x;
+        a.cutY = b.y;
+        a.hookX += (b.x - a.hookX) * Math.min(1, dt * 6);
+        a.hookY = Math.max(a.hookY, b.y + 30);
+        a.click -= dt;
+        if (a.click <= 0) {
+          a.click = 0.05;
+          this.events.push({ type: "anglerReel" });
+        }
+        if (a.t >= ANGLER_TUG_TIME) this.snapLine(a);
+        break;
+      }
+      case "snapped": {
+        // The end on his rod whips back up; the cut-off end, hook and all, sinks and drifts away.
+        a.stubY = Math.max(SURFACE_Y, a.stubY - 900 * dt);
+        a.hookVy = Math.min(110, a.hookVy + 200 * dt);
+        a.hookY = Math.min(GROUND_Y + 60, a.hookY + a.hookVy * dt);
+        a.cutY = Math.min(a.hookY - 20, a.cutY + a.hookVy * 0.8 * dt);
+        a.hookX -= speed * dt;
+        a.cutX += (a.hookX - a.cutX) * Math.min(1, dt * 1.5) - speed * dt;
+        a.hatX -= (speed - 14) * dt;
+        if (a.t - dt < 0.5 && a.t >= 0.5) this.ripple(a.hatX + ANGLER_HAT_DX, 6);
+        break;
+      }
+    }
+    if (a.x < -220 && a.hatX + ANGLER_HAT_DX < -60 && a.hookX < -40 && a.cutX < -40) this.angler = null;
+  }
+
+  /** Bubbles and spray where the bobber or something small hits the surface. */
+  private ripple(x: number, n: number): void {
+    for (let i = 0; i < n; i++) {
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 10, y: SURFACE_Y + 4,
+        vx: (Math.random() - 0.5) * 50, vy: 20 + Math.random() * 50,
+        life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 2 + Math.random() * 3,
+        color: "#e0fbfc", gravity: -160, world: true,
+      });
+    }
+  }
+
+  /** The fish touched the hook: the world holds still and he reels it in. */
+  private hookFish(a: Angler): void {
+    this.setAnglerState(a, "hooked");
+    a.reel = 0;
+    a.click = 0;
+    a.fromY = this.bird.y;
+    this.combo = 0;
+    this.shake = 8;
+    this.bird.stretchV -= 8;
+    this.floaters.push({ x: this.bird.x, y: this.bird.y - 50, text: "HOOKED!", color: "#ff595e", size: 26, life: 0.9, maxLife: 0.9 });
+    this.events.push({ type: "anglerHooked" });
+  }
+
+  /**
+   * Hooked: the fish is reeled up from where it bit toward the surface, slowly
+   * at first, thrashing on the line. Landed: it's yanked out of the water.
+   */
+  private reelFish(a: Angler, dt: number): void {
+    const b = this.bird;
+    const r = this.bodyRadius;
+    if (a.state === "hooked") {
+      const k = a.reel * a.reel;
+      const y = a.fromY + (SURFACE_Y + r * 0.5 - a.fromY) * k;
+      b.vy = (y - b.y) / Math.max(1e-3, dt);
+      b.y = y;
+      b.rot = -0.5 + Math.sin(this.time * 24) * 0.25;
+      this.bubbleTrail(dt, 30);
+    } else {
+      const wasUnder = b.y > SURFACE_Y;
+      b.vy = Math.max(-900, b.vy - 2400 * dt);
+      b.y += b.vy * dt;
+      b.rot += (-1.3 - b.rot) * Math.min(1, dt * 6);
+      if (wasUnder && b.y <= SURFACE_Y) this.splash(b.x, SURFACE_Y, 1, 40);
+    }
+    a.hookX = b.x + r * 0.9;
+    a.hookY = b.y;
+    this.updateSpring(dt);
+  }
+
+  /** He got it: out of the water it goes, and the run is over. */
+  private landFish(a: Angler): void {
+    this.setAnglerState(a, "landed");
+    this.phase = "dying";
+    this.dyingTime = 0;
+    this.spike = initialSpikeState();
+    this.shake = 10;
+    this.bird.vy = -200;
+    this.message = { text: pick(CAUGHT_MESSAGES), life: 2.6 };
+    const photoId = this.nextPhotoId++;
+    this.trophy = photoId;
+    this.events.push({ type: "anglerLanded", photoId });
+  }
+
+  /**
+   * The snagged line parts. He was hauling on it, so with the pull suddenly
+   * gone he topples backwards into his boat, and his hat flies off.
+   */
+  private snapLine(a: Angler): void {
+    this.setAnglerState(a, "snapped");
+    a.hookVy = 0;
+    a.stubY = a.cutY;
+    a.hatX = a.x;
+    this.anglersSnapped++;
+    this.combo++;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    this.targetsHit++;
+    const points = Math.round(config.targetPoints * config.anglerSnapMultiplier * this.comboMultiplier);
+    this.bonus += points;
+    const b = this.bird;
+    this.floaters.push({ x: b.x, y: b.y - 60, text: pick(SNAPPED_TEXT), color: "#ffd60a", size: 28, life: 1.2, maxLife: 1.2 });
+    const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
+    this.floaters.push({ x: b.x, y: b.y - 30, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
+    this.shake = Math.max(this.shake, 6);
+    this.events.push({ type: "lineSnapped", points });
   }
 
   // --- stage transitions -------------------------------------------------------------
@@ -1437,6 +1901,11 @@ export class Game {
     for (const p of this.poops) p.x -= dx;
     for (const d of this.doves) d.x -= dx;
     if (this.bouquet) this.bouquet.x -= dx;
+    if (this.angler) {
+      this.angler.x -= dx;
+      this.angler.hookX -= dx;
+      this.angler.hatX -= dx;
+    }
   }
 
   /**
@@ -1463,7 +1932,11 @@ export class Game {
     this.wedding = null;
     this.bouquet = null;
     this.doves = [];
-    if (to === "city") this.weddingPlanned = Math.random() < config.weddingChance;
+    this.angler = null;
+    if (to === "city") {
+      this.cityStage++;
+      this.weddingPlanned = Math.random() < config.weddingChance;
+    } else this.anglerPlanned = Math.random() < config.anglerChance;
     this.message = null;
     this.lastGapCenter = 260;
     this.jellySpawnAcc = 0;
@@ -1542,13 +2015,13 @@ export class Game {
 
   private updateObstacles(dt: number, speed: number): void {
     for (const o of this.obstacles) o.x -= speed * dt;
-    this.obstacles = this.obstacles.filter((o) => o.x + o.w > -60);
+    this.obstacles = this.obstacles.filter((o) => obstacleSpan(o).right > -60);
 
     for (const o of this.obstacles) {
-      if (!o.passed && o.x + o.w < this.bird.x - BIRD_RADIUS) o.passed = true;
+      if (!o.passed && obstacleSpan(o).right < this.bird.x - BIRD_RADIUS) o.passed = true;
     }
 
-    if (this.phase !== "playing") return;
+    if (this.phase !== "playing" || this.demo) return;
     if (this.calmWater && this.stage === "ocean") {
       // Nothing spawns; the first obstacle stays a full delay ahead.
       this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + config.oceanFirstObstacleDelay);
@@ -1565,11 +2038,13 @@ export class Game {
       // A pending front page always gets the next slot.
       const special = this.stageObstacles > 0 && this.pendingTabloids.length === 0;
       const roll = Math.random();
-      const powerLine = special && roll < config.powerLineChance;
-      const balloon = special && !powerLine && roll < config.powerLineChance + config.balloonChance;
+      const powerLineChance = this.powerLinesAllowed ? config.powerLineChance : 0;
+      const powerLine = special && roll < powerLineChance;
+      const balloon = special && !powerLine && roll < powerLineChance + config.balloonChance;
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnShore();
-      else if (ocean) this.spawnOceanObstacle();
+      else if (ocean && this.anglerDue(before)) extra = this.spawnAngler();
+      else if (ocean) extra = this.spawnOceanObstacle();
       else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();
       else if (balloon) extra = this.spawnBalloon();
@@ -1581,11 +2056,19 @@ export class Game {
     }
   }
 
-  /** Picks a gap centre in [top + margin + gap/2, GROUND_Y − bottomMargin − gap/2], within maxJump of the last one. */
-  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number, bottomMargin = margin): number {
+  /**
+   * Picks a gap centre in [top + margin + gap/2, GROUND_Y − bottomMargin − gap/2], within maxJump of the last one.
+   * With `highChance`, the gap lands in the top TALL_FRACTION of that range (a tall building) only with that
+   * chance, and lower down otherwise; without it, anywhere.
+   */
+  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number, bottomMargin = margin, highChance?: number): number {
     const minCenter = top + margin + gap / 2;
     const maxCenter = GROUND_Y - bottomMargin - gap / 2;
-    let center = minCenter + Math.random() * Math.max(0, maxCenter - minCenter);
+    let u = Math.random();
+    if (highChance !== undefined) {
+      u = Math.random() < highChance ? u * TALL_FRACTION : TALL_FRACTION + u * (1 - TALL_FRACTION);
+    }
+    let center = minCenter + u * Math.max(0, maxCenter - minCenter);
     center = Math.max(this.lastGapCenter - maxJump, Math.min(this.lastGapCenter + maxJump, center));
     center = Math.max(minCenter, Math.min(maxCenter, center));
     this.lastGapCenter = center;
@@ -1598,28 +2081,58 @@ export class Game {
     // A published photo goes up on a roadside billboard, which needs the whole board below the gap.
     const tabloid = this.pendingTabloids.shift() ?? null;
     // Limit how far the gap jumps, so the next gap is always reachable.
-    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50);
+    // Tall buildings (a gap high up, a long climb) are rare in the first city and get more common.
+    const tallChance = ramp(config.tallBuildingChance, config.tallBuildingChanceMax, this.stageLevel());
+    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50, tallChance);
 
-    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "chimney", "tower"]);
-    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
+    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "building", "tower"]);
+    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "tower" ? 78 : 96 + Math.random() * 30;
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid,
+      passed: false, splats: [], tabloid, anchor: false,
     });
   }
 
-  private spawnOceanObstacle(): void {
+  /**
+   * Coral or a rock from the sea floor, or a boat whose anchor hangs down from
+   * the surface: over coral or a rock (a gap between them), or over open water
+   * (dive under it). Now and then the sea floor holds an old shipwreck
+   * instead: a long, low hull with one broken mast. Returns the extra room a
+   * wreck's long hull needs before the next obstacle.
+   */
+  private spawnOceanObstacle(): number {
     const gap = ramp(config.oceanGap, config.oceanGapMin, this.difficulty);
-    const center = this.pickGapCenter(gap, SURFACE_Y, 40, config.oceanGapJump);
-    const bottom: BottomKind = pick(["coral", "coral", "rock"]);
-    const w = bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    // Not the last one: it can still be on screen when the fish leaps out, and
+    // its boat would vanish from the harbour as the stage switches. Nor while a
+    // fisherman is out: he rows against the scroll, so it would catch up with
+    // his boat and his line.
+    const last = this.stageObstacles >= Math.round(config.oceanObstacles) - 1;
+    const anchor = !last && !this.angler && Math.random() < config.oceanAnchorChance;
+    const open = anchor && Math.random() < config.oceanAnchorOpenChance;
+    const wreck = !open && Math.random() < config.oceanWreckChance;
+    // The boat, the shortest chain and the anchor itself all sit above the gap.
+    let top = anchor ? ANCHOR_TOP_MIN : SURFACE_Y;
+    let margin = anchor ? 10 : 40;
+    let bottomMargin = open ? 0 : 40;
+    if (wreck) {
+      // The gap's bottom is the broken mast's tip: low, so the wreck is easy to clear.
+      top = Math.max(top + margin, GROUND_Y - WRECK_HULL_H - WRECK_MAST_MAX - gap);
+      margin = 0;
+      bottomMargin = WRECK_HULL_H + WRECK_MAST_MIN;
+    }
+    const center = this.pickGapCenter(gap, top, margin, config.oceanGapJump, bottomMargin);
+    const bottom: BottomKind = open ? "none" : wreck ? "wreck" : pick(["coral", "coral", "rock"]);
+    const w = bottom === "wreck" ? 210 + Math.random() * 50 : bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    const colors = bottom === "wreck" ? WRECK_COLORS : bottom === "rock" ? ROCK_COLORS : CORAL_COLORS;
     this.obstacles.push({
-      x: this.width + 40, w, gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid: null,
+      x: this.width + 40, w, gapTop: center - gap / 2,
+      gapBottom: open ? GROUND_Y : center + gap / 2,
+      bottom, color: pick(colors), seed: Math.random() * 1000,
+      passed: false, splats: [], tabloid: null, anchor,
     });
+    return bottom === "wreck" ? w - 90 : 0;
   }
 
   /** The stage ends at the waterfront: the quay's edge (city) or the far quay (ocean) scrolls in. */
@@ -1644,11 +2157,14 @@ export class Game {
 
   /** Spawns a power line just off-screen. Returns its length (first to last pole). */
   private spawnPowerLine(): number {
-    const d = this.difficulty;
+    const first = Math.round(config.powerLineFirstCity);
+    const d = this.stageLevel(first);
     const poles = 3 + Math.floor(Math.random() * 3);
     const span = config.powerLineSpan * (0.9 + Math.random() * 0.2);
     const r = Math.random();
-    const count = d < 0.25 ? 1 : d < 0.6 ? (r < 0.4 ? 1 : 2) : r < 0.5 ? 2 : 3;
+    // The wires stack up (and the top one climbs higher) city by city: one wire, then one or two, then two or three.
+    const later = this.cityStage - first;
+    const count = later <= 0 ? 1 : later === 1 ? (r < 0.4 ? 1 : 2) : r < 0.5 ? 2 : 3;
     // Room to fly over the pole tops and under the lowest wire, even where it
     // sags most: stacked wires squeeze closer together if they'd go too high.
     const highestTop = 160;
@@ -1675,7 +2191,7 @@ export class Game {
         taken.push(t);
         line.pigeons.push({
           wire: Math.floor(Math.random() * count), span: s, t,
-          facing: Math.random() < 0.5 ? 1 : -1, seed: Math.random() * 1000, startle: 0, flyer: null,
+          facing: Math.random() < 0.5 ? 1 : -1, seed: Math.random() * 1000, startle: 0, flyer: null, wreck: null,
         });
       }
     }
@@ -1688,6 +2204,7 @@ export class Game {
       l.x -= speed * dt;
       for (const p of l.pigeons) {
         p.startle = Math.max(0, p.startle - dt);
+        if (p.wreck) this.updateWreck(p.wreck, dt, speed);
         const f = p.flyer;
         if (!f) continue;
         // Flies off forward and up, flapping harder as it goes.
@@ -1699,18 +2216,78 @@ export class Game {
     this.powerLines = this.powerLines.filter((l) => l.x + l.span * (l.poles - 1) > -80);
   }
 
+  private updateWreck(w: DroneWreck, dt: number, speed: number): void {
+    if (w.landed < 0) {
+      w.vy += 900 * dt;
+      w.x += (w.vx - speed) * dt;
+      w.y += w.vy * dt;
+      w.rot += w.spin * dt;
+      // Trails smoke and sparks on the way down.
+      if (Math.random() < dt * 40) {
+        const spark = Math.random() < 0.5;
+        this.particles.push({
+          x: w.x + (Math.random() - 0.5) * 10, y: w.y - 14, vx: (Math.random() - 0.5) * 60, vy: spark ? -80 : -30,
+          life: 0.5, maxLife: 0.5, size: spark ? 1.5 : 3 + Math.random() * 3, color: spark ? "#fff3b0" : "#6c757d",
+          gravity: spark ? 400 : -60, world: true,
+        });
+      }
+      if (w.y < GROUND_Y - 2) return;
+      w.y = GROUND_Y - 2;
+      w.landed = 0;
+      this.crashDrone(w);
+      return;
+    }
+    w.x -= speed * dt;
+    w.landed += dt;
+    // The exposed wires keep shorting out.
+    if (Math.random() < dt * 4) {
+      for (let i = 0; i < 4; i++) {
+        const a = -Math.PI * (0.2 + Math.random() * 0.6);
+        this.particles.push({
+          x: w.x + 2, y: w.y - 14, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
+          life: 0.3, maxLife: 0.3, size: 1.2 + Math.random(), color: Math.random() < 0.5 ? "#fff3b0" : "#9bf6ff",
+          gravity: 600, world: true,
+        });
+      }
+    }
+  }
+
+  /** A falling drone hits the street: it breaks open in a shower of sparks and parts. */
+  private crashDrone(w: DroneWreck): void {
+    this.shake = Math.max(this.shake, 6);
+    for (let i = 0; i < 22; i++) {
+      const a = -Math.PI * Math.random();
+      const s = 80 + Math.random() * 220;
+      const part = i % 3 === 0;
+      this.particles.push({
+        x: w.x, y: w.y - 8, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 0.4 + Math.random() * 0.5, maxLife: 0.9, size: part ? 2 + Math.random() * 2 : 1.2 + Math.random() * 1.3,
+        color: part ? (Math.random() < 0.5 ? "#2d6a4f" : "#adb5bd") : Math.random() < 0.6 ? "#fff3b0" : "#9bf6ff",
+        gravity: 800, world: true,
+      });
+    }
+    this.floaters.push({ x: w.x, y: w.y - 60, text: "BIRDS AREN'T REAL!", color: "#9bf6ff", size: 22, life: 1.6, maxLife: 1.6 });
+    this.events.push({ type: "droneCrashed" });
+  }
+
   /** Returns true if the poop hit a pigeon. */
   private poopHitsPigeon(p: Poop): boolean {
     for (const l of this.powerLines) {
       for (const pg of l.pigeons) {
-        if (pg.flyer) continue;
+        if (pg.flyer || pg.wreck) continue;
         const pos = pigeonPos(l, pg);
         const dx = p.x - pos.x;
         const dy = p.y - (pos.y - PIGEON_R);
         const reach = p.r + PIGEON_R;
         if (dx * dx + dy * dy >= reach * reach) continue;
-        pg.flyer = { x: pos.x, y: pos.y, vx: 40 + Math.random() * 80, vy: -140 };
-        for (const other of l.pigeons) if (other !== pg && other.span === pg.span && !other.flyer) other.startle = 0.35;
+        if (Math.random() < config.droneChance) {
+          const spin = (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4);
+          pg.wreck = { x: pos.x, y: pos.y, vx: 20 + Math.random() * 40, vy: -120, rot: 0, spin, landed: -1 };
+          this.events.push({ type: "droneDown" });
+        } else {
+          pg.flyer = { x: pos.x, y: pos.y, vx: 40 + Math.random() * 80, vy: -140 };
+        }
+        for (const other of l.pigeons) if (other !== pg && other.span === pg.span && !other.flyer && !other.wreck) other.startle = 0.35;
         this.combo++;
         this.bestCombo = Math.max(this.bestCombo, this.combo);
         this.targetsHit++;
@@ -1969,17 +2546,49 @@ export class Game {
       if (t.pap) this.updatePaparazzo(t, dt);
       if (t.kid) this.updateKid(t, dt);
       if (t.chute) this.updateParachutist(t, dt, speed);
+      if (t.rage) this.updateRage(t, dt);
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
-    this.targetSpawnAcc += dt * config.targetSpawnRate;
+    this.targetSpawnAcc += dt * config.targetSpawnRate * (this.demo ? DEMO_SPAWN_SCALE : 1);
     if (this.targetSpawnAcc >= 1) {
       this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
-      if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
+      if (this.demo) this.spawnTarget();
+      else if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
       else if (this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
       // Nobody wanders through the wedding; the road stays busy.
       else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
+  }
+
+  // --- angry pedestrians ------------------------------------------------------
+
+  /** Some splatted pedestrians stop, turn on the bird and curse; another hit sets them off again. */
+  private provoke(t: Target): void {
+    if (t.kind !== "pedestrian" || t.wedding) return;
+    if (!t.rage) {
+      if (Math.random() >= config.angryChance) return;
+      t.rage = { t: 0, walk: t.speed, curse: pick(CURSES) };
+    } else {
+      t.rage.t = 0;
+      t.rage.curse = pick(CURSES.filter((c) => c !== t.rage?.curse));
+    }
+    t.speed = 0;
+    this.events.push({ type: "curse" });
+  }
+
+  private updateRage(t: Target, dt: number): void {
+    const rage = t.rage;
+    if (!rage) return;
+    rage.t += dt;
+    if (rage.t < config.angryDuration) {
+      t.facing = this.bird.x < t.x ? -1 : 1;
+      return;
+    }
+    // Calmed down (mostly): walk on as before.
+    t.rage = null;
+    t.speed = rage.walk;
+    if (rage.walk !== 0) t.facing = rage.walk < 0 ? -1 : 1;
   }
 
   // --- paparazzi ---------------------------------------------------------------
@@ -2083,7 +2692,8 @@ export class Game {
 
   private spawnTarget(only?: "car"): void {
     const r = Math.random();
-    const kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 0.85 ? "pedestrian" : "statue");
+    let kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
+    if (kind === "statue" && !this.statueFits(this.width + 80, 46)) kind = "pedestrian";
     // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
     const roadY = GROUND_Y + 68;
     let t: Target;
@@ -2109,11 +2719,38 @@ export class Game {
     this.targets.push(t);
   }
 
+  /**
+   * Whether a statue at x (centre) with width w stands clear of everything else
+   * on the sidewalk: buildings, power-line poles, other statues and paparazzi,
+   * and the slot the next obstacle (or the church, or the quay) will scroll into.
+   */
+  private statueFits(x: number, w: number): boolean {
+    const margin = 24;
+    const left = x - w / 2 - margin;
+    const right = x + w / 2 + margin;
+    const clear = (l: number, r: number) => r < left || l > right;
+    for (const o of this.obstacles) {
+      const s = obstacleSpan(o);
+      if (!clear(s.left, s.right)) return false;
+    }
+    for (const l of this.powerLines) {
+      for (let i = 0; i < l.poles; i++) if (!clear(poleX(l, i) - 6, poleX(l, i) + 6)) return false;
+    }
+    for (const t of this.targets) {
+      if ((t.kind === "statue" || t.pap) && !clear(t.x - t.w / 2, t.x + t.w / 2)) return false;
+    }
+    // The next obstacle spawns at width + 40 once we've travelled up to
+    // nextObstacleAt; by then this statue will have scrolled that far left.
+    if (!this.demo && right > this.width + 40 + (this.nextObstacleAt - this.distance)) return false;
+    return true;
+  }
+
   // --- slingshot kids ----------------------------------------------------------
 
   private kidDue(): boolean {
     return (
       !this.gateSpawned &&
+      this.cityStage >= Math.round(config.kidFirstCity) &&
       this.distance >= config.kidMinDistance &&
       this.distance - this.lastKidAt >= config.kidMinGap &&
       !this.targets.some(kidArmed) &&
@@ -2124,13 +2761,14 @@ export class Game {
 
   private spawnKid(): void {
     this.lastKidAt = this.distance;
-    const d = this.difficulty;
+    // One shot in the first city with kids, one more in each city after.
+    const later = Math.max(0, this.cityStage - Math.round(config.kidFirstCity));
     this.targets.push({
       x: this.width + 40, y: GROUND_Y + 20, w: 34, h: 62, kind: "kid", speed: -config.kidWalkSpeed,
       color: pick(PERSON_COLORS), seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, chute: null,
       kid: {
         state: "walking", t: 0, pull: 0, windup: 1,
-        shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + Math.floor(d * config.kidShotsMax)),
+        shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + later),
         aimVx: 0, aimVy: 0, twang: 0,
       },
     });
@@ -2213,7 +2851,7 @@ export class Game {
   private startAim(t: Target): void {
     const k = t.kid!;
     this.setKidState(t, "aiming");
-    k.windup = ramp(config.kidWindup, config.kidWindupMin, this.difficulty);
+    k.windup = ramp(config.kidWindup, config.kidWindupMin, this.stageLevel(Math.round(config.kidFirstCity)));
     this.aimKid(t);
     this.events.push({ type: "slingshotDraw", windup: k.windup });
   }
@@ -2224,7 +2862,7 @@ export class Game {
    */
   private aimKid(t: Target): void {
     const k = t.kid!;
-    const T = Math.max(0.2, ramp(config.kidFlightTime, config.kidFlightTimeMin, this.difficulty));
+    const T = Math.max(0.2, ramp(config.kidFlightTime, config.kidFlightTimeMin, this.stageLevel(Math.round(config.kidFirstCity))));
     const s = slingshotPos(t);
     const b = this.bird;
     const ty = Math.max(BIRD_RADIUS, Math.min(GROUND_Y - 40, b.y + b.vy * T * config.kidLead));
@@ -2314,7 +2952,7 @@ export class Game {
     // Sitting pigeons get knocked off their wire (no points for the kid).
     for (const l of this.powerLines) {
       for (const pg of l.pigeons) {
-        if (pg.flyer) continue;
+        if (pg.flyer || pg.wreck) continue;
         const pos = pigeonPos(l, pg);
         const reach = PEBBLE_R + PIGEON_R;
         if ((pos.x - p.x) ** 2 + (pos.y - PIGEON_R - p.y) ** 2 >= reach * reach) continue;
@@ -2425,7 +3063,7 @@ export class Game {
     const church: Obstacle = {
       x: churchX, w: CHURCH_W, gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom: "church", color: "#f4ecdc", seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid: null,
+      passed: false, splats: [], tabloid: null, anchor: false,
     };
     this.obstacles.push(church);
 
@@ -2770,6 +3408,7 @@ export class Game {
       this.splatParticles(p.x, p.y, p.r, true);
       this.events.push({ type: "hit", points, combo: this.combo, kind: t.kind });
       this.events.push({ type: "splat", big: p.big });
+      this.provoke(t);
       return true;
     }
     // Obstacles
@@ -2886,6 +3525,24 @@ export function churchGeometry(o: Obstacle): { cx: number; towerTop: number; nav
   return { cx: o.x + o.w / 2, towerTop, naveTop: Math.max(towerTop + 40, GROUND_Y - 150) };
 }
 
+/** A shipwreck's hull: how high its deck stands above the sea floor. */
+export const WRECK_HULL_H = 62;
+/** Its broken mast's height above the deck (the mast's tip is the gap's bottom edge). */
+export const WRECK_MAST_MIN = 24;
+export const WRECK_MAST_MAX = 96;
+/** The hull's bow and stern curve in: this much of each end doesn't count for collisions. */
+const WRECK_END_INSET = 18;
+export const WRECK_MAST_W = 12;
+
+/**
+ * A shipwreck's layout: the deck height, which way the bow points (+1: right),
+ * and the mast's centre, set back from the middle toward the stern.
+ */
+export function wreckGeometry(o: Obstacle): { deck: number; facing: 1 | -1; mastX: number } {
+  const facing = Math.floor(o.seed * 7) % 2 === 0 ? 1 : -1;
+  return { deck: GROUND_Y - WRECK_HULL_H, facing, mastX: o.x + o.w / 2 - facing * o.w * 0.14 };
+}
+
 /** The couple stands this far left of the church. */
 const WEDDING_COUPLE_DX = 105;
 
@@ -2902,8 +3559,53 @@ export function bouquetHand(bride: Target): { x: number; y: number } {
   return { x: bride.x + bride.facing * 10, y: bride.y - bride.h * 0.55 };
 }
 
-/** Collision rectangles for an obstacle, shared by rendering and physics. */
+/** The anchor's boat: width, and how far its hull reaches below the surface (its deck is BOAT_FREEBOARD above). */
+export const BOAT_W = 150;
+export const BOAT_DRAFT = 22;
+export const BOAT_FREEBOARD = 18;
+/** The anchor hangs with its crown at the gap's top edge. */
+export const ANCHOR_W = 60;
+export const ANCHOR_H = 66;
+/** The shortest chain between the hull and the anchor's ring. */
+const ANCHOR_MIN_CHAIN = 16;
+/** The highest an anchored obstacle's gap can start. */
+const ANCHOR_TOP_MIN = SURFACE_Y + BOAT_DRAFT + ANCHOR_MIN_CHAIN + ANCHOR_H;
+
+/** Horizontal extent of an obstacle, including an anchor's boat (which is wider than the column). */
+export function obstacleSpan(o: Obstacle): { left: number; right: number } {
+  if (!o.anchor) return { left: o.x, right: o.x + o.w };
+  const cx = o.x + o.w / 2;
+  return { left: Math.min(o.x, cx - BOAT_W / 2), right: Math.max(o.x + o.w, cx + BOAT_W / 2) };
+}
+
+/** Collision rectangles for an anchor and its boat: hull, chain and shank, stock, arms. */
+function anchorRects(o: Obstacle): Rect[] {
+  const cx = o.x + o.w / 2;
+  const hullBottom = SURFACE_Y + BOAT_DRAFT;
+  const top = o.gapTop - ANCHOR_H;
+  return [
+    // The bow and the transom curve up toward the keel: only the hull's middle counts.
+    { x: cx - BOAT_W / 2 + 20, y: SURFACE_Y - BOAT_FREEBOARD, w: BOAT_W - 32, h: BOAT_FREEBOARD + BOAT_DRAFT },
+    { x: cx - 5, y: hullBottom, w: 10, h: o.gapTop - 12 - hullBottom },
+    { x: cx - 21, y: top + 15, w: 42, h: 9 },
+    // The arms curve up to the flukes: a wide band above, the crown below.
+    { x: cx - ANCHOR_W / 2, y: o.gapTop - 36, w: ANCHOR_W, h: 22 },
+    { x: cx - 16, y: o.gapTop - 14, w: 32, h: 14 },
+  ];
+}
+
+/**
+ * Collision rectangles for an obstacle, shared by rendering and physics. The
+ * bottom part comes first (rendering takes it as the column), then an anchor's.
+ */
 export function obstacleRects(o: Obstacle): Rect[] {
+  const rects: Rect[] = [];
+  if (o.bottom !== "none") rects.push(...bottomRects(o));
+  if (o.anchor) rects.push(...anchorRects(o));
+  return rects;
+}
+
+function bottomRects(o: Obstacle): Rect[] {
   const rects: Rect[] = [];
   if (o.bottom === "church") {
     const { cx, towerTop, naveTop } = churchGeometry(o);
@@ -2912,6 +3614,12 @@ export function obstacleRects(o: Obstacle): Rect[] {
     rects.push({ x: cx - 20, y: o.gapBottom + CHURCH_SPIRE_H / 2, w: 40, h: CHURCH_SPIRE_H / 2 });
     rects.push({ x: cx - CHURCH_TOWER_W / 2, y: towerTop, w: CHURCH_TOWER_W, h: GROUND_Y - towerTop });
     rects.push({ x: o.x, y: naveTop - 14, w: o.w, h: GROUND_Y - naveTop + 14 });
+    return rects;
+  }
+  if (o.bottom === "wreck") {
+    const { deck, mastX } = wreckGeometry(o);
+    rects.push({ x: o.x + WRECK_END_INSET, y: deck, w: o.w - WRECK_END_INSET * 2, h: GROUND_Y - deck });
+    rects.push({ x: mastX - WRECK_MAST_W / 2, y: o.gapBottom, w: WRECK_MAST_W, h: deck - o.gapBottom });
     return rects;
   }
   // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).

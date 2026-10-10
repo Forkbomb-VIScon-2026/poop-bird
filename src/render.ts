@@ -2,10 +2,15 @@
 
 import { initialChargeState } from "./charge";
 import { config } from "./config";
+import { initialSpikeState } from "./swim";
 import {
   BIRD_RADIUS,
   GROUND_Y,
   SURFACE_Y,
+  ANCHOR_H,
+  BOAT_DRAFT,
+  BOAT_FREEBOARD,
+  BOAT_W,
   BILLBOARD_H,
   BILLBOARD_LEGS_INSET,
   BOUQUET_R,
@@ -13,6 +18,8 @@ import {
   CHURCH_TOWER_W,
   WEDDING_WINDUP,
   churchGeometry,
+  wreckGeometry,
+  WRECK_MAST_W,
   weddingX,
   OCEAN_DEPTH,
   VIEW_H,
@@ -26,15 +33,22 @@ import {
   poleRect,
   poleX,
   slingshotPos,
+  ANGLER_HAT_DX,
+  ANGLER_TOPPLE_TIME,
+  ANGLER_TUG_TIME,
+  ANGLER_TIP_DX,
+  type Angler,
   type Balloon,
   type Game,
   type Jelly,
   type Obstacle,
   type Pebble,
+  type DroneWreck,
   type Pigeon,
   type PowerLine,
   type Splat,
   type Tabloid,
+  type Rage,
   type Target,
   type Bouquet,
   type Dove,
@@ -92,6 +106,8 @@ const CLOUDS = Array.from({ length: 9 }, (_, i) => ({
   y: 30 + rnd(i + 20) * 200,
   s: 0.6 + rnd(i + 30) * 0.9,
 }));
+/** Topside paint of the anchored boats in the ocean. */
+const BOAT_COLORS = ["#f8f9fa", "#ffd166", "#4ea8de", "#06d6a0", "#ef8354"];
 // Ocean parallax: far rock silhouettes and mid-distance kelp.
 const FAR_ROCKS = makeSkyline(3, SKYLINE_LEN, 50, 190);
 const KELP = Array.from({ length: 26 }, (_, i) => ({
@@ -233,12 +249,14 @@ export class Renderer {
     for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
     for (const d of game.doves) drawDove(ctx, d, game.time);
     for (const j of game.jellies) this.drawJelly(j, game.time, game.spike.spiked);
+    if (game.angler) this.drawAngler(game.angler, game);
     this.drawPoops(game);
     for (const p of game.pebbles) drawPebble(this.ctx, p);
     // During a transition the splash and bubbles fly over the creature.
     if (!game.transition) this.drawParticles(game);
     if (ocean) this.drawFish(game);
     else this.drawBird(game);
+    if (game.angler && !game.transition) this.drawHookedCue(game.angler, game);
     // Over the bird, so the crosshair reads on it.
     if (!game.transition) for (const t of game.targets) if (t.kid) this.drawKidAim(t, game);
     if (game.bouquet) drawBouquet(ctx, game.bouquet);
@@ -247,7 +265,7 @@ export class Renderer {
       this.drawParticles(game);
       // A held dive (tutorial, puff calibration) shows the meter, so the player sees their puff.
       if (ocean && game.holdTransition) this.drawPuffMeter(game);
-    } else if (game.phase === "playing") {
+    } else if (game.phase === "playing" && !game.demo) {
       if (ocean) this.drawPuffMeter(game);
       else this.drawChargeMeter(game);
     }
@@ -548,7 +566,10 @@ export class Renderer {
   // --- obstacles --------------------------------------------------------------
 
   private drawObstacle(o: Obstacle, time: number): void {
+    if (o.anchor) this.drawAnchoredBoat(o);
+    if (o.bottom === "none") return;
     if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
+    if (o.bottom === "wreck") return this.drawWreck(o, time);
     if (o.bottom === "church") return drawChurch(this.ctx, o, time);
     const ctx = this.ctx;
     const [base] = obstacleRects(o);
@@ -558,41 +579,6 @@ export class Renderer {
     // Bottom part
     if (o.bottom === "billboard") {
       this.drawBillboard(o, time);
-    } else if (o.bottom === "chimney") {
-      ctx.fillStyle = "#a44a3f";
-      roundRect(ctx, base.x, base.y, base.w, base.h + 4, 4);
-      ctx.fill();
-      ctx.stroke();
-      // Bricks
-      ctx.strokeStyle = "rgba(0,0,0,0.18)";
-      ctx.lineWidth = 2;
-      for (let y = base.y + 16, row = 0; y < GROUND_Y; y += 14, row++) {
-        ctx.beginPath();
-        ctx.moveTo(base.x + 3, y);
-        ctx.lineTo(base.x + base.w - 3, y);
-        ctx.stroke();
-        for (let x = base.x + (row % 2 ? 10 : 22); x < base.x + base.w - 4; x += 24) {
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x, y + 14);
-          ctx.stroke();
-        }
-      }
-      // Cap
-      ctx.fillStyle = "#6b2d26";
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 3;
-      roundRect(ctx, base.x - 6, base.y - 2, base.w + 12, 16, 3);
-      ctx.fill();
-      ctx.stroke();
-      // Smoke puffs
-      for (let i = 0; i < 3; i++) {
-        const t = (time * 0.6 + i / 3) % 1;
-        ctx.fillStyle = `rgba(230,230,230,${0.6 * (1 - t)})`;
-        ctx.beginPath();
-        ctx.arc(base.x + base.w / 2 - t * 30, base.y - 10 - t * 50, 8 + t * 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
     } else {
       ctx.fillStyle = o.color;
       roundRect(ctx, base.x, base.y, base.w, base.h + 4, 5);
@@ -877,9 +863,17 @@ export class Renderer {
   private drawPigeon(l: PowerLine, p: Pigeon, time: number): void {
     const ctx = this.ctx;
     const f = p.flyer;
+    const w = p.wreck;
+    if (w && w.landed >= 0) {
+      if (w.x > -60 && w.x < this.width + 60) drawDroneWreck(ctx, w, p.seed, p.facing, time);
+      return;
+    }
     let x: number;
     let y: number;
-    if (f) {
+    if (w) {
+      x = w.x;
+      y = w.y;
+    } else if (f) {
       if (f.y < -40 || f.x < -40 || f.x > this.width + 40) return;
       x = f.x;
       y = f.y;
@@ -891,10 +885,16 @@ export class Renderer {
     ctx.translate(x, y);
     ctx.scale(PIGEON_SCALE * (f ? 1 : p.facing), PIGEON_SCALE);
     if (f) ctx.rotate(-0.35);
+    if (w) {
+      // Tumbling about its middle.
+      ctx.translate(0, -12);
+      ctx.rotate(w.rot);
+      ctx.translate(0, 12);
+    }
     ctx.lineWidth = 2;
     ctx.strokeStyle = OUTLINE;
 
-    if (!f) {
+    if (!f && !w) {
       // Feet gripping the wire
       ctx.strokeStyle = "#e07a5f";
       ctx.beginPath();
@@ -951,10 +951,26 @@ export class Renderer {
     ctx.lineTo(hx + 4, hy + 2);
     ctx.closePath();
     ctx.fill();
-    if (f) {
+    if (w) {
+      // Its cover's cracked: wires spill from the belly and the eye is a red LED.
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-6, -19);
+      ctx.lineTo(-3, -14);
+      ctx.lineTo(-6, -10);
+      ctx.lineTo(-2, -5);
+      ctx.stroke();
+      drawLooseWires(ctx, -3, -6, p.seed, time, 0.6);
+      drawSplat(ctx, 2, -14, 6, p.seed, 1);
+      drawLedEye(ctx, hx + 1.5, hy - 1.5, 1);
+    } else if (f) {
       drawX(ctx, hx + 1, hy - 1, 2.2);
       // Splattered
       drawSplat(ctx, -2, -16, 7, p.seed, 1);
+    } else if ((time * 0.6 + p.seed) % 7 < 0.12) {
+      // Now and then the eye glints red. Nobody notices.
+      drawLedEye(ctx, hx + 1.5, hy - 1.5, 0.7);
     } else {
       ctx.fillStyle = "#ff7b00";
       ctx.beginPath();
@@ -1531,6 +1547,17 @@ export class Renderer {
       ctx.restore();
       return;
     }
+    if (p.trophy) {
+      // The fisherman's trophy photo: a big snapshot in the middle, developing from white.
+      const pop = age < 0.22 ? 0.3 + (age / 0.22) * 0.8 : 1.1 - Math.min(0.1, (age - 0.22) * 0.8);
+      ctx.save();
+      ctx.translate(this.width / 2, VIEW_H / 2 + 10);
+      ctx.rotate(0.06 + Math.sin(age * 2) * 0.01);
+      ctx.scale(pop, pop);
+      drawTrophyPrint(ctx, -130, -120, 260, this.photos.get(p.photoId), Math.max(0, 1 - age / 0.7));
+      ctx.restore();
+      return;
+    }
     const pop = age < 0.18 ? 0.4 + (age / 0.18) * 0.75 : 1.15 - Math.min(0.15, (age - 0.18) * 1.2);
     const alpha = Math.min(1, p.life / 0.35);
     const w = 120;
@@ -1737,6 +1764,263 @@ export class Renderer {
     return out;
   }
 
+  // --- fisherman --------------------------------------------------------------
+
+  /** The rod tip in world coordinates (it whips while casting and bends under a hooked fish). */
+  private anglerTip(a: Angler, oy: number): { x: number; y: number } {
+    // In the boat's own (unscaled) coordinates.
+    let x = -ANGLER_TIP_DX / ANGLER_SCALE;
+    let y = ANGLER_TIP_Y;
+    if (a.state === "casting") {
+      // Back over his shoulder, then forward: rotate the rod about his hands.
+      const k = Math.min(1, a.t / 0.5);
+      const ang = k < 0.4 ? (k / 0.4) * 0.9 : 0.9 * (1 - (k - 0.4) / 0.6);
+      const hx = ANGLER_HANDS.x;
+      const hy = ANGLER_HANDS.y;
+      const dx = x - hx;
+      const dy = y - hy;
+      x = hx + dx * Math.cos(ang) - dy * Math.sin(ang);
+      y = hy + dx * Math.sin(ang) + dy * Math.cos(ang);
+    } else if (a.state === "hooked" || a.state === "landed" || a.state === "tugging") {
+      const pull = a.state === "hooked" ? 0.5 + a.reel * 0.5 : 1;
+      x += 12 * pull;
+      y += 12 * pull;
+    }
+    return { x: a.x + x * ANGLER_SCALE, y: oy + y * ANGLER_SCALE };
+  }
+
+  /** Where the rod tip actually is while he leans back by `lean` (he and his rod turn about his seat, see drawFisherman). */
+  private leanTip(a: Angler, oy: number, tip: { x: number; y: number }, lean: number): { x: number; y: number } {
+    const px = a.x + ANGLER_PIVOT.x * ANGLER_SCALE;
+    const py = oy + ANGLER_PIVOT.y * ANGLER_SCALE;
+    const dx = tip.x - px;
+    const dy = tip.y - py;
+    const c = Math.cos(lean);
+    const sn = Math.sin(lean);
+    return { x: px + dx * c - dy * sn, y: py + dx * sn + dy * c };
+  }
+
+  /**
+   * The fisherman's rowing boat on the surface, seen from just below: hull in
+   * the water, him sitting in it in his yellow oilskins and sou'wester, his
+   * line running down through the bobber to the hook and its worm.
+   */
+  private drawAngler(a: Angler, game: Game): void {
+    const ctx = this.ctx;
+    const time = game.time;
+    // The boat rides low: its waterline centre sits under the surface, so he fits in view above it.
+    const oy = SURFACE_Y + ANGLER_DRAFT + Math.sin(time * 2.2 + a.seed) * 1.5;
+    const tip = this.anglerTip(a, oy);
+    const snapped = a.state === "snapped";
+    const tugging = a.state === "tugging";
+    const reeling = a.state === "hooked" || a.state === "landed";
+    // How far he leans back: hauling on a snagged line, then, when it parts, over backwards into
+    // the boat; a while on his back, then up again, furious.
+    const topple = snapped ? toppleAmount(a.t) : 0;
+    const lean = snapped
+      ? topple * 1.45
+      : tugging
+        ? 0.15 + 0.3 * Math.min(1, a.t / ANGLER_TUG_TIME) + Math.sin(time * 40) * 0.03
+        : reeling
+          ? 0.22 + Math.sin(time * 22) * 0.05 + (a.state === "landed" ? 0.12 : 0)
+          : 0;
+    const realTip = this.leanTip(a, oy, tip, lean);
+
+    // The line.
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 1.3;
+    const hookDown = a.hookY > SURFACE_Y + 1;
+    if (reeling) {
+      line(ctx, realTip.x, realTip.y, a.hookX, a.hookY);
+    } else if (tugging) {
+      // Taut from the rod through the bobber to the spines it's snagged on; the hook dangles below.
+      const bx = realTip.x + (a.cutX - realTip.x) * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(realTip.x, realTip.y);
+      ctx.lineTo(bx, SURFACE_Y + 2);
+      ctx.lineTo(a.cutX, a.cutY);
+      ctx.lineTo(a.hookX, a.hookY - 12);
+      ctx.stroke();
+      drawBobber(ctx, bx, SURFACE_Y + 2);
+    } else if (snapped) {
+      // The end on his rod whips back up out of the water, then the bobber dangles from the tip.
+      if (a.stubY > SURFACE_Y + 1) {
+        ctx.beginPath();
+        ctx.moveTo(realTip.x, realTip.y);
+        ctx.lineTo(tip.x, SURFACE_Y);
+        ctx.lineTo(tip.x + Math.sin(time * 40) * 3, a.stubY);
+        ctx.stroke();
+        drawBobber(ctx, tip.x, SURFACE_Y);
+      } else {
+        line(ctx, realTip.x, realTip.y, realTip.x, realTip.y + 10);
+        drawBobber(ctx, realTip.x, realTip.y + 10);
+      }
+      // The cut-off end sinks away with the hook, frayed where the spines parted it.
+      if (a.hookY < GROUND_Y + 50) {
+        ctx.beginPath();
+        ctx.moveTo(a.cutX - 3, a.cutY - 4);
+        ctx.quadraticCurveTo(a.cutX + 3, a.cutY, a.cutX, a.cutY + 4);
+        ctx.lineTo(a.hookX, a.hookY - 12);
+        ctx.stroke();
+      }
+    } else if (a.state === "casting") {
+      const k = Math.min(1, a.t / 0.5);
+      const by = k < 0.4 ? tip.y + 10 : tip.y + 10 + (SURFACE_Y - tip.y - 10) * ((k - 0.4) / 0.6) ** 2;
+      line(ctx, tip.x, tip.y, tip.x, by);
+      drawBobber(ctx, tip.x, by);
+    } else if (a.state === "rowing" || !hookDown) {
+      line(ctx, tip.x, tip.y, tip.x, tip.y + 10);
+      drawBobber(ctx, tip.x, tip.y + 10);
+    } else {
+      const bx = (tip.x + a.hookX) / 2;
+      const by = SURFACE_Y + Math.sin(time * 3 + a.seed) * 1.5;
+      line(ctx, tip.x, tip.y, bx, by);
+      line(ctx, bx, by, a.hookX, a.hookY - 12);
+      drawBobber(ctx, bx, by);
+    }
+
+    ctx.save();
+    ctx.translate(a.x, oy);
+    ctx.scale(ANGLER_SCALE, ANGLER_SCALE);
+    const tx = (tip.x - a.x) / ANGLER_SCALE;
+    const ty = (tip.y - oy) / ANGLER_SCALE;
+    if (snapped) {
+      drawFisherman(ctx, tx, ty, 0, lean, time, topple > 0.05 ? "shock" : "angry", false);
+    } else {
+      const mood = a.state === "landed" ? "proud" : reeling || tugging ? "strain" : "calm";
+      drawFisherman(ctx, tx, ty, reeling || tugging ? 1 : 0, lean, time, mood);
+    }
+    drawBoatHull(ctx, a.seed, (SURFACE_Y - oy) / ANGLER_SCALE);
+    // Lying on his back in the boat: his boots kick up over the gunwale.
+    if (topple > 0.6) drawBoots(ctx, time, (topple - 0.6) / 0.4);
+    ctx.restore();
+
+    // His hat flies off in an arc and lands in the water behind the boat.
+    if (snapped) {
+      const k = Math.min(1, a.t / 0.5);
+      const hx0 = a.x + 21;
+      const hy0 = oy - 44;
+      const hx1 = a.hatX + ANGLER_HAT_DX;
+      if (k < 1) drawFloatingHat(ctx, hx0 + (hx1 - hx0) * k, hy0 + (SURFACE_Y - hy0) * k - Math.sin(k * Math.PI) * 50, time, k * 7);
+      else drawFloatingHat(ctx, hx1, SURFACE_Y, time);
+    }
+
+    // The hook, with its worm until something bites.
+    if (!reeling && hookDown && a.hookY < GROUND_Y + 50) drawHook(ctx, a.hookX, a.hookY, true, time);
+
+    // The warning: he's casting.
+    if (a.state === "casting" || (a.state === "fishing" && a.t < 0.6)) {
+      outlinedText(ctx, "!", tip.x, SURFACE_Y + 30 + Math.sin(time * 30) * 2, 30, "#ff595e");
+    }
+  }
+
+  /** On the line: the hook stays in the fish's mouth while he reels it in. */
+  private drawHookedCue(a: Angler, game: Game): void {
+    if (a.state !== "hooked" && a.state !== "landed") return;
+    drawHook(this.ctx, a.hookX, a.hookY, false, game.time);
+  }
+
+  /**
+   * The fisherman's trophy photo: him in his boat, grinning, holding up the
+   * pufferfish he just landed. Kept in memory for this run only.
+   */
+  captureTrophy(game: Game): Photo | null {
+    const W = 320;
+    const H = 240;
+    const out = document.createElement("canvas");
+    out.width = W;
+    out.height = H;
+    const octx = out.getContext("2d");
+    if (!octx) return null;
+    const sky = octx.createLinearGradient(0, 0, 0, 160);
+    sky.addColorStop(0, "#7ec8e3");
+    sky.addColorStop(1, "#ffe8d6");
+    octx.fillStyle = sky;
+    octx.fillRect(0, 0, W, H);
+    // The harbour behind: sun, a far shore with a few houses and a church.
+    octx.fillStyle = "#fff3b0";
+    octx.beginPath();
+    octx.arc(262, 52, 22, 0, Math.PI * 2);
+    octx.fill();
+    octx.fillStyle = "#9fb7c3";
+    octx.beginPath();
+    octx.moveTo(0, 150);
+    for (let i = 0; i <= 16; i++) {
+      const x = i * 20;
+      const h = 8 + rnd(i + 7) * 18;
+      octx.lineTo(x, 150 - h);
+      octx.lineTo(x + 14, 150 - h);
+    }
+    octx.lineTo(W, 150);
+    octx.closePath();
+    octx.fill();
+    const sea = octx.createLinearGradient(0, 148, 0, H);
+    sea.addColorStop(0, "#48cae4");
+    sea.addColorStop(1, "#1b8fb5");
+    octx.fillStyle = sea;
+    octx.fillRect(0, 148, W, H - 148);
+
+    const boatAt = { x: 218, y: 206 };
+    const fishAt = { x: 84, y: 118 };
+    const s = 2.2;
+    const fs = 1.3;
+    const tip = { x: fishAt.x + 2, y: 22 };
+    const main = this.ctx;
+    const b = game.bird;
+    const savedBird = { ...b };
+    const savedFish = { ...game.fish };
+    const savedSpike = game.spike;
+    const savedPhase = game.phase;
+    const savedTransition = game.transition;
+    const savedStage = game.stage;
+    this.ctx = octx;
+    try {
+      octx.setTransform(s, 0, 0, s, boatAt.x, boatAt.y);
+      drawFisherman(octx, (tip.x - boatAt.x) / s, (tip.y - boatAt.y) / s, 0.4, -0.1, game.time, "proud");
+      drawBoatHull(octx, 7);
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      // Water lapping at the hull.
+      octx.fillStyle = "rgba(72,202,228,0.8)";
+      octx.beginPath();
+      octx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 10) octx.lineTo(x, boatAt.y + 4 + Math.sin(x * 0.12) * 2.5);
+      octx.lineTo(W, H);
+      octx.closePath();
+      octx.fill();
+      // The line from the rod tip to the fish's mouth.
+      octx.strokeStyle = "rgba(255,255,255,0.95)";
+      octx.lineWidth = 1.5;
+      line(octx, tip.x, tip.y, fishAt.x + 2, fishAt.y - 40);
+      // The fish dangles, nose up, puffed up in a last protest.
+      octx.setTransform(fs, 0, 0, fs, fishAt.x, fishAt.y);
+      game.stage = "ocean";
+      game.phase = "playing";
+      game.transition = null;
+      game.spike = initialSpikeState();
+      Object.assign(game.fish, { puff: 1, spikes: 0, flare: 0 });
+      Object.assign(b, { x: 0, y: 0, vy: 0, rot: -Math.PI / 2 + 0.15, stretch: 1, stretchV: 0 });
+      this.drawFish(game);
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      drawHook(octx, fishAt.x + 2, fishAt.y - 36, false, 0);
+    } finally {
+      this.ctx = main;
+      Object.assign(b, savedBird);
+      Object.assign(game.fish, savedFish);
+      game.spike = savedSpike;
+      game.phase = savedPhase;
+      game.transition = savedTransition;
+      game.stage = savedStage;
+    }
+
+    // Soft vignette
+    const v = octx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+    v.addColorStop(0, "rgba(20,40,60,0)");
+    v.addColorStop(1, "rgba(20,40,60,0.3)");
+    octx.fillStyle = v;
+    octx.fillRect(0, 0, W, H);
+    return out;
+  }
+
   // --- ocean ------------------------------------------------------------------
 
   private drawOcean(game: Game): void {
@@ -1926,6 +2210,355 @@ export class Renderer {
       ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fillRect(base.x + base.w - 12, base.y + 18, 9, Math.max(0, base.h - 18));
     }
+  }
+
+  /**
+   * An old shipwreck settled on the sea floor: a long, low wooden hull half
+   * sunk into the sand, its planks stove in, and one mast snapped off short.
+   * The mast's splintered tip is the gap's bottom edge (see obstacleRects).
+   */
+  private drawWreck(o: Obstacle, time: number): void {
+    const ctx = this.ctx;
+    const { deck, facing, mastX } = wreckGeometry(o);
+    // Hull coordinates: t runs from the stern (0) to the bow (o.w), mirrored when the bow points left.
+    const X = (t: number) => (facing > 0 ? o.x + t : o.x + o.w - t);
+    const w = o.w;
+    const wood = o.color;
+    ctx.lineJoin = "round";
+
+    // Mast: leaning a little, splintered at the top, a rope trailing off it.
+    const mastTop = o.gapBottom;
+    const lean = (rnd(o.seed + 2) - 0.5) * 6;
+    const hw = WRECK_MAST_W / 2 - 1;
+    ctx.beginPath();
+    ctx.moveTo(mastX - hw, deck + 6);
+    ctx.lineTo(mastX - hw + lean, mastTop + 9);
+    ctx.lineTo(mastX - hw * 0.4 + lean, mastTop + 1);
+    ctx.lineTo(mastX + lean, mastTop + 7);
+    ctx.lineTo(mastX + hw * 0.5 + lean, mastTop);
+    ctx.lineTo(mastX + hw + lean, mastTop + 11);
+    ctx.lineTo(mastX + hw, deck + 6);
+    ctx.closePath();
+    ctx.fillStyle = shadeHex(wood, -12);
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mastX + 1, deck);
+    ctx.lineTo(mastX + 1 + lean * 0.8, mastTop + 14);
+    ctx.stroke();
+    // An iron band and the stump of a yard.
+    const bandY = mastTop + Math.min(26, (deck - mastTop) * 0.45);
+    ctx.fillStyle = "#56616d";
+    ctx.fillRect(mastX - hw + lean * 0.7, bandY, hw * 2, 4);
+    // A strand of weed swaying off the tip.
+    ctx.strokeStyle = "#2a9d73";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    const sway = Math.sin(time * 1.3 + o.seed) * 4;
+    ctx.beginPath();
+    ctx.moveTo(mastX + lean, mastTop + 8);
+    ctx.quadraticCurveTo(mastX + lean - facing * (10 + sway), mastTop + 18, mastX + lean - facing * (6 + sway), mastTop + 32);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+
+    // Hull: a flat, rotten deck line, the stern post on one end and the bow rising a little on the other.
+    const sand = GROUND_Y + 4;
+    const hull = () => {
+      ctx.beginPath();
+      ctx.moveTo(X(4), deck - 4);
+      ctx.lineTo(X(w * 0.42), deck);
+      ctx.lineTo(X(w - 34), deck);
+      ctx.quadraticCurveTo(X(w - 12), deck - 3, X(w + 2), deck - 12);
+      ctx.quadraticCurveTo(X(w - 8), deck + 30, X(w - 36), sand);
+      ctx.lineTo(X(20), sand);
+      ctx.quadraticCurveTo(X(4), GROUND_Y - 18, X(4), deck - 4);
+      ctx.closePath();
+    };
+    hull();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = wood;
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, GROUND_Y - deck + 24);
+    // Planks: seams along the hull, a few gone dark.
+    ctx.strokeStyle = "rgba(0,0,0,0.28)";
+    ctx.lineWidth = 2;
+    for (let y = deck + 10, i = 0; y < GROUND_Y; y += 11, i++) {
+      ctx.beginPath();
+      ctx.moveTo(o.x - 4, y + (facing > 0 ? 2 : -2));
+      ctx.lineTo(o.x + w + 4, y + (facing > 0 ? -2 : 2));
+      ctx.stroke();
+      // Butt joints, staggered.
+      for (let t = 24 + (i % 2) * 22 + rnd(o.seed + i) * 10; t < w - 20; t += 54) {
+        ctx.beginPath();
+        ctx.moveTo(X(t), y);
+        ctx.lineTo(X(t), y + 11);
+        ctx.stroke();
+      }
+    }
+    // The gunwale: a thicker rail along the top.
+    ctx.fillStyle = shadeHex(wood, -22);
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, 22);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(o.x - 10, deck + 6, w + 20, 3);
+    // Algae creeping up from the sand, greener toward the bottom.
+    const algae = ctx.createLinearGradient(0, deck, 0, GROUND_Y);
+    algae.addColorStop(0, "rgba(74,124,89,0)");
+    algae.addColorStop(1, "rgba(74,124,89,0.4)");
+    ctx.fillStyle = algae;
+    ctx.fillRect(o.x - 10, deck, w + 20, GROUND_Y - deck + 6);
+    // Seen through the water it's all a bit bluer.
+    ctx.fillStyle = "rgba(27,143,181,0.12)";
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, GROUND_Y - deck + 24);
+    ctx.restore();
+    hull();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // A hole stove into the side, with broken plank ends.
+    const ht = w * (0.5 + rnd(o.seed + 4) * 0.12);
+    const hy = deck + 22;
+    ctx.beginPath();
+    ctx.moveTo(X(ht - 20), hy + 4);
+    ctx.lineTo(X(ht - 9), hy - 6);
+    ctx.lineTo(X(ht - 2), hy + 1);
+    ctx.lineTo(X(ht + 10), hy - 7);
+    ctx.lineTo(X(ht + 22), hy + 5);
+    ctx.lineTo(X(ht + 15), hy + 17);
+    ctx.lineTo(X(ht + 4), hy + 13);
+    ctx.lineTo(X(ht - 6), hy + 20);
+    ctx.lineTo(X(ht - 17), hy + 14);
+    ctx.closePath();
+    ctx.fillStyle = "#16202b";
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // Something lives in there: two eyes peering out.
+    ctx.fillStyle = "#ffd166";
+    const blink = Math.sin(time * 0.9 + o.seed * 3) > 0.96;
+    for (const dx of [-4, 5]) {
+      ctx.beginPath();
+      ctx.ellipse(X(ht + dx), hy + 6, 2.6, blink ? 0.5 : 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Portholes toward the bow, crusted green.
+    for (let i = 0; i < 2; i++) {
+      const px = X(w * 0.74 + i * 22 - (ht > w * 0.58 ? 0 : 6));
+      const py = deck + 24;
+      ctx.beginPath();
+      ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#3d6b5e";
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#16202b";
+      ctx.fill();
+    }
+
+    // Barnacles along the waterline of long ago.
+    ctx.fillStyle = "rgba(240,235,220,0.75)";
+    for (let i = 0; i < 12; i++) {
+      const t = 26 + rnd(o.seed + i + 30) * (w - 60);
+      const y = deck + 34 + rnd(o.seed + i + 50) * 18;
+      ctx.beginPath();
+      ctx.arc(X(t), y, 1.6 + rnd(o.seed + i + 70) * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Sand drifted up against the hull, and a starfish on it.
+    // Only its crest is outlined: where it meets the (wavy) floor, it blends in.
+    const crest = () => {
+      ctx.beginPath();
+      ctx.moveTo(o.x - 14, GROUND_Y + 2);
+      ctx.quadraticCurveTo(o.x + w * 0.25, GROUND_Y - 16, o.x + w * 0.5, GROUND_Y - 9);
+      ctx.quadraticCurveTo(o.x + w * 0.78, GROUND_Y - 3, o.x + w + 14, GROUND_Y + 2);
+    };
+    crest();
+    ctx.lineTo(o.x + w + 14, GROUND_Y + 10);
+    ctx.lineTo(o.x - 14, GROUND_Y + 10);
+    ctx.closePath();
+    ctx.fillStyle = "#e9cf94";
+    ctx.fill();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(o.x - 20, GROUND_Y - 40, w + 40, 36);
+    ctx.clip();
+    crest();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+    drawStar(ctx, X(w * (0.2 + rnd(o.seed + 6) * 0.15)), GROUND_Y - 8, 7, "#ff9f43");
+    ctx.lineJoin = "miter";
+  }
+
+  /**
+   * A boat at anchor: the hull on the surface (painted above the waterline,
+   * red antifouling below, tinted by the water), a cabin and a mast above,
+   * and the chain down to the anchor, whose crown is the gap's top edge.
+   */
+  private drawAnchoredBoat(o: Obstacle): void {
+    const ctx = this.ctx;
+    const cx = o.x + o.w / 2;
+    const keel = SURFACE_Y + BOAT_DRAFT;
+    const deck = SURFACE_Y - BOAT_FREEBOARD;
+    const hl = cx - BOAT_W / 2;
+    const hr = cx + BOAT_W / 2;
+    const top = o.gapTop - ANCHOR_H;
+    const iron = "#56616d";
+
+    // Chain: links alternate face-on (a ring) and edge-on (a bar), down to the anchor's ring.
+    for (let y = keel - 6, i = 0; y < top + 2; y += 10, i++) {
+      if (i % 2 === 0) {
+        ctx.beginPath();
+        ctx.ellipse(cx, y + 6, 4.5, 7, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 4.5;
+        ctx.stroke();
+        ctx.strokeStyle = iron;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else {
+        roundRect(ctx, cx - 2, y, 4, 13, 2);
+        ctx.fillStyle = iron;
+        ctx.fill();
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // Anchor: ring, shank, stock with ball ends, curved arms with flukes.
+    ctx.beginPath();
+    ctx.arc(cx, top + 7, 6.5, 0, Math.PI * 2);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 6.5;
+    ctx.stroke();
+    ctx.strokeStyle = iron;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = iron;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    roundRect(ctx, cx - 5, top + 12, 10, ANCHOR_H - 18, 3);
+    ctx.fill();
+    ctx.stroke();
+    const armY = o.gapTop - 33;
+    ctx.beginPath();
+    ctx.arc(cx, armY, 27, 0.2, Math.PI - 0.2);
+    ctx.lineWidth = 13;
+    ctx.stroke();
+    ctx.strokeStyle = iron;
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 31, o.gapTop - 46);
+      ctx.lineTo(cx + s * 37, o.gapTop - 22);
+      ctx.lineTo(cx + s * 18, o.gapTop - 29);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    roundRect(ctx, cx - 21, top + 15, 42, 9, 4);
+    ctx.fill();
+    ctx.stroke();
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx + s * 22, top + 19.5, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Rust and a strand of weed caught on a fluke.
+    ctx.fillStyle = "rgba(170,90,40,0.55)";
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(cx + (rnd(o.seed + i) - 0.5) * 6, top + 28 + rnd(o.seed + i + 9) * (ANCHOR_H - 50), 1.8 + rnd(o.seed + i + 5) * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const weed = rnd(o.seed + 3) < 0.5 ? -1 : 1;
+    ctx.strokeStyle = "#2a9d73";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx + weed * 33, o.gapTop - 26);
+    ctx.quadraticCurveTo(cx + weed * 42, o.gapTop - 8, cx + weed * 36, o.gapTop + 8);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+
+    // Mast with a pennant, and the cabin: above the water.
+    const color = BOAT_COLORS[Math.floor(rnd(o.seed + 1) * BOAT_COLORS.length)];
+    const mastX = cx - 28;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(mastX, deck);
+    ctx.lineTo(mastX, deck - 74);
+    ctx.stroke();
+    ctx.fillStyle = "#ef476f";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mastX + 2, deck - 74);
+    ctx.lineTo(mastX + 24, deck - 68);
+    ctx.lineTo(mastX + 2, deck - 62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    roundRect(ctx, cx - 6, deck - 26, 54, 28, 5);
+    ctx.fillStyle = "#f1faee";
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#7fd3ea";
+    for (const wx of [cx + 2, cx + 26]) {
+      roundRect(ctx, wx, deck - 19, 15, 10, 3);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Hull: bow on the left, square transom on the right.
+    ctx.beginPath();
+    ctx.moveTo(hl - 8, deck - 8);
+    ctx.lineTo(hr, deck);
+    ctx.lineTo(hr - 5, keel - 8);
+    ctx.quadraticCurveTo(hr - 8, keel, hr - 22, keel);
+    ctx.lineTo(cx - BOAT_W * 0.18, keel);
+    ctx.quadraticCurveTo(hl + 6, keel - 2, hl - 8, deck - 8);
+    ctx.closePath();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = color;
+    ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, SURFACE_Y - deck + 10);
+    ctx.fillStyle = "#c0392b";
+    ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
+    ctx.fillStyle = "#f1faee";
+    ctx.fillRect(hl - 10, SURFACE_Y - 4, BOAT_W + 20, 4);
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, 6);
+    // Seen through the water, the part below the surface is bluer.
+    ctx.fillStyle = "rgba(27,143,181,0.3)";
+    ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
+    ctx.restore();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Hawsepipe where the chain comes out.
+    ctx.fillStyle = OUTLINE;
+    ctx.beginPath();
+    ctx.ellipse(cx, keel - 2, 6, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   private drawJelly(j: Jelly, time: number, poppable: boolean): void {
@@ -2508,9 +3141,12 @@ function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
 }
 
 function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
-  const walk = Math.sin(time * 9 + t.seed) * 0.5;
+  const rage = t.rage;
+  const walk = rage ? 0 : Math.sin(time * 9 + t.seed) * 0.5;
   const h = t.h;
   ctx.save();
+  // Furious: stamping on the spot.
+  if (rage) ctx.translate(0, -Math.abs(Math.sin(time * 14)) * 3);
   ctx.scale(t.facing, 1);
   ctx.lineCap = "round";
   // Legs
@@ -2519,7 +3155,7 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   for (const s of [1, -1]) {
     ctx.beginPath();
     ctx.moveTo(0, -h * 0.38);
-    ctx.lineTo(Math.sin(walk * s) * 10, 0);
+    ctx.lineTo(rage ? s * 6 : Math.sin(walk * s) * 10, 0);
     ctx.stroke();
   }
   // Body
@@ -2528,15 +3164,32 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   roundRect(ctx, -9, -h * 0.75, 18, h * 0.4, 6);
   ctx.fill();
   ctx.stroke();
-  // Arms
+  // Arms: a fist shaken at the bird when angry.
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(0, -h * 0.68);
-  ctx.lineTo(-Math.sin(walk) * 10, -h * 0.42);
+  if (rage) {
+    const fx = 16 + Math.sin(time * 24) * 3;
+    const fy = -h * 1.02 + Math.cos(time * 24) * 3;
+    ctx.lineTo(fx, fy);
+    ctx.stroke();
+    ctx.fillStyle = "#f1c27d";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.68);
+    ctx.lineTo(-7, -h * 0.4);
+  } else {
+    ctx.lineTo(-Math.sin(walk) * 10, -h * 0.42);
+  }
   ctx.stroke();
-  // Head
+  // Head (red in the face when angry)
   ctx.lineWidth = 3;
-  ctx.fillStyle = "#f1c27d";
+  ctx.fillStyle = rage ? "#f2785c" : "#f1c27d";
   ctx.beginPath();
   ctx.arc(0, -h * 0.87, 8, 0, Math.PI * 2);
   ctx.fill();
@@ -2551,8 +3204,62 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   ctx.beginPath();
   ctx.arc(4, -h * 0.87, 1.6, 0, Math.PI * 2);
   ctx.fill();
+  if (rage) {
+    // A furious brow and a shouting mouth.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.8;
+    line(ctx, 1.5, -h * 0.87 - 4.5, 7, -h * 0.87 - 1.5);
+    ctx.beginPath();
+    ctx.ellipse(5, -h * 0.87 + 4, 2, 1.6 + Math.abs(Math.sin(time * 18)), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
   ctx.lineCap = "butt";
+  if (rage) drawRage(ctx, rage, h, time);
+}
+
+/** Steam off the head and a grawlix speech bubble, popping in, over a cursing pedestrian. */
+function drawRage(ctx: CanvasRenderingContext2D, rage: Rage, h: number, time: number): void {
+  // Steam puffs rising off the head.
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  for (let i = 0; i < 2; i++) {
+    const k = (time * 1.6 + i * 0.5) % 1;
+    const side = i === 0 ? -1 : 1;
+    ctx.globalAlpha = 1 - k;
+    ctx.beginPath();
+    ctx.arc(side * (7 + k * 6), -h - 2 - k * 14, 2.5 + k * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // Bubble pops in with a little overshoot, then wobbles.
+  const pop = Math.min(1, rage.t / 0.15);
+  const scale = pop < 1 ? pop * 1.15 : 1 + Math.sin(time * 20) * 0.03;
+  const by = -h - 30;
+  ctx.save();
+  ctx.translate(0, by);
+  ctx.scale(scale, scale);
+  ctx.font = "900 15px 'Trebuchet MS', sans-serif";
+  const w = ctx.measureText(rage.curse).width + 16;
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-4, 11);
+  ctx.lineTo(2, 22);
+  ctx.lineTo(6, 11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  roundRect(ctx, -w / 2, -12, w, 24, 9);
+  ctx.fill();
+  ctx.stroke();
+  // Cover the tail's joint so the bubble reads as one shape.
+  ctx.fillRect(-3, 8, 8, 5);
+  ctx.fillStyle = "#e63946";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(rage.curse, 0, 1);
+  ctx.restore();
 }
 
 function drawStatue(ctx: CanvasRenderingContext2D, t: Target): void {
@@ -2755,6 +3462,198 @@ function drawParachutist(ctx: CanvasRenderingContext2D, t: Target, time: number)
   } else ctx.fill();
   ctx.restore();
   ctx.lineCap = "butt";
+}
+
+/** A drone's eye: a red LED with a glow. */
+function drawLedEye(ctx: CanvasRenderingContext2D, x: number, y: number, glow: number): void {
+  ctx.fillStyle = `rgba(255,45,45,${0.35 * glow})`;
+  ctx.beginPath();
+  ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ff2d2d";
+  ctx.beginPath();
+  ctx.arc(x, y, 1.9, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+const WIRE_COLORS = ["#e63946", "#ffd166", "#3a86ff", "#06d6a0"];
+
+/** Coloured wires curling out of a broken drone from (x, y), with bare copper ends that spark. */
+function drawLooseWires(ctx: CanvasRenderingContext2D, x: number, y: number, seed: number, time: number, sparks: number): void {
+  ctx.save();
+  ctx.lineCap = "round";
+  for (let i = 0; i < WIRE_COLORS.length; i++) {
+    const r = Math.sin(seed * 7.3 + i * 12.9) * 0.5 + 0.5;
+    const a = -Math.PI * (0.15 + 0.7 * (i + r * 0.8) / WIRE_COLORS.length);
+    const len = 9 + r * 8;
+    const ex = x + Math.cos(a) * len;
+    const ey = y + Math.sin(a) * len;
+    const wob = Math.sin(time * 3 + i) * 1.5;
+    ctx.strokeStyle = WIRE_COLORS[i];
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + Math.cos(a + 0.9) * len * 0.6, y + Math.sin(a + 0.9) * len * 0.6 + wob, ex, ey);
+    ctx.stroke();
+    // Bare copper tip
+    ctx.strokeStyle = "#e09f3e";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex + Math.cos(a) * 2.5, ey + Math.sin(a) * 2.5);
+    ctx.stroke();
+    if (Math.sin(time * 23 + seed + i * 2.1) > 1 - sparks * 0.25) {
+      // Spark: a little yellow burst
+      const sx = ex + Math.cos(a) * 3;
+      const sy = ey + Math.sin(a) * 3;
+      ctx.strokeStyle = "#fff3b0";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let k = 0; k < 4; k++) {
+        const b = (k / 4) * Math.PI + time * 9;
+        ctx.moveTo(sx - Math.cos(b) * 3, sy - Math.sin(b) * 3);
+        ctx.lineTo(sx + Math.cos(b) * 3, sy + Math.sin(b) * 3);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** Jagged break across a drone's body, top to bottom (pigeon space). */
+const DRONE_BREAK: [number, number][] = [[1, -23], [-2, -19], [2, -15], [-1, -11], [2, -7], [0, -2]];
+
+/** Clips to one side of the break: the tail half (-1) or the head half (1). */
+function clipDroneHalf(ctx: CanvasRenderingContext2D, side: 1 | -1): void {
+  ctx.beginPath();
+  ctx.moveTo(side * 40, -40);
+  for (const [bx, by] of DRONE_BREAK) ctx.lineTo(bx, by);
+  ctx.lineTo(0, 4);
+  ctx.lineTo(side * 40, 4);
+  ctx.closePath();
+  ctx.clip();
+}
+
+/** The open break: circuitry inside a metal shell. */
+function drawDroneInnards(ctx: CanvasRenderingContext2D, side: 1 | -1, seed: number): void {
+  ctx.fillStyle = "#343a40";
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 3.5, 7.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // A sliver of green circuit board with solder dots
+  ctx.fillStyle = "#2d6a4f";
+  ctx.fillRect(-1.5 + side, -17, 3, 9);
+  ctx.fillStyle = "#e9c46a";
+  for (let i = 0; i < 3; i++) ctx.fillRect(-0.5 + side, -15.5 + i * 3 + (seed % 1), 1, 1);
+  // The torn edge, metallic
+  ctx.strokeStyle = "#adb5bd";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  DRONE_BREAK.forEach(([bx, by], i) => (i ? ctx.lineTo(bx, by) : ctx.moveTo(bx, by)));
+  ctx.stroke();
+}
+
+/** A pigeon drone broken in two on the street: the halves apart, wires spilling out, its eye still blinking. */
+function drawDroneWreck(ctx: CanvasRenderingContext2D, w: DroneWreck, seed: number, facing: 1 | -1, time: number): void {
+  ctx.save();
+  ctx.translate(w.x, w.y);
+  // A bit bigger than a live pigeon, so the guts read at a glance.
+  ctx.scale(PIGEON_SCALE * 1.3 * facing, PIGEON_SCALE * 1.3);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = OUTLINE;
+  // Smoke curling up from the break
+  for (let i = 0; i < 3; i++) {
+    const k = (time * 0.6 + i / 3 + seed) % 1;
+    ctx.fillStyle = `rgba(108,117,125,${0.35 * (1 - k)})`;
+    ctx.beginPath();
+    ctx.arc(Math.sin(k * 5 + i) * 4, -10 - k * 34, 3 + k * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Tail half, on its belly, rocked back from the break
+  ctx.save();
+  ctx.translate(-5, 0);
+  ctx.rotate(-0.18);
+  ctx.save();
+  clipDroneHalf(ctx, -1);
+  ctx.fillStyle = "#5c6370";
+  ctx.beginPath();
+  ctx.moveTo(-8, -12);
+  ctx.lineTo(-19, -9);
+  ctx.lineTo(-17, -4);
+  ctx.lineTo(-6, -8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#9aa3ad";
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#7d8691";
+  ctx.beginPath();
+  ctx.ellipse(-5, -14, 8, 4.5, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  drawDroneInnards(ctx, -1, seed);
+  ctx.restore();
+  drawSplat(ctx, -6, -15, 5, seed, 1);
+  ctx.restore();
+
+  // Head half, nosed over forward onto its beak
+  ctx.save();
+  ctx.translate(6, 0);
+  ctx.rotate(0.45);
+  ctx.save();
+  clipDroneHalf(ctx, 1);
+  ctx.fillStyle = "#9aa3ad";
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  drawDroneInnards(ctx, 1, seed);
+  ctx.restore();
+  ctx.fillStyle = "#6a994e";
+  ctx.beginPath();
+  ctx.ellipse(7, -16, 4.5, 4, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8a92a0";
+  ctx.beginPath();
+  ctx.arc(10, -20, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#e9c46a";
+  ctx.beginPath();
+  ctx.moveTo(14, -21);
+  ctx.lineTo(19, -19);
+  ctx.lineTo(14, -18);
+  ctx.closePath();
+  ctx.fill();
+  // A bent antenna popped out of its head
+  ctx.strokeStyle = "#adb5bd";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(9, -25);
+  ctx.lineTo(7, -31);
+  ctx.lineTo(11, -35);
+  ctx.stroke();
+  ctx.fillStyle = "#e63946";
+  ctx.beginPath();
+  ctx.arc(11, -35, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  // Still recording.
+  if (Math.sin(time * 6 + seed) > -0.3) drawLedEye(ctx, 11.5, -21.5, 1);
+  else {
+    ctx.fillStyle = "#6a040f";
+    ctx.beginPath();
+    ctx.arc(11.5, -21.5, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Wires spilling across the gap between the halves
+  drawLooseWires(ctx, 0, -10, seed, time, 1);
+  ctx.restore();
 }
 
 function drawX(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
@@ -4620,6 +5519,461 @@ export function drawWeddingPrint(
   ctx.translate(x + w - pad * 0.6, y + pad * 0.6);
   ctx.rotate(0.3);
   ctx.fillText(info.ruined ? "\u{1F4A9}" : "\u{1F496}", 0, 0);
+  ctx.restore();
+  return h;
+}
+
+// --- fisherman -------------------------------------------------------------------
+
+/** The boat and the fisherman are drawn this much bigger than their own coordinates. */
+const ANGLER_SCALE = 1.5;
+/** How far below the surface the boat's waterline centre sits (world px). */
+const ANGLER_DRAFT = 16;
+/** His rod tip's height over the boat's waterline centre (boat coordinates). */
+const ANGLER_TIP_Y = -30;
+/** He leans back (and topples over) about his seat, relative to the boat's waterline centre. */
+const ANGLER_PIVOT = { x: 16, y: -4 };
+/** Where he holds the rod, relative to the boat's waterline centre. */
+const ANGLER_HANDS = { x: 2, y: -10 };
+
+function line(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1, y1);
+  ctx.stroke();
+}
+
+/** A red-and-white float. */
+function drawBobber(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = OUTLINE;
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ef233c";
+  ctx.beginPath();
+  ctx.arc(x, y, 4.5, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** A J-hook hanging from its eye at (x, y − 10), with a wriggling worm on it. */
+function drawHook(ctx: CanvasRenderingContext2D, x: number, y: number, worm: boolean, time: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1.3, 1.3);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const hook = () => {
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.lineTo(0, 3);
+    ctx.arc(4, 3, 4, Math.PI, 0, true);
+    ctx.lineTo(8, -2);
+    ctx.lineTo(5.5, 0.5);
+  };
+  hook();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 4.5;
+  ctx.stroke();
+  hook();
+  ctx.strokeStyle = "#e9ecef";
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  if (worm) {
+    // Coiled round the shank, a tail wriggling below.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 6.5;
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(-3, -6);
+      ctx.quadraticCurveTo(4, -4, -2, -1);
+      ctx.quadraticCurveTo(-6, 2, 1, 4);
+      const w = Math.sin(time * 9) * 5;
+      ctx.quadraticCurveTo(6 + w * 0.3, 8, 2 + w, 14);
+    };
+    path();
+    ctx.stroke();
+    path();
+    ctx.strokeStyle = "#ff8fa3";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * The rowing boat, bow to the left, origin at the waterline's centre. Drawn
+ * over the fisherman's legs. Below `water` (boat y) the sea tints it.
+ */
+function drawBoatHull(ctx: CanvasRenderingContext2D, seed: number, water = 0): void {
+  const hull = () => {
+    ctx.beginPath();
+    ctx.moveTo(-66, -11);
+    ctx.quadraticCurveTo(-54, 20, -12, 23);
+    ctx.lineTo(38, 23);
+    ctx.quadraticCurveTo(56, 21, 58, 4);
+    ctx.lineTo(60, -9);
+    ctx.quadraticCurveTo(0, -6, -66, -11);
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.lineJoin = "round";
+  hull();
+  ctx.fillStyle = "#b5651d";
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  // Planks, a white stripe with her name, and the part under water tinted by the sea.
+  ctx.strokeStyle = "rgba(70,35,10,0.45)";
+  ctx.lineWidth = 1.5;
+  for (const y of [4, 13]) {
+    ctx.beginPath();
+    ctx.moveTo(-70, y - 8);
+    ctx.quadraticCurveTo(0, y + 2, 64, y - 6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#f8f9fa";
+  ctx.beginPath();
+  ctx.moveTo(-70, -9);
+  ctx.quadraticCurveTo(0, -3, 64, -7);
+  ctx.lineTo(64, -3);
+  ctx.quadraticCurveTo(0, 1, -70, -5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#1d3557";
+  ctx.font = "italic 900 7px 'Trebuchet MS', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(["MARGRIT", "HEIDI II", "SEELI", "ROSMARIE"][Math.floor(seed) % 4], 6, 6);
+  ctx.fillStyle = "rgba(20,110,150,0.38)";
+  ctx.fillRect(-70, water, 140, 40);
+  ctx.restore();
+  hull();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // Gunwale
+  ctx.strokeStyle = "#7f4a1e";
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.moveTo(-64, -10);
+  ctx.quadraticCurveTo(0, -5, 58, -8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+type AnglerMood = "calm" | "strain" | "proud" | "shock" | "angry";
+
+/**
+ * The fisherman, sitting in his boat facing left (origin at the boat's
+ * waterline centre). `tipX/tipY` is his rod tip (no rod if null), `bend`
+ * 0..1 how far it bows, `lean` how far he leans back. Without `hat` he's bald.
+ */
+function drawFisherman(
+  ctx: CanvasRenderingContext2D,
+  tipX: number | null,
+  tipY: number,
+  bend: number,
+  lean: number,
+  time: number,
+  mood: AnglerMood,
+  hat = true,
+): void {
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.translate(ANGLER_PIVOT.x, ANGLER_PIVOT.y);
+  ctx.rotate(lean);
+  ctx.translate(-ANGLER_PIVOT.x, -ANGLER_PIVOT.y);
+  const hx = ANGLER_HANDS.x;
+  const hy = ANGLER_HANDS.y;
+
+  // The rod: butt tucked under his arm, bowing toward the tip.
+  if (tipX !== null) {
+    const bx = 16;
+    const by = -3;
+    const mx = (hx + tipX) / 2;
+    const my = (hy + tipY) / 2;
+    const len = Math.hypot(tipX - hx, tipY - hy) || 1;
+    const nx = -(tipY - hy) / len;
+    const ny = (tipX - hx) / len;
+    const sag = -(6 + bend * 16);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(hx, hy);
+    ctx.quadraticCurveTo(mx + nx * sag, my + ny * sag, tipX, tipY);
+    ctx.stroke();
+    ctx.strokeStyle = "#6b4226";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // Reel
+    ctx.fillStyle = "#adb5bd";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(hx + 3, hy + 3, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Oilskin coat
+  ctx.fillStyle = "#ffc300";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.5;
+  roundRect(ctx, 5, -18, 22, 20, 6);
+  ctx.fill();
+  ctx.stroke();
+  // Arms: on the rod, or flung up (shock), one fist up (proud).
+  ctx.strokeStyle = "#e6a800";
+  ctx.lineWidth = 5;
+  if (mood === "shock") {
+    line(ctx, 10, -14, 2, -26 + Math.sin(time * 30) * 2);
+    line(ctx, 20, -14, 26, -27 + Math.cos(time * 30) * 2);
+  } else {
+    line(ctx, 11, -14, hx + 1, hy);
+    if (mood === "proud") line(ctx, 22, -14, 28, -30);
+    else if (mood === "angry") line(ctx, 22, -14, 28, -30 + Math.sin(time * 25) * 3);
+    else line(ctx, 20, -13, hx + 4, hy + 2);
+  }
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#f1c27d";
+  for (const [x, y] of mood === "shock" ? [[2, -26], [26, -27]] : mood === "proud" ? [[hx + 1, hy], [28, -30]] : mood === "angry" ? [[hx + 1, hy], [28, -30 + Math.sin(time * 25) * 3]] : [[hx + 1, hy], [hx + 4, hy + 2]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Head, with a big grey beard.
+  ctx.lineWidth = 2.5;
+  ctx.fillStyle = "#f1c27d";
+  ctx.beginPath();
+  ctx.arc(14, -23, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#e9ecef";
+  ctx.beginPath();
+  ctx.moveTo(19, -22);
+  ctx.quadraticCurveTo(18, -14, 12, -13);
+  ctx.quadraticCurveTo(6, -14, 7, -22);
+  ctx.quadraticCurveTo(13, -19, 19, -22);
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Nose
+  ctx.fillStyle = "#e5989b";
+  ctx.beginPath();
+  ctx.arc(8.5, -23, 2, 0, Math.PI * 2);
+  ctx.fill();
+  // Eye
+  ctx.strokeStyle = OUTLINE;
+  ctx.fillStyle = OUTLINE;
+  if (mood === "proud") {
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(11, -25, 1.8, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+  } else if (mood === "shock") {
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(11, -25.5, 2.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = OUTLINE;
+    ctx.beginPath();
+    ctx.arc(10.5, -25.5, 1, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(11, -25, mood === "strain" ? 0.8 : 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    if (mood === "angry") {
+      // A furious brow.
+      ctx.lineWidth = 1.6;
+      line(ctx, 8, -28.5, 13.5, -26.8);
+    }
+    if (mood === "strain") {
+      // Gritted, sweating.
+      ctx.lineWidth = 1.2;
+      line(ctx, 9, -27.5, 13, -26.5);
+      ctx.fillStyle = "#a2d2ff";
+      const k = (time * 3) % 1;
+      ctx.beginPath();
+      ctx.arc(21 + k * 3, -27 + k * 6, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (mood === "angry") {
+    // The pipe's gone too: a grumpy mouth in the beard.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(10, -16.5, 2.5, Math.PI * 1.15, Math.PI * 1.85);
+    ctx.stroke();
+  } else if (mood !== "shock") {
+    // Pipe (calm) or a grin.
+    if (mood === "proud") {
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.moveTo(7, -19.5);
+      ctx.quadraticCurveTo(10, -16, 14, -18.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = "#5c3d1e";
+      ctx.lineWidth = 1.8;
+      line(ctx, 9, -19, 3, -18);
+      ctx.fillStyle = "#5c3d1e";
+      ctx.fillRect(1.5, -21, 3, 4);
+      if (mood === "calm") {
+        ctx.fillStyle = "rgba(255,255,255,0.6)";
+        const k = (time * 0.8) % 1;
+        ctx.beginPath();
+        ctx.arc(2 - k * 3, -23 - k * 9, 1.2 + k * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  if (!hat) {
+    // Bald, with a shine.
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(14, -24, 4, Math.PI * 1.2, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  // Sou'wester: brim, crown, and the long back flap.
+  ctx.fillStyle = "#f4a300";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(4, -27);
+  ctx.quadraticCurveTo(14, -30, 24, -26);
+  ctx.lineTo(25, -21);
+  ctx.quadraticCurveTo(22, -24, 19, -25);
+  ctx.quadraticCurveTo(12, -27, 4, -27);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(14.5, -27.5, 6, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * 0..1 how far over he is, `t` s after his line snapped: over fast from where
+ * he was leaning back hauling on it, a while on his back, then up again.
+ */
+function toppleAmount(t: number): number {
+  if (t < 0.22) return 0.31 + 0.69 * (1 - (1 - t / 0.22) ** 2);
+  if (t < ANGLER_TOPPLE_TIME) return 1;
+  return Math.max(0, 1 - (t - ANGLER_TOPPLE_TIME) / 0.4);
+}
+
+/** His rubber boots sticking up over the gunwale, kicking (boat coordinates). `k` 0..1 how far up. */
+function drawBoots(ctx: CanvasRenderingContext2D, time: number, k: number): void {
+  ctx.save();
+  ctx.lineCap = "round";
+  for (const [i, x] of [[0, 4], [1, 12]]) {
+    const kick = Math.sin(time * 14 + i * 2) * 3;
+    const top = -9 - 16 * k;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 6.5;
+    line(ctx, x + 6, -6, x + kick, top);
+    ctx.strokeStyle = "#2d6a4f";
+    ctx.lineWidth = 4.5;
+    line(ctx, x + 6, -6, x + kick, top);
+    ctx.fillStyle = "#1b4332";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(x + kick - 2, top - 1, 4, 2.5, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** His sou'wester: floating upside down at the surface at `y`, or flying through the air turned by `spin`. */
+function drawFloatingHat(ctx: CanvasRenderingContext2D, x: number, y: number, time: number, spin?: number): void {
+  ctx.save();
+  ctx.translate(x, spin === undefined ? y + Math.sin(time * 3 + 1) * 1.5 : y);
+  ctx.scale(1.4, 1.4);
+  ctx.rotate(spin ?? Math.PI + Math.sin(time * 2) * 0.15);
+  ctx.fillStyle = "#f4a300";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 7, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 12, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * The fisherman's trophy photo as a snapshot print, with a caption. `develop`
+ * (0..1) whites the photo out while it develops. Returns the print's height.
+ */
+export function drawTrophyPrint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  photo: Photo | undefined,
+  develop = 0,
+): number {
+  const pad = w * 0.05;
+  const pw = w - pad * 2;
+  const ph = pw * 0.75;
+  const capH = w * 0.2;
+  const h = pad + ph + capH;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fillRect(x + 5, y + 7, w, h);
+  ctx.fillStyle = "#fffdf7";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, w, h);
+  drawPhoto(ctx, photo, x + pad, y + pad, pw, ph);
+  if (develop > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${develop})`;
+    ctx.fillRect(x + pad, y + pad, pw, ph);
+  }
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = OUTLINE;
+  ctx.font = `italic 700 ${Math.round(w * 0.08)}px 'Comic Sans MS', 'Trebuchet MS', cursive`;
+  ctx.fillText("Catch of the day!", x + w / 2, y + pad + ph + capH * 0.38, pw);
+  ctx.fillStyle = "#6c757d";
+  ctx.font = `italic ${Math.round(w * 0.05)}px 'Comic Sans MS', 'Trebuchet MS', cursive`;
+  ctx.fillText(`1 pufferfish, a bit spiky · ${new Date().toLocaleDateString("de-CH")}`, x + w / 2, y + pad + ph + capH * 0.74, pw);
+  ctx.font = `${Math.round(w * 0.1)}px sans-serif`;
+  ctx.translate(x + w - pad * 0.6, y + pad * 0.6);
+  ctx.rotate(0.3);
+  ctx.fillText("\u{1F3A3}", 0, 0);
   ctx.restore();
   return h;
 }
