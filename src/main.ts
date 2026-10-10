@@ -32,11 +32,15 @@ import {
 import {
   FEATURE_NAMES,
   PUFF_FEATURES,
+  MAX_NEUTRAL_FALSE_RATE,
   STRAIN_FEATURES,
   assessCalibration,
   buildCalibration,
+  defaultCalibration,
   featureStats,
   initialStrainState,
+  neutralFaceStats,
+  neutralFalseRate,
   restoreCalibration,
   stepStrain,
   type Calibration,
@@ -97,6 +101,8 @@ const CALIBRATION_KEY = "poopbird.calibration.v1";
 const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v2";
 
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
+/** `calibration` is the default one, fitted to a quick relaxed-face read and never saved. */
+let calibrationIsDefault = false;
 /** Puff calibration (neutral vs. full puff). null = use the fixed cheekPuff fallback range. */
 let puffCalibration: Calibration | null = loadCalibration(PUFF_CALIBRATION_KEY, PUFF_FEATURES);
 /** The puff calibration ran (and passed or failed) this session; later dives skip it. Reset by C. */
@@ -275,8 +281,9 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   }
   tracker.start();
   show(cam, true);
-  if (calibration && !forceCalibrate) showCalibrationResult(null);
-  else await runCalibration();
+  if (forceCalibrate) await runCalibration();
+  else if (calibration && !calibrationIsDefault) showCalibrationResult("saved");
+  else await runDefaultCalibration();
 }
 
 function startKeyboardMode(): void {
@@ -334,6 +341,7 @@ async function runCalibration(): Promise<void> {
   // Only a calibration that passed the check replaces the saved one.
   if (quality.ok) {
     calibration = cal;
+    calibrationIsDefault = false;
     rejectedCalibration = null;
     saveCalibration(CALIBRATION_KEY, cal);
   } else {
@@ -341,6 +349,78 @@ async function runCalibration(): Promise<void> {
   }
   strain = initialStrainState();
   showCalibrationResult(quality);
+}
+
+/**
+ * The start without calibration: the strain check opens right away and the
+ * default calibration is fitted to a short read of the player's relaxed face.
+ * It's never saved, so the next player on this browser gets their own read.
+ * Calibrating from the strain check replaces it.
+ */
+async function runDefaultCalibration(): Promise<void> {
+  const token = ++flow;
+  // A new player: the next dive samples their puff again.
+  clearPuffCalibration();
+  calibration = null;
+  calibrationIsDefault = true;
+  rejectedCalibration = null;
+  strain = initialStrainState();
+  showCalibrationResult("reading");
+  // A read whose own samples would trip the meter (fidgeting, blinking,
+  // jittery tracking) is read again. The last try is kept regardless, since
+  // the player can always calibrate.
+  for (let attempt = 1; ; attempt++) {
+    const neutral = await readRelaxedFace(token);
+    if (token !== flow || !neutral) return;
+    const cal = defaultCalibration(neutralFaceStats(neutral), config.defaultStrainScale);
+    const falseRate = neutralFalseRate(cal, neutral, config);
+    console.info("[default calibration]", { cal, falseRate, attempt, neutral });
+    if (falseRate <= MAX_NEUTRAL_FALSE_RATE || attempt >= MAX_RELAXED_READS) {
+      calibration = cal;
+      break;
+    }
+    $("calib-result-text").textContent = "Hold still and relax completely…";
+  }
+  strain = initialStrainState();
+  showCalibrationResult("default");
+}
+
+/** Relaxed-face reads before the default calibration takes the last one, steady or not. */
+const MAX_RELAXED_READS = 3;
+
+/** Fewest face samples the relaxed-face read takes, so a slow detector just reads for longer. */
+const MIN_RELAXED_SAMPLES = 8;
+
+/**
+ * Samples the relaxed face for at least `defaultNeutralSeconds` and
+ * MIN_RELAXED_SAMPLES face frames. Starts over if too few frames had a face
+ * (no one in view yet). null = abandoned.
+ */
+async function readRelaxedFace(token: number): Promise<FeatureVector[] | null> {
+  const total = config.defaultNeutralSeconds * 1000;
+  let start = performance.now();
+  calibSamples = [];
+  calibFrames = [];
+  for (;;) {
+    await wait(50);
+    if (token !== flow || !calibSamples || !calibFrames) {
+      calibSamples = null;
+      calibFrames = null;
+      return null;
+    }
+    if (performance.now() - start < total) continue;
+    if (calibSamples.length < calibFrames.length * config.minFaceCoverage) {
+      start = performance.now();
+      calibSamples = [];
+      calibFrames = [];
+    } else if (calibSamples.length >= MIN_RELAXED_SAMPLES) {
+      break;
+    }
+  }
+  const samples = calibSamples.map((s) => s.f);
+  calibSamples = null;
+  calibFrames = null;
+  return samples;
 }
 
 interface PhaseResult {
@@ -426,8 +506,13 @@ function topFeatureLabels(cal: Calibration): string[] {
     .map((f) => FEATURE_LABELS[f]);
 }
 
-/** quality === null means "reusing a saved calibration". */
-function showCalibrationResult(quality: ReturnType<typeof assessCalibration> | null): void {
+/**
+ * What the strain check shows: a saved calibration, the default one (while
+ * reading the relaxed face, then ready), or the result of a fresh calibration.
+ */
+type CalibrationResult = "saved" | "reading" | "default" | ReturnType<typeof assessCalibration>;
+
+function showCalibrationResult(result: CalibrationResult): void {
   state = "calibrated";
   showScreen("calibrate");
   show(hud, false);
@@ -445,20 +530,29 @@ function showCalibrationResult(quality: ReturnType<typeof assessCalibration> | n
   card.classList.remove("strain");
   $("calib-step").textContent = "Strain check";
 
-  if (quality === null) {
+  retryBtn.textContent = calibrationIsDefault ? "Calibrate" : "Recalibrate";
+  if (result === "saved") {
     $("calib-prompt").textContent = "Welcome back!";
     text.textContent = "New player? Recalibrate.";
     setPrimary(playBtn, retryBtn);
-  } else if (quality.ok) {
+  } else if (result === "reading") {
+    $("calib-prompt").textContent = "Relax your face…";
+    text.textContent = "Just look at the screen for a moment.";
+    setPrimary(playBtn, retryBtn);
+  } else if (result === "default") {
+    $("calib-prompt").textContent = "Try your strain 💩";
+    text.textContent = "Bar acting up? Calibrate it to your face.";
+    setPrimary(playBtn, retryBtn);
+  } else if (result.ok) {
     $("calib-prompt").textContent = "Nice strain! 💪";
     text.textContent = "";
     setPrimary(playBtn, retryBtn);
   } else {
     $("calib-prompt").textContent = "Hmm, that didn't work well";
-    text.textContent = quality.reason ?? "Try again.";
+    text.textContent = result.reason ?? "Try again.";
     setPrimary(retryBtn, playBtn);
   }
-  const anyway = quality !== null && !quality.ok;
+  const anyway = typeof result === "object" && !result.ok;
   calibrationFailed = anyway;
   playBtn.innerHTML = anyway ? "Play anyway" : "Play! <small>(Enter)</small>";
   playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);

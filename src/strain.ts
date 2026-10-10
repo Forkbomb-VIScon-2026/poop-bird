@@ -244,6 +244,80 @@ export function rawStrain(features: FeatureVector, calib: Calibration, featureCl
   return clamp(sum / weightSum, 0, 1);
 }
 
+// --- Default calibration -------------------------------------------------------
+
+/**
+ * How far each feature typically moves on a strain face, for players who
+ * skip the calibration. Only features that move for most people: brows, eyes,
+ * nose, cheeks and pressed lips. The lip rolls and shrugs vary too much
+ * between players to count by default.
+ */
+export const DEFAULT_STRAIN_DELTAS: Readonly<Partial<Record<FeatureName, number>>> = {
+  browDown: 0.3,
+  eyeSquint: 0.3,
+  eyeBlink: 0.35,
+  noseSneer: 0.25,
+  cheekSquint: 0.2,
+  mouthPress: 0.2,
+};
+
+/** Blendshape scores top out at 1; the default strain target stays just below. */
+const MAX_DEFAULT_TARGET = 0.98;
+/** A feature whose relaxed value leaves less than this fraction of its typical change as headroom gets no weight. */
+const MIN_DEFAULT_HEADROOM = 0.3;
+
+/**
+ * Neutral-face stats for the default calibration: the median (one blink in the
+ * window doesn't shift it) and the plain std (so the puff calibration, which
+ * reuses `neutralStd`, sees the same noise as after a full calibration).
+ */
+export function neutralFaceStats(samples: readonly FeatureVector[]): FeatureStats {
+  const robust = robustFeatureStats(samples);
+  return { mean: robust.mean, std: featureStats(samples).std, count: samples.length };
+}
+
+/**
+ * A calibration from a measured relaxed face alone: each feature's strain
+ * target is the player's own neutral value plus its typical change (× `scale`),
+ * weighted by that change. A feature already near its maximum at rest (say,
+ * squinting eyes) gets less weight, or none, since it can barely move further,
+ * and so does one that jittered at rest by more than a quarter of its change.
+ */
+export function defaultCalibration(
+  neutral: Pick<FeatureStats, "mean" | "std">,
+  scale = 1,
+  deltas: Readonly<Partial<Record<FeatureName, number>>> = DEFAULT_STRAIN_DELTAS,
+): Calibration {
+  const strain = { ...neutral.mean };
+  const weights = zeroFeatures();
+  for (const f of FEATURE_NAMES) {
+    const delta = (deltas[f] ?? 0) * scale;
+    if (delta <= 0) continue;
+    const target = Math.min(neutral.mean[f] + delta, MAX_DEFAULT_TARGET);
+    const headroom = (target - neutral.mean[f]) / delta;
+    if (headroom < MIN_DEFAULT_HEADROOM) continue;
+    const reliability = Math.min(1, delta / (4 * (neutral.std[f] + 1e-3)));
+    strain[f] = target;
+    weights[f] = delta * headroom * reliability;
+  }
+  return { neutral: { ...neutral.mean }, strain, weights, neutralStd: { ...neutral.std } };
+}
+
+/**
+ * Fraction of relaxed-face samples that the calibration would score above the
+ * off threshold: a high rate means the relaxed read wasn't relaxed or steady.
+ */
+export function neutralFalseRate(
+  calib: Calibration,
+  neutralSamples: readonly FeatureVector[],
+  params: Pick<QualityParams, "featureClampMax" | "strainOff">,
+): number {
+  return fraction(neutralSamples, (s) => rawStrain(s, calib, params.featureClampMax) > params.strainOff);
+}
+
+/** A calibration whose relaxed samples cross the off threshold more often than this is rejected. */
+export const MAX_NEUTRAL_FALSE_RATE = 0.25;
+
 export interface CalibrationQuality {
   ok: boolean;
   /** Sum of feature weights; ~how many "units" of face movement we can see. */
@@ -293,8 +367,7 @@ export function assessCalibration(
     .slice(0, 3);
   const score = (s: FeatureVector) => rawStrain(s, calib, params.featureClampMax);
   const strainHitRate = fraction(strainSamples, (s) => score(s) >= params.strainOn);
-  const neutralFalseRate = fraction(neutralSamples, (s) => score(s) > params.strainOff);
-  const base = { totalChange, strainHitRate, neutralFalseRate, topFeatures };
+  const base = { totalChange, strainHitRate, neutralFalseRate: neutralFalseRate(calib, neutralSamples, params), topFeatures };
 
   if (
     neutralSamples.length < minSamples ||
@@ -310,7 +383,7 @@ export function assessCalibration(
   if (strainHitRate < 0.6) {
     return { ...base, ok: false, reason: "Your strain wasn't steady. Hold the strain for the whole countdown." };
   }
-  if (neutralFalseRate > 0.25) {
+  if (base.neutralFalseRate > MAX_NEUTRAL_FALSE_RATE) {
     return { ...base, ok: false, reason: "Your relaxed face was too close to your strain face. Relax completely, then strain harder." };
   }
   return { ...base, ok: true };

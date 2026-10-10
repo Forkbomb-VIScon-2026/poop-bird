@@ -59,6 +59,14 @@ export const CONFIG_SPEC = {
   minCalibrationChange: { value: 0.25, min: 0, max: 2, step: 0.01, group: "Strain", label: "Min total change", hint: "calibration quality: summed weights must exceed this" },
   calibrationSeconds: { value: 3, min: 1, max: 8, step: 0.5, group: "Strain", label: "Calibration phase", hint: "s per phase" },
   calibrationSettle: { value: 0.7, min: 0, max: 2, step: 0.1, group: "Strain", label: "Calibration settle", hint: "s ignored at the start of each phase" },
+  defaultNeutralSeconds: {
+    value: 1.5, min: 0.5, max: 5, step: 0.1, group: "Strain", label: "Default: relaxed read",
+    hint: "s of relaxed face read on the strain check when the player skips calibration",
+  },
+  defaultStrainScale: {
+    value: 1, min: 0.3, max: 2.5, step: 0.05, group: "Strain", label: "Default: strain scale",
+    hint: "× the typical strain change of the default calibration (<1 = easier to strain); applies on the next relaxed read",
+  },
 
   // --- World ---------------------------------------------------------------
   scrollSpeed: { value: 170, min: 50, max: 600, step: 5, group: "World", label: "Scroll speed (start)", hint: "px/s" },
