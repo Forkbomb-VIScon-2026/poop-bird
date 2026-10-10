@@ -164,7 +164,7 @@ const heldPointers = new Set<number>();
 let best = loadBest();
 let currentSnapshotUrl: string | null = null;
 /** The run on the game-over screen, as it would go to the leaderboard. null once submitted. */
-let lastRun: { score: number; mode: Mode; stats: RunStats; face: { url: string; strain: number } | null } | null = null;
+let lastRun: { score: number; stats: RunStats; face: { url: string; strain: number } | null } | null = null;
 /** Smoothed `strainedness` of the face (the finest-strain snapshot's and the leaderboard's measure). */
 let faceStrain = 0;
 /** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
@@ -1389,19 +1389,22 @@ function onGameOver(): void {
   if (currentSnapshotUrl) $<HTMLImageElement>("go-snapshot-img").src = currentSnapshotUrl;
   $("go-strain").textContent = String(strainPercent(snapshot.peakStrain));
 
-  lastRun = {
+  // Only runs played with the face count: keyboard and touch runs can't be submitted.
+  lastRun = mode !== "face" ? null : {
     score,
-    mode,
     stats: { targets: game.targetsHit, distance: Math.round(game.distance / 50), bestCombo: game.bestCombo },
     face: currentSnapshotUrl ? { url: currentSnapshotUrl, strain: snapshot.peakStrain } : null,
   };
-  show($("go-lb-form"), score > 0 || lastRun.face !== null);
-  show($("go-lb-face-opt"), lastRun.face !== null);
+  show($("go-lb-form"), lastRun !== null && (score > 0 || lastRun.face !== null));
+  show($("go-lb-face-opt"), lastRun?.face != null);
   // Sharing the face is a fresh choice every run (the next player at this machine may not want to).
   $<HTMLInputElement>("go-lb-face").checked = false;
   $<HTMLButtonElement>("btn-lb-submit").disabled = false;
   $<HTMLInputElement>("go-name").value = storageGet("poopbird.name.v1") ?? "";
-  show($("go-lb-status"), false);
+  const status = $("go-lb-status");
+  status.classList.remove("error");
+  status.textContent = "Only runs played with your face count for the leaderboard. 😣";
+  show(status, lastRun === null);
   void showBoards($("go-lb"));
   showScreen("gameover");
 }
@@ -1423,7 +1426,7 @@ async function submitToLeaderboard(): Promise<void> {
     const result = await submitRun({
       name,
       score: run.score,
-      mode: run.mode,
+      mode: "face",
       stats: run.stats,
       ...(withFace && run.face
         ? { face: { jpeg: run.face.url.slice(run.face.url.indexOf(",") + 1), strain: run.face.strain } }

@@ -133,8 +133,8 @@ function thumb(e: LeaderboardEntry): HTMLElement {
     img.loading = "lazy";
     return img;
   }
-  const el = span("thumb", e.mode === "keyboard" ? "⌨️" : "💩");
-  el.title = e.mode === "keyboard" ? "Played without the camera" : "Played with the face, kept it private";
+  const el = span("thumb", "💩");
+  el.title = "Kept their face private";
   return el;
 }
 

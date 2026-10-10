@@ -107,7 +107,6 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
         id,
         name: cleanName(s.name)!,
         score: s.score,
-        mode: s.mode,
         stats: { targets: s.stats.targets, distance: s.stats.distance, bestCombo: s.stats.bestCombo },
         strain: s.face ? s.face.strain : null,
         face: s.face ? `/api/leaderboard/${id}.jpg` : null,
