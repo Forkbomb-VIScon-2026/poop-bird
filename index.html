@@ -42,9 +42,6 @@
           <div id="hud-combo" class="hud-combo hidden">combo <b id="hud-combo-n">x1</b></div>
           <div id="hud-message" class="hud-message hidden"></div>
         </div>
-        <div class="hud-keys">
-          <span id="hud-mode">⌨️ keyboard</span> · <span id="hud-mute">🔊</span> · P pause<span data-debug-only> · D debug</span>
-        </div>
         <div id="hud-toast" class="hud-toast hidden"></div>
       </div>
 
@@ -77,7 +74,7 @@
           <button id="btn-keyboard" class="btn small ghost light">or use the keyboard</button>
           <details class="more">
             <summary>⚙️ Options</summary>
-            <p class="keys"><kbd>Space</kbd> strain (or puff underwater) · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>C</kbd> recalibrate<span data-debug-only> · <kbd>D</kbd> debug</span></p>
+            <p class="keys"><kbd>Space</kbd> strain in keyboard mode (or puff underwater) · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>C</kbd> recalibrate<span data-debug-only> · <kbd>D</kbd> debug</span></p>
           </details>
           <p class="privacy light">🔒 Your camera never leaves this device.</p>
         </div>
@@ -186,11 +183,18 @@
                 <tr><td>Accidents</td><td id="go-accidents">0</td></tr>
                 <tr><td>Cameras smashed</td><td id="go-smashed">0</td></tr>
                 <tr><td>Front pages</td><td id="go-scandals">0</td></tr>
+                <tr><td>Brats foiled</td><td id="go-kids">0</td></tr>
+                <tr><td>Weddings ruined</td><td id="go-weddings">0</td></tr>
+                <tr><td>Balloons popped</td><td id="go-balloons">0</td></tr>
               </table>
             </div>
             <div id="go-frontpage" class="go-snapshot hidden">
               <div class="go-snapshot-title">Tomorrow's front page</div>
               <canvas id="go-frontpage-canvas" class="go-frontpage" width="400" height="480"></canvas>
+            </div>
+            <div id="go-wedding" class="go-snapshot hidden">
+              <div class="go-snapshot-title">The official wedding photo</div>
+              <canvas id="go-wedding-canvas" class="go-wedding" width="500" height="470"></canvas>
             </div>
             <div id="go-snapshot" class="go-snapshot hidden">
               <div class="go-snapshot-title">Your finest strain</div>

@@ -126,7 +126,7 @@ export class DebugPanel {
     el.append(this.puffSection);
 
     const keys = div("dbg-legend");
-    keys.textContent = "With this panel open: G spawns the next gate, L a power line, F a paparazzo, O starts a run as the pufferfish";
+    keys.textContent = "With this panel open: G brings the waterfront next, L a power line, F a paparazzo, K a slingshot kid, B a balloon, O starts a run as the pufferfish";
     el.append(keys);
 
     el.append(h3("Face features (value · neutral | strain/puff · weight)"));

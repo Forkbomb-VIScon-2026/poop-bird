@@ -8,7 +8,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
 import { Game } from "./game";
-import { Renderer, drawFrontPage } from "./render";
+import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
@@ -33,11 +33,15 @@ import {
 import {
   FEATURE_NAMES,
   PUFF_FEATURES,
+  MAX_NEUTRAL_FALSE_RATE,
   STRAIN_FEATURES,
   assessCalibration,
   buildCalibration,
+  defaultCalibration,
   featureStats,
   initialStrainState,
+  neutralFaceStats,
+  neutralFalseRate,
   restoreCalibration,
   stepStrain,
   type Calibration,
@@ -94,6 +98,8 @@ const debug = DEBUG
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
 
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
+/** `calibration` is the default one, fitted to a quick relaxed-face read and never saved. */
+let calibrationIsDefault = false;
 /** Puff calibration (neutral vs. full puff). null = use the fixed cheekPuff fallback range. */
 let puffCalibration: Calibration | null = loadCalibration(PUFF_CALIBRATION_KEY, PUFF_FEATURES);
 /** The puff calibration ran (and passed or failed) this session; later dives skip it. Reset by C. */
@@ -127,9 +133,14 @@ let currentSnapshotUrl: string | null = null;
 
 sound.setMuted(storageGet("poopbird.muted.v1") === "1");
 
-/** The single "is the player straining?" signal: face OR keyboard OR pointer. */
+/** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
+function manualHeld(): boolean {
+  return mode === "keyboard" && (keyHeld || pointerHeld);
+}
+
+/** The single "is the player straining?" signal: the face in face mode, Space / pointer in keyboard mode. */
 function straining(): boolean {
-  return keyHeld || pointerHeld || (mode === "face" && faceFresh() && strain.active);
+  return mode === "face" ? faceFresh() && strain.active : manualHeld();
 }
 
 /** Face puff 0..1 (0 in keyboard mode, or if the detector stalled). */
@@ -137,7 +148,7 @@ function facePuff(): number {
   return mode === "face" && faceFresh() ? puffSignal.smoothed : 0;
 }
 
-/** The single puff signal for the fish: max of face and key, the same "face OR key" spirit as straining(). */
+/** The single puff signal for the fish: max of face and key (only one is ever nonzero, see manualHeld()). */
 function puffInput(): number {
   return Math.max(keyPuff, facePuff());
 }
@@ -211,7 +222,6 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   const token = ++flow;
   sound.unlock();
   mode = "face";
-  updateModeLabel();
   if (!tracker.ready) {
     state = "loading";
     showScreen("loading");
@@ -236,20 +246,19 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
       show($("loading-spinner"), false);
       show($("loading-error"), true);
       mode = "keyboard";
-      updateModeLabel();
       return;
     }
   }
   tracker.start();
   show(cam, true);
-  if (calibration && !forceCalibrate) showCalibrationResult(null);
-  else await runCalibration();
+  if (forceCalibrate) await runCalibration();
+  else if (calibration && !calibrationIsDefault) showCalibrationResult("saved");
+  else await runDefaultCalibration();
 }
 
 function startKeyboardMode(): void {
   sound.unlock();
   mode = "keyboard";
-  updateModeLabel();
   tracker.stopCamera();
   show(cam, false);
   startReady();
@@ -301,6 +310,7 @@ async function runCalibration(): Promise<void> {
   // Only a calibration that passed the check replaces the saved one.
   if (quality.ok) {
     calibration = cal;
+    calibrationIsDefault = false;
     rejectedCalibration = null;
     saveCalibration(CALIBRATION_KEY, cal);
   } else {
@@ -308,6 +318,78 @@ async function runCalibration(): Promise<void> {
   }
   strain = initialStrainState();
   showCalibrationResult(quality);
+}
+
+/**
+ * The start without calibration: the strain check opens right away and the
+ * default calibration is fitted to a short read of the player's relaxed face.
+ * It's never saved, so the next player on this browser gets their own read.
+ * Calibrating from the strain check replaces it.
+ */
+async function runDefaultCalibration(): Promise<void> {
+  const token = ++flow;
+  // A new player: the next dive samples their puff again.
+  clearPuffCalibration();
+  calibration = null;
+  calibrationIsDefault = true;
+  rejectedCalibration = null;
+  strain = initialStrainState();
+  showCalibrationResult("reading");
+  // A read whose own samples would trip the meter (fidgeting, blinking,
+  // jittery tracking) is read again. The last try is kept regardless, since
+  // the player can always calibrate.
+  for (let attempt = 1; ; attempt++) {
+    const neutral = await readRelaxedFace(token);
+    if (token !== flow || !neutral) return;
+    const cal = defaultCalibration(neutralFaceStats(neutral), config.defaultStrainScale);
+    const falseRate = neutralFalseRate(cal, neutral, config);
+    console.info("[default calibration]", { cal, falseRate, attempt, neutral });
+    if (falseRate <= MAX_NEUTRAL_FALSE_RATE || attempt >= MAX_RELAXED_READS) {
+      calibration = cal;
+      break;
+    }
+    $("calib-result-text").textContent = "Hold still and relax completely…";
+  }
+  strain = initialStrainState();
+  showCalibrationResult("default");
+}
+
+/** Relaxed-face reads before the default calibration takes the last one, steady or not. */
+const MAX_RELAXED_READS = 3;
+
+/** Fewest face samples the relaxed-face read takes, so a slow detector just reads for longer. */
+const MIN_RELAXED_SAMPLES = 8;
+
+/**
+ * Samples the relaxed face for at least `defaultNeutralSeconds` and
+ * MIN_RELAXED_SAMPLES face frames. Starts over if too few frames had a face
+ * (no one in view yet). null = abandoned.
+ */
+async function readRelaxedFace(token: number): Promise<FeatureVector[] | null> {
+  const total = config.defaultNeutralSeconds * 1000;
+  let start = performance.now();
+  calibSamples = [];
+  calibFrames = [];
+  for (;;) {
+    await wait(50);
+    if (token !== flow || !calibSamples || !calibFrames) {
+      calibSamples = null;
+      calibFrames = null;
+      return null;
+    }
+    if (performance.now() - start < total) continue;
+    if (calibSamples.length < calibFrames.length * config.minFaceCoverage) {
+      start = performance.now();
+      calibSamples = [];
+      calibFrames = [];
+    } else if (calibSamples.length >= MIN_RELAXED_SAMPLES) {
+      break;
+    }
+  }
+  const samples = calibSamples.map((s) => s.f);
+  calibSamples = null;
+  calibFrames = null;
+  return samples;
 }
 
 interface PhaseResult {
@@ -393,8 +475,13 @@ function topFeatureLabels(cal: Calibration): string[] {
     .map((f) => FEATURE_LABELS[f]);
 }
 
-/** quality === null means "reusing a saved calibration". */
-function showCalibrationResult(quality: ReturnType<typeof assessCalibration> | null): void {
+/**
+ * What the strain check shows: a saved calibration, the default one (while
+ * reading the relaxed face, then ready), or the result of a fresh calibration.
+ */
+type CalibrationResult = "saved" | "reading" | "default" | ReturnType<typeof assessCalibration>;
+
+function showCalibrationResult(result: CalibrationResult): void {
   state = "calibrated";
   showScreen("calibrate");
   show(hud, false);
@@ -412,20 +499,29 @@ function showCalibrationResult(quality: ReturnType<typeof assessCalibration> | n
   card.classList.remove("strain");
   $("calib-step").textContent = "Strain check";
 
-  if (quality === null) {
+  retryBtn.textContent = calibrationIsDefault ? "Calibrate" : "Recalibrate";
+  if (result === "saved") {
     $("calib-prompt").textContent = "Welcome back!";
     text.textContent = "New player? Recalibrate.";
     setPrimary(playBtn, retryBtn);
-  } else if (quality.ok) {
+  } else if (result === "reading") {
+    $("calib-prompt").textContent = "Relax your face…";
+    text.textContent = "Just look at the screen for a moment.";
+    setPrimary(playBtn, retryBtn);
+  } else if (result === "default") {
+    $("calib-prompt").textContent = "Try your strain 💩";
+    text.textContent = "Bar acting up? Calibrate it to your face.";
+    setPrimary(playBtn, retryBtn);
+  } else if (result.ok) {
     $("calib-prompt").textContent = "Nice strain! 💪";
     text.textContent = "";
     setPrimary(playBtn, retryBtn);
   } else {
     $("calib-prompt").textContent = "Hmm, that didn't work well";
-    text.textContent = quality.reason ?? "Try again.";
+    text.textContent = result.reason ?? "Try again.";
     setPrimary(retryBtn, playBtn);
   }
-  const anyway = quality !== null && !quality.ok;
+  const anyway = typeof result === "object" && !result.ok;
   calibrationFailed = anyway;
   playBtn.innerHTML = anyway ? "Play anyway" : "Play! <small>(Enter)</small>";
   playBtn.disabled = !(anyway ? (rejectedCalibration ?? calibration) : calibration);
@@ -473,8 +569,9 @@ function needsPuffCalibration(): boolean {
 }
 
 /**
- * Runs while the dive transition is held: the world is frozen and an overlay
- * asks for a full puff. Belongs to the current run's flow token, so going to
+ * Runs while the dive transition is held, right after the bird turned into a
+ * deflated fish: the world holds still, an overlay asks for a full puff and
+ * the fish inflates as the player puffs. Belongs to the current run's flow token, so going to
  * the menu or recalibrating mid-dive abandons it (the next run resets the
  * game). Never blocks the game: a failed check falls back to the fixed range.
  */
@@ -591,7 +688,6 @@ function startOceanRun(): void {
   if (state === "menu") {
     sound.unlock();
     mode = "keyboard";
-    updateModeLabel();
     tracker.stopCamera();
   } else if (state === "calibrated") {
     if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
@@ -700,6 +796,23 @@ function onGameOver(): void {
   $("go-accidents").textContent = String(game.accidents);
   $("go-smashed").textContent = String(game.camerasSmashed);
   $("go-scandals").textContent = String(game.frontPages.length);
+  $("go-kids").textContent = String(game.kidsDisarmed + game.pebblesShot);
+  $("go-weddings").textContent = String(game.weddingsRuined);
+
+  // The wedding album: the last ruined wedding if there was one (that's the good one).
+  const wedding = game.weddingPhotos.filter((p) => p.ruined).at(-1) ?? game.weddingPhotos.at(-1) ?? null;
+  show($("go-wedding"), wedding !== null);
+  if (wedding) {
+    const wc = $<HTMLCanvasElement>("go-wedding-canvas");
+    const wctx = wc.getContext("2d");
+    if (wctx) {
+      wctx.setTransform(1, 0, 0, 1, 0, 0);
+      wctx.clearRect(0, 0, wc.width, wc.height);
+      wctx.scale(wc.width / 250, wc.width / 250);
+      drawWeddingPrint(wctx, 2, 2, 240, wedding, renderer.photos.get(wedding.photoId));
+    }
+  }
+  $("go-balloons").textContent = String(game.balloonsPopped);
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -833,11 +946,6 @@ function updateHud(): void {
   }
 }
 
-function updateModeLabel(): void {
-  $("hud-mode").textContent = mode === "face" ? "😣 face (Space works too)" : "⌨️ keyboard";
-  $("hud-mute").textContent = sound.muted ? "🔇 M" : "🔊 M";
-}
-
 // --- Main loop ---------------------------------------------------------------------------
 
 const STEP = 1 / 120;
@@ -859,7 +967,7 @@ function frame(now: number): void {
         // A pop deflates the fish: key puff stays empty while stunned.
         keyPuff = game.stunned
           ? 0
-          : stepKeyPuff(keyPuff, keyHeld || pointerHeld, STEP, config.oceanKeyInflateRate, config.oceanKeyDeflateRate);
+          : stepKeyPuff(keyPuff, manualHeld(), STEP, config.oceanKeyInflateRate, config.oceanKeyDeflateRate);
       }
       game.puffInput = puffInput();
       game.step(STEP);
@@ -901,7 +1009,9 @@ function frame(now: number): void {
     scrollSpeed: game.speed,
     difficulty: game.difficulty,
     birdVy: game.bird.vy,
-    stage: game.transition ? `${game.stage} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}` : game.stage,
+    stage: game.transition
+      ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`
+      : game.stage,
     puffCalibration,
     puffSource: puffCalibration ? `calibrated (${topFeatureLabels(puffCalibration).join(", ")})` : "fallback range",
     rawPuff: mode === "face" && faceFresh() ? puffSignal.raw : 0,
@@ -926,6 +1036,9 @@ function takePhoto(photoId: number): void {
   const photo = face ?? renderer.captureBird(game);
   if (photo) renderer.photos.set(photoId, photo);
 }
+
+/** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
+let weddingFace: Photo | null = null;
 
 function handleGameEvents(): void {
   for (const e of game.events) {
@@ -952,15 +1065,21 @@ function handleGameEvents(): void {
         onGameOver();
         break;
       case "gateEntered":
-        sound.splash();
         if (e.to === "ocean") {
+          sound.splash();
           // Keyboard players start at the hover point; in face mode the face decides.
           keyPuff = mode === "keyboard" ? config.oceanHoverPuff : 0;
-          if (needsPuffCalibration()) void runPuffCalibration();
-          else if (mode === "keyboard") showToast("Hold SPACE to puff up 🐡");
         } else {
           keyPuff = 0;
         }
+        break;
+      case "submerged":
+        // The bird just turned into a deflated fish: puffing up is the rest of the transformation.
+        if (needsPuffCalibration()) void runPuffCalibration();
+        else if (mode === "keyboard") showToast("Hold SPACE to puff up 🐡");
+        break;
+      case "breached":
+        sound.splash();
         break;
       case "transformed":
       case "surfaced":
@@ -984,6 +1103,73 @@ function handleGameEvents(): void {
         break;
       case "cameraSmashed":
         sound.smash();
+        break;
+      case "slingshotDraw":
+        sound.slingshotDraw(e.windup);
+        break;
+      case "slingshotFire":
+        sound.slingshotFire();
+        break;
+      case "bonk":
+        sound.bonk();
+        break;
+      case "pebbleShot":
+        sound.pebbleShot(e.combo);
+        break;
+      case "ricochet":
+        sound.ricochet();
+        break;
+      case "kidCried":
+        sound.kidCry();
+        break;
+      case "weddingArrived":
+        sound.weddingArrived();
+        break;
+      case "weddingBeat":
+        sound.weddingBeat(e.count);
+        break;
+      case "weddingKiss":
+        sound.weddingKiss();
+        // Grab the face now: a player who's on it is straining hardest right at "KISS!".
+        weddingFace = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
+        break;
+      case "weddingRuined":
+        sound.weddingRuined();
+        break;
+      case "weddingMarried":
+        sound.weddingMarried();
+        break;
+      case "weddingPhoto": {
+        sound.shutter();
+        const photo = renderer.captureWedding(game, weddingFace);
+        if (photo) renderer.photos.set(e.photoId, photo);
+        weddingFace = null;
+        break;
+      }
+      case "bouquetThrown":
+        sound.bouquetThrown(e.angry);
+        break;
+      case "bouquetCaught":
+        sound.bouquetCaught();
+        break;
+      case "bouquetHit":
+        sound.bouquetHit();
+        break;
+      case "balloonPop":
+        sound.balloonPop();
+        sound.hit(e.combo);
+        break;
+      case "chuteOpen":
+        sound.chuteOpen();
+        break;
+      case "basketLanded":
+        sound.basketLanded();
+        break;
+      case "burner":
+        sound.burner();
+        break;
+      case "threaded":
+        sound.hit(4);
         break;
     }
   }
@@ -1013,7 +1199,7 @@ window.addEventListener("keydown", (e) => {
       break;
     case "m":
       storageSet("poopbird.muted.v1", sound.toggleMute() ? "1" : "0");
-      updateModeLabel();
+      showToast(sound.muted ? "🔇 Muted" : "🔊 Sound on", 1200);
       break;
     case "r":
       if (state === "gameover") startReady();
@@ -1022,8 +1208,8 @@ window.addEventListener("keydown", (e) => {
       debug?.toggle();
       break;
     case "g":
-      // Debug shortcut: the next obstacle is the stage's gate.
-      if (debug?.visible && state === "playing") game.spawnGateNow();
+      // Debug shortcut: the stage's waterfront comes next.
+      if (debug?.visible && state === "playing") game.spawnShoreNow();
       break;
     case "l":
       // Debug shortcut: a power line right now.
@@ -1032,6 +1218,18 @@ window.addEventListener("keydown", (e) => {
     case "f":
       // Debug shortcut: a paparazzo walks on.
       if (debug?.visible && state === "playing") game.spawnPaparazzoNow();
+      break;
+    case "k":
+      // Debug shortcut: a slingshot kid walks on.
+      if (debug?.visible && state === "playing") game.spawnKidNow();
+      break;
+    case "w":
+      // Debug shortcut: a wedding right now.
+      if (debug?.visible && state === "playing") game.spawnWeddingNow();
+      break;
+    case "b":
+      // Debug shortcut: a hot-air balloon floats in.
+      if (debug?.visible && state === "playing") game.spawnBalloonNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
@@ -1104,7 +1302,6 @@ document.addEventListener("click", (e) => {
 
 // --- Boot ----------------------------------------------------------------------------------
 
-updateModeLabel();
 goToMenu();
 requestAnimationFrame(frame);
 
@@ -1112,7 +1309,7 @@ requestAnimationFrame(frame);
 if (DEBUG) {
   Object.assign(window, {
     poopBird: {
-      game, config, tracker,
+      game, config, tracker, renderer,
       get calibration() { return calibration; },
       get puffCalibration() { return puffCalibration; },
       get lastPuffAttempt() { return lastPuffAttempt; },

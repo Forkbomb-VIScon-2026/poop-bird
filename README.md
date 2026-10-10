@@ -30,7 +30,7 @@ Other scripts:
 | `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
-| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, dataset sessions, collector) |
+| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
 | `npm run data:pull` / `data:purge` | Copy the face dataset from the team VM into `data/` / delete that copy (see [Face dataset](#face-dataset)) |
@@ -60,21 +60,27 @@ starts the face dataset collector (local credentials `local` /
 | --- | --- |
 | Strain face (webcam) | City: charge; relax to poop |
 | Puff cheeks (webcam) | Ocean: inflate (more puff = rise, less = sink) |
-| Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Always works, also in face mode |
+| Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / Esc | Pause |
 | **M** | Mute |
 | **R** | Play again from game over |
 | **C** | Re-run calibration |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
-| **G** | With the debug panel open: spawn the next gate now |
+| **G** | With the debug panel open: the stage's waterfront comes next |
 | **L** | With the debug panel open: spawn a power line now |
+| **K** | With the debug panel open: a slingshot kid walks on |
+| **W** | With the debug panel open: a wedding right now |
+| **B** | With the debug panel open: a hot-air balloon floats in |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration |
 
 ## How it plays
 
-After calibration (each phase shows a sketch of the face to make), a strain
-check shows a live meter between a relaxed and a strained face sketch. Then the
+Calibration is optional. Face mode opens straight on a strain check: a live
+meter between a relaxed and a strained face sketch, running on a default
+calibration fitted to a quick read of the player's relaxed face. If the meter
+doesn't follow their face, the player clicks "Calibrate" for the full two-phase
+calibration (each phase shows a sketch of the face to make). Then the
 bird hovers until the player strains for the first time, which starts the run;
 there's no countdown.
 
@@ -99,9 +105,55 @@ there's no countdown.
   The ring over his head fills as he closes in; when it's full (just past the
   bird) he takes your picture. Splat him first to smash the camera (×3).
   Miss, and you get a flash, a polaroid, and your photo on a roadside
-  billboard as the next obstacle, always before the harbour gate (and on the
+  billboard as the next obstacle, always before the harbour (and on the
   game-over screen). The run's first paparazzo walks slower and has a
   "SPLAT HIM!" arrow.
+- **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
+  plants his feet and winds up his slingshot at you. A "!" pops over his head
+  and a dotted arc reaches out toward the bird, ending in a crosshair. When
+  the band is fully back he lets go, aimed at where you are (with a little
+  lead). A pebble that hits bonks the bird: it tumbles stunned, gets knocked
+  down, and loses its charge and combo, which is deadly near the ground.
+  Ways out: change height once he fires (a near miss pays a "CLOSE ONE!"
+  bonus), put a building or pole between you (pebbles ping off them), shoot
+  the pebble down with a falling poop ("INTERCEPTED!", ×4), or splat the kid
+  while he's still armed ("DISARMED!", ×3) and he runs off crying. Later
+  kids fire twice. Tunables are in the debug panel's "Slingshot kids" group.
+- **The wedding:** now and then (`weddingChance`, about one city stage in
+  four) a church takes the place of one building, with a wedding on the
+  sidewalk in front: the couple under a flower arch with their names on it,
+  guests, a getaway car and a photographer with an old plate camera. Bells ring and the organ plays
+  "Here comes the bride". As the couple comes up to the bird the
+  photographer counts down in a heart over them, *3… 2… 1…*, and then they
+  **KISS!** for about a second (a ring around the heart runs out). That's the
+  timing puzzle: start straining on the countdown, let go on "KISS!".
+  - Splat the bride or groom mid-kiss and the wedding is **ruined**
+    ("OBJECTION!", ×10): a record scratch, the bride shrieks, the groom
+    faints, the guests gasp and the heart breaks. A moment later she throws
+    her bouquet at the bird ("!" over her head first). It knocks the bird
+    down but doesn't stun it.
+  - Let the kiss go through and they're **married**: confetti, a flight of
+    doves, a fanfare, and the bride tosses her bouquet high over the bird.
+    Fly into it as it comes down to catch it ("YOU'RE NEXT!", ×4).
+  - Splatting the couple before the kiss (×3), the guests, the photographer
+    (his lens gets smudged, and so does the photo) or the car scores like a
+    normal target.
+  - Either way the photographer's flash goes off, and **the official
+    wedding photo** pops up in the corner as a framed print: the couple, the
+    guests and the bird photobombing from the corner, blissfully relieved if
+    it just ruined everything. In face mode the bird has the player's face,
+    grabbed at "KISS!" (when they should be straining hardest). The game-over
+    screen shows the run's last ruined wedding (or the last wedding).
+  Tunables are in the debug panel's "Wedding" group.
+- **Hot-air balloons:** some city obstacles are a balloon drifting along with
+  the wind (`balloonChance`). Fly through the envelope (or poop on it) and it
+  pops (×4): fly through it yourself and the escaping hot air gives you a free
+  lift. The basket drops to the street and the passengers bail out, tumbling
+  until their parachutes open; while they drift down they're targets (×2),
+  and once they land they walk off as pedestrians. The basket is solid:
+  flying into it, hanging or falling, ends the run. Slip between the envelope
+  and the basket without touching either for a "THREADED IT!" bonus (×6).
+  Tunables are in the "Balloons" group.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage
@@ -109,13 +161,18 @@ there's no countdown.
 A run alternates city → ocean → city → … and difficulty keeps ramping with
 total distance.
 
-- **Harbour gate.** After `cityObstaclesBeforeGate` (6) city obstacles comes a
-  harbour building whose door is full of sea. Fly through it to dive in; its
-  walls kill like any other obstacle.
-- **Transformation.** A splash, and the bird becomes a pufferfish. On the first
-  dive in face mode the world freezes for ~2.5 s with "PUFF YOUR CHEEKS!": that
-  is the puff calibration (see below). Later dives, and keyboard mode, get a
-  ~1 s transform instead. Keyboard mode shows "Hold SPACE to puff up".
+- **The harbour.** After `cityObstaclesBeforeGate` (6) city obstacles the street
+  ends at a quay (bollard, ladder, stone wall) and the harbour opens up below.
+  Poops that land in the water just plop.
+- **Dive and transformation.** Once the bird is over the water the game takes
+  the controls: a little hop, and it plunges through the surface while the
+  camera follows it down past the quay wall into the sea. Under water it
+  gulps, loses its feathers in a burst of bubbles and becomes a deflated
+  pufferfish, which then inflates. On the first dive in face mode, inflating
+  *is* the puff calibration: the world holds still with "PUFF YOUR CHEEKS!"
+  and the fish puffs up as you do (see below). Otherwise it inflates by itself
+  over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
+  shows "Hold SPACE to puff up".
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
@@ -128,9 +185,13 @@ total distance.
   stun during which you sink without control. The meter flashes "DEFLATE!" in
   the last ~0.3 s.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
-- **Exit gate.** After `oceanObstacles` (8) ocean obstacles, a reef arch with a
-  bubble ring leads up to the surface. Swim through and you're a bird again.
-  A strain held while surfacing doesn't fire: you have to relax first.
+- **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
+  wall comes up ahead. Once the last obstacle is behind you and the wall is
+  close, the game takes the controls: the fish shoots up, breaks the surface
+  and becomes a bird again mid-leap, with the camera following it up to the
+  street. The bird glides at a safe height until the street is below it, then
+  the controls are yours again, so the wall can't get you. A strain held while
+  surfacing doesn't fire: you have to relax first.
 - With Space alone: hold to inflate (rise), let go to deflate (sink), and tap to
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
@@ -146,10 +207,23 @@ webcam), and the wiring in `src/main.ts`.
    `noseSneer`, `cheekSquint` and `mouthPress` (each the mean of left and
    right), plus `mouthRollLower`, `mouthRollUpper`, `mouthShrugUpper` and
    `mouthShrugLower`.
-2. **Calibration** (per player, about 3 s per phase): "Relax your face", then
+2. **Calibration** (optional, per player, about 3 s per phase): "Relax your face", then
    "STRAIN!". The first 0.7 s of each phase is ignored so reaction time doesn't
    pollute the data. We store the mean and standard deviation of each feature
    for both phases.
+
+   **Default calibration.** Without a saved calibration, the strain check reads the
+   relaxed face for `defaultNeutralSeconds` (1.5 s; it retries until a face
+   stays in view) and takes each feature's median as neutral. The strain target
+   is neutral plus a typical change per feature (`DEFAULT_STRAIN_DELTAS` in
+   `src/strain.ts`, scaled by `defaultStrainScale`), only for the features
+   that move for most people: brows, eyes, nose, cheeks and pressed lips. A
+   feature that rests near its maximum gets less weight, or none, and so does
+   one that jittered at rest by more than a quarter of its typical change. If
+   more than 25% of the read's own samples would score above `strainOff` (the
+   player fidgeted or grimaced), it reads again, up to 3 times. The default
+   is never saved, so each face-mode start re-reads the relaxed face of
+   whoever is playing. The deltas are estimates; tune them with real faces.
 3. **Weights.** A feature's weight is `max(0, |Δ| − minFeatureDelta) ×
    reliability`, where `Δ = strainMean − neutralMean` and reliability is
    `min(1, |Δ| / (σ_neutral + σ_strain) / 2)`. Features that didn't move get
@@ -158,8 +232,9 @@ webcam), and the wiring in `src/main.ts`.
    − neutral)` and clamped to `0..featureClampMax`. We take the weighted mean,
    clamp it to 0..1, then smooth it with a frame-rate-independent EMA.
 5. **Hysteresis.** The signal turns on at `strainOn` and stays on until it
-   drops below `strainOff`. "Straining" is then face OR Space OR pointer, which
-   feeds the charge state machine in `src/charge.ts`.
+   drops below `strainOff`. "Straining" is then the face in face mode, or Space /
+   pointer in keyboard mode (the two never mix), which feeds the charge state
+   machine in `src/charge.ts`.
 6. **Quality check.** After calibration, every calibration sample is scored. It
    fails if fewer than `minFaceCoverage` (60%) of a phase's frames had a face,
    if the summed weights are below
@@ -176,8 +251,9 @@ webcam), and the wiring in `src/main.ts`.
    with a `currentTime` check), so only when there's a new video frame. Physics
    runs on a fixed 120 Hz timestep in the render loop.
 
-The last calibration is saved in `localStorage`. Press **C** (or click
-"Recalibrate") when a new player sits down.
+A full calibration is saved in `localStorage` and greets the player with
+"Welcome back!" next time. Press **C** (or click "Recalibrate") when a new
+player sits down.
 
 ### Puff detection (ocean)
 
@@ -201,8 +277,9 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
    case a future model fixes it). The strain calibration only weights its own
    features, so the new ones get strain weight 0 and strain detection is
    unchanged.
-2. **Neutral** comes from the main calibration's relaxed phase, which also
-   stores each feature's standard deviation.
+2. **Neutral** comes from the main calibration's relaxed phase (or the
+   default calibration's relaxed read), which also stores each feature's
+   standard deviation.
 3. **Puff phase.** On the first dive in face mode, with the world frozen, we
    collect `oceanCalibrationSeconds` (3 s) of full puff and drop the first
    `calibrationSettle`. Pausing restarts the phase; going to the menu or
@@ -227,9 +304,10 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 6. A passing puff calibration is saved like the main one, and the toast says
    which features it watches. **C** clears it, so the next dive samples again.
    After the face-loss grace, puff drops to 0 and the fish sinks.
-7. **Input.** The fish gets `max(face puff, key puff)`. Holding Space, mouse or
-   touch inflates the key puff at `oceanKeyInflateRate`; releasing deflates it
-   at `oceanKeyDeflateRate`.
+7. **Input.** The fish gets `max(face puff, key puff)`; only one of them is live,
+   depending on the mode. In keyboard mode, holding Space, mouse or touch inflates
+   the key puff at `oceanKeyInflateRate`; releasing deflates it at
+   `oceanKeyDeflateRate`.
 
 If the puff doesn't register, open the debug panel (`npm run dev:debug`) in the ocean: the feature
 rows show the geometry values as numbers with the relaxed-face marker, and the
@@ -257,9 +335,13 @@ build is always the plain one:
   charge, and the windows where "straining" was on
 - in the ocean: a live plot of raw and smoothed face puff and the combined
   puff input, with hover and spike threshold lines and the spiked windows
-- **G** spawns the next gate right away, so you can test the ocean without
-  flying through the city first
+- **G** brings the stage's waterfront next (the harbour in the city, the far
+  quay in the ocean), so you can test both transitions without playing a whole
+  stage first
 - **L** spawns a power line right away (city only)
+- **K** sends a slingshot kid on right away (city only)
+- **W** starts a wedding right away (city only)
+- **B** floats a hot-air balloon in right away (city only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
@@ -278,8 +360,8 @@ build is always the plain one:
   defaults" and "Copy config JSON" buttons. When you find good values, paste
   them back into `config.ts`.
 
-`window.poopBird` exposes `game`, `config`, `tracker`, `calibration` and
-`puffCalibration` in the console.
+`window.poopBird` exposes `game`, `config`, `tracker`, `renderer`,
+`calibration` and `puffCalibration` in the console.
 
 ## Face dataset
 
@@ -372,7 +454,8 @@ when a change is ready to merge. Older debug-recorder clips
   screen, and saved only if you add the run to the local Hall of Fame
   (`localStorage`, top 5).
 - The paparazzi's photos show your face in face mode, and the bird with the
-  keyboard. They stay in memory for the current run and are never stored.
+  keyboard. So does the bird in the wedding photos. They stay in memory for
+  the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
 - Playing never sends face data anywhere. Only the separate dataset recorder
@@ -390,11 +473,11 @@ src/
   puff.ts       blendshapes / Space → puff (pure)  puff.test.ts
   swim.ts       buoyancy, drag, spike / pop (pure) swim.test.ts
   face.ts       MediaPipe + webcam, detection loop
-  game.ts       simulation (fixed timestep)
+  game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
   audio.ts      WebAudio synth sounds
   debug.ts      debug / tuning panel
-  snapshot.ts   face crops: peak-strain snapshot, paparazzi photos
+  snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, Hall of Fame
   main.ts       screens, input, loops, calibration flow
   session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts

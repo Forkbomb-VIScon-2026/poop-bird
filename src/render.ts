@@ -7,21 +7,38 @@ import {
   SURFACE_Y,
   BILLBOARD_H,
   BILLBOARD_LEGS_INSET,
-  TRANSITION_HOLD_AT,
-  TRANSITION_SWAP_AT,
+  BOUQUET_R,
+  CHURCH_SPIRE_H,
+  CHURCH_TOWER_W,
+  WEDDING_WINDUP,
+  churchGeometry,
+  weddingX,
+  OCEAN_DEPTH,
   VIEW_H,
+  WATER_Y,
+  PEBBLE_R,
+  BALLOON_RX,
+  BALLOON_RY,
+  basketRect,
   obstacleRects,
   pigeonPos,
   poleRect,
   poleX,
+  slingshotPos,
+  type Balloon,
   type Game,
   type Jelly,
   type Obstacle,
+  type Pebble,
   type Pigeon,
   type PowerLine,
   type Splat,
   type Tabloid,
   type Target,
+  type Bouquet,
+  type Dove,
+  type Wedding,
+  type WeddingPhoto,
 } from "./game";
 
 /** A captured photo: a face crop from the webcam, or a crop of the game canvas around the bird. */
@@ -30,6 +47,8 @@ export type Photo = HTMLCanvasElement;
 const OUTLINE = "#2b2d42";
 /** Pigeons are drawn at this scale (their hit radius is PIGEON_R in game.ts). */
 const PIGEON_SCALE = 1.35;
+/** Slingshot kids are drawn at this scale (their hitbox is the target's w × h). */
+const KID_SCALE = 1.35;
 const POOP = "#7a4a1e";
 const POOP_DARK = "#5c3310";
 
@@ -144,33 +163,43 @@ export class Renderer {
       ctx.translate((Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
     }
     const ocean = game.stage === "ocean";
-    if (ocean) {
-      this.drawOcean(game);
-    } else {
-      this.drawSky(game);
-      this.drawGround(game);
-    }
+    // The camera looks at the city, the sea below it, or (diving, leaping) both.
+    ctx.save();
+    ctx.translate(0, -game.cameraY);
+    this.drawScenery(game);
+    // Everything else lives in the current stage's coordinates.
+    ctx.translate(0, game.stageOffset);
     for (const d of game.decals) drawSplat(ctx, d.x, d.y, d.r, d.seed, 0.45);
-    for (const t of game.targets) if (t.kind !== "car") this.drawTarget(t, game.time);
+    if (game.wedding) drawWeddingBackdrop(ctx, game.wedding, game.time);
+    for (const t of game.targets) if (t.kind !== "car" && !t.chute) this.drawTarget(t, game.time);
     for (const o of game.obstacles) this.drawObstacle(o, game.time);
     for (const l of game.powerLines) this.drawPowerLine(l, game.time);
+    for (const b of game.balloons) this.drawBalloon(b, game.time);
+    // In the air, in front of the buildings.
+    for (const t of game.targets) if (t.chute) this.drawTarget(t, game.time);
     for (const t of game.targets) if (t.kind === "car") this.drawTarget(t, game.time);
     // Over the buildings, so a paparazzo's timer is never hidden.
     for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
+    for (const d of game.doves) drawDove(ctx, d, game.time);
     for (const j of game.jellies) this.drawJelly(j, game.time, game.spike.spiked);
     this.drawPoops(game);
-    // During a transition the splash covers the creature, and particles fly over the splash.
+    for (const p of game.pebbles) drawPebble(this.ctx, p);
+    // During a transition the splash and bubbles fly over the creature.
     if (!game.transition) this.drawParticles(game);
     if (ocean) this.drawFish(game);
     else this.drawBird(game);
+    // Over the bird, so the crosshair reads on it.
+    if (!game.transition) for (const t of game.targets) if (t.kid) this.drawKidAim(t, game);
+    if (game.bouquet) drawBouquet(ctx, game.bouquet);
+    if (game.wedding && !game.transition) this.drawWeddingCue(game.wedding, game);
     if (game.transition) {
-      this.drawTransition(game);
       this.drawParticles(game);
     } else if (game.phase === "playing") {
       if (ocean) this.drawPuffMeter(game);
       else this.drawChargeMeter(game);
     }
     this.drawFloaters(game);
+    ctx.restore();
     this.drawScreenSplats(game);
     this.drawPolaroid(game);
     if (game.flash > 0) {
@@ -181,6 +210,183 @@ export class Renderer {
     if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) {
       ctx.fillStyle = `rgba(220,245,255,${Math.min(0.55, game.zapFlash)})`;
       ctx.fillRect(-20, -20, this.width + 40, VIEW_H + 40);
+    }
+  }
+
+  // --- scenery ----------------------------------------------------------------
+
+  /**
+   * The backdrop in city coordinates (the caller has applied the camera). The
+   * sea is drawn OCEAN_DEPTH lower, under the city: in the ocean, while the
+   * camera pans between them, and under the harbour where the street ends.
+   * The city's sky is cut off at the water level, so the two meet at the
+   * surface.
+   */
+  private drawScenery(game: Game): void {
+    const ctx = this.ctx;
+    const cam = game.cameraY;
+    const cityVisible = cam < OCEAN_DEPTH - 0.5;
+    const seaVisible = game.stage === "ocean" || !!game.transition || !!game.shore;
+    if (seaVisible) {
+      ctx.save();
+      ctx.translate(0, OCEAN_DEPTH);
+      this.drawOcean(game);
+      ctx.restore();
+    }
+    if (cityVisible) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-40, -1000, this.width + 80, WATER_Y + 1000);
+      ctx.clip();
+      this.drawSky(game);
+      ctx.restore();
+    }
+    if (game.shore) this.drawQuay(game);
+    if (cityVisible) {
+      this.drawGround(game);
+      if (game.shore) this.drawHarbourSurface(game);
+    }
+  }
+
+  /** The x range of the quay (land) and of the harbour water, in screen x. Without a shore, it's all land. */
+  private landRange(game: Game): { land: [number, number]; water: [number, number] | null } {
+    const s = game.shore;
+    const lo = -40;
+    const hi = this.width + 40;
+    if (!s) return { land: [lo, hi], water: null };
+    const x = Math.min(hi, Math.max(lo, s.x));
+    return s.kind === "dive" ? { land: [lo, x], water: [x, hi] } : { land: [x, hi], water: [lo, x] };
+  }
+
+  /**
+   * The quay: a stone block under the street that ends in a wall at the
+   * shore, down to the sea floor. Above the water it's dry stone with a
+   * bollard at the edge; below, it's tinted blue-green with a weed line.
+   */
+  private drawQuay(game: Game): void {
+    const ctx = this.ctx;
+    const s = game.shore!;
+    const { land } = this.landRange(game);
+    const [x0, x1] = land;
+    if (x1 - x0 < 1) return;
+    const bottom = OCEAN_DEPTH + VIEW_H + 40;
+    const face = s.x;
+    const dir = s.kind === "dive" ? 1 : -1; // the wall faces right (dive) or left (exit)
+
+    // Dry stone above the water, wet stone below.
+    ctx.fillStyle = "#a59f92";
+    ctx.fillRect(x0, GROUND_Y, x1 - x0, WATER_Y - GROUND_Y);
+    const wet = ctx.createLinearGradient(0, WATER_Y, 0, bottom);
+    wet.addColorStop(0, "#5f7f86");
+    wet.addColorStop(0.25, "#3f6673");
+    wet.addColorStop(1, "#1d4256");
+    ctx.fillStyle = wet;
+    ctx.fillRect(x0, WATER_Y, x1 - x0, bottom - WATER_Y);
+
+    // Stone blocks, in offset courses, anchored to the shore so they scroll with it.
+    ctx.strokeStyle = "rgba(43,45,66,0.35)";
+    ctx.lineWidth = 2;
+    const courseH = 30;
+    const blockW = 56;
+    const top = Math.max(GROUND_Y, game.cameraY - courseH);
+    const end = Math.min(bottom, game.cameraY + VIEW_H + courseH);
+    const firstRow = Math.floor((top - GROUND_Y) / courseH);
+    for (let row = firstRow; GROUND_Y + row * courseH < end; row++) {
+      const y = GROUND_Y + row * courseH;
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      const shift = row % 2 ? blockW / 2 : 0;
+      // Vertical joints, counted from the wall face inward.
+      for (let k = 1; ; k++) {
+        const jx = face - dir * (k * blockW - shift);
+        if (jx < x0 - blockW || jx > x1 + blockW) break;
+        if (jx > x0 && jx < x1) {
+          ctx.moveTo(jx, y);
+          ctx.lineTo(jx, y + courseH);
+        }
+      }
+      ctx.stroke();
+    }
+
+    // Weed and slime along the water line.
+    ctx.fillStyle = "#2f7d5b";
+    ctx.beginPath();
+    ctx.moveTo(x0, WATER_Y - 2);
+    for (let x = x0; x <= x1; x += 8) {
+      const seed = Math.floor((x - face) / 8);
+      ctx.lineTo(x, WATER_Y + 6 + rnd(seed + 900) * 10);
+    }
+    ctx.lineTo(x1, WATER_Y - 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // The wall face, with a stone coping on top and a bollard at the edge.
+    if (face > -40 && face < this.width + 40) {
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(face, GROUND_Y);
+      ctx.lineTo(face, bottom);
+      ctx.stroke();
+      ctx.fillStyle = "#c9c3b4";
+      ctx.fillRect(dir === 1 ? face - 26 : face, GROUND_Y - 2, 26, 8);
+      ctx.strokeRect(dir === 1 ? face - 26 : face, GROUND_Y - 2, 26, 8);
+      const bx = face - dir * 40;
+      ctx.fillStyle = "#3d405b";
+      ctx.beginPath();
+      roundRect(ctx, bx - 8, GROUND_Y - 22, 16, 22, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(bx, GROUND_Y - 22, 11, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // A ladder down into the water.
+      const lx = face + dir * 2;
+      ctx.strokeStyle = "#6c757d";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (const rail of [0, 14]) {
+        ctx.moveTo(lx + dir * rail, GROUND_Y + 4);
+        ctx.lineTo(lx + dir * rail, WATER_Y + 70);
+      }
+      for (let y = GROUND_Y + 14; y < WATER_Y + 70; y += 14) {
+        ctx.moveTo(lx, y);
+        ctx.lineTo(lx + dir * 14, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /** The harbour seen from above: a rippling surface at WATER_Y over the water, the sea showing through below. */
+  private drawHarbourSurface(game: Game): void {
+    const ctx = this.ctx;
+    const { water } = this.landRange(game);
+    if (!water || water[1] - water[0] < 1) return;
+    const [x0, x1] = water;
+    const time = game.time;
+    const wave = (x: number) => Math.sin(x * 0.035 + time * 2.4 + this.bgOffset * 0.035) * 2.5;
+    // A light tint just under the surface, fading into the sea below.
+    const g = ctx.createLinearGradient(0, WATER_Y, 0, WATER_Y + 40);
+    g.addColorStop(0, "rgba(202,240,248,0.7)");
+    g.addColorStop(1, "rgba(202,240,248,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, WATER_Y, x1 - x0, 40);
+    ctx.beginPath();
+    ctx.moveTo(x0, WATER_Y + wave(x0));
+    for (let x = x0; x <= x1; x += 12) ctx.lineTo(x, WATER_Y + wave(x));
+    ctx.lineTo(x1, WATER_Y + wave(x1));
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // Glints drifting on the surface.
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    for (let i = 0; i < 10; i++) {
+      const span = this.width + 80;
+      const gx = ((((rnd(i + 950) * span - this.bgOffset) % span) + span) % span) - 40;
+      if (gx < x0 || gx > x1) continue;
+      ctx.fillRect(gx, WATER_Y + 6 + rnd(i + 960) * 14, 10 + rnd(i + 970) * 14, 2);
     }
   }
 
@@ -246,7 +452,20 @@ export class Renderer {
     }
   }
 
+  /** Sidewalk and road, only where there's land (up to the quay's edge). */
   private drawGround(game: Game): void {
+    const ctx = this.ctx;
+    const [x0, x1] = this.landRange(game).land;
+    if (x1 - x0 < 1) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, GROUND_Y - 10, x1 - x0, VIEW_H);
+    ctx.clip();
+    this.drawStreet();
+    ctx.restore();
+  }
+
+  private drawStreet(): void {
     const ctx = this.ctx;
     const w = this.width + 40;
     // Sidewalk
@@ -271,15 +490,13 @@ export class Renderer {
     ctx.moveTo(-20, GROUND_Y);
     ctx.lineTo(w, GROUND_Y);
     ctx.stroke();
-    void game;
   }
 
   // --- obstacles --------------------------------------------------------------
 
   private drawObstacle(o: Obstacle, time: number): void {
-    if (o.bottom === "harbour") return this.drawHarbourGate(o, time);
-    if (o.bottom === "reef") return this.drawReefGate(o, time);
     if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
+    if (o.bottom === "church") return drawChurch(this.ctx, o, time);
     const ctx = this.ctx;
     const [base] = obstacleRects(o);
     ctx.lineWidth = 3;
@@ -440,6 +657,168 @@ export class Renderer {
     });
 
     for (const p of l.pigeons) this.drawPigeon(l, p, time);
+  }
+
+  /** Hot-air balloon: striped envelope, burner, ropes, wicker basket with passengers; after the pop a falling basket and rag. */
+  private drawBalloon(b: Balloon, time: number): void {
+    const ctx = this.ctx;
+    if (b.rag) drawRag(ctx, b, time);
+    if (b.x < -100 || b.x > this.width + 120) return;
+    const cx = b.x;
+    const cy = b.y;
+    const mouthY = cy + BALLOON_RY;
+    const basket = basketRect(b);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineCap = "round";
+
+    if (!b.popped) {
+      // Ropes from the envelope's mouth down to the basket.
+      ctx.lineWidth = 2;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + s * 14, mouthY - 2);
+        ctx.lineTo(basket.x + basket.w / 2 + s * (basket.w / 2 - 3), basket.y);
+        ctx.moveTo(cx + s * 6, mouthY);
+        ctx.lineTo(cx + s * 10, basket.y);
+        ctx.stroke();
+      }
+      // Burner frame and flame: a small pilot, or a roaring blast now and then.
+      const by = basket.y - 22;
+      const flick = Math.sin(time * 40 + b.seed) * 0.5 + 0.5;
+      const flameH = b.burn > 0 ? 26 + Math.min(1, b.burn / 0.15) * 20 + flick * 8 : 7 + flick * 3;
+      const glow = ctx.createRadialGradient(cx, by - flameH * 0.4, 1, cx, by - flameH * 0.4, flameH);
+      glow.addColorStop(0, b.burn > 0 ? "rgba(255,220,120,0.55)" : "rgba(120,180,255,0.35)");
+      glow.addColorStop(1, "rgba(255,200,100,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, by - flameH * 0.4, flameH, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = b.burn > 0 ? "#ff9f1c" : "#5aa9ff";
+      flamePath(ctx, cx, by, b.burn > 0 ? 8 : 4, flameH);
+      ctx.fill();
+      ctx.fillStyle = b.burn > 0 ? "#fff3b0" : "#cfe8ff";
+      flamePath(ctx, cx, by, b.burn > 0 ? 4 : 2, flameH * 0.6);
+      ctx.fill();
+      ctx.fillStyle = "#adb5bd";
+      ctx.lineWidth = 2.5;
+      roundRect(ctx, cx - 10, by, 20, 8, 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Envelope: gores in two colours (nested ellipses clipped to the shape), a highlight, a skirt.
+      ctx.save();
+      envelopePath(ctx, cx, cy);
+      ctx.clip();
+      const [c1, c2] = b.colors;
+      ctx.fillStyle = c1;
+      ctx.fillRect(cx - BALLOON_RX - 2, cy - BALLOON_RY - 2, BALLOON_RX * 2 + 4, BALLOON_RY * 2 + 4);
+      for (const [k, color] of [[0.66, c2], [0.33, c1]] as const) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy - BALLOON_RY * 0.1, BALLOON_RX * k, BALLOON_RY * 1.15, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillRect(cx - BALLOON_RX, cy + BALLOON_RY * 0.5, BALLOON_RX * 2, 7);
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(cx - BALLOON_RX * 0.45, cy - BALLOON_RY * 0.4, 10, 24, 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.lineWidth = 3;
+      envelopePath(ctx, cx, cy);
+      ctx.stroke();
+      ctx.fillStyle = shadeHex(b.colors[0], -40);
+      ctx.beginPath();
+      ctx.moveTo(cx - 15, mouthY - 3);
+      ctx.lineTo(cx + 15, mouthY - 3);
+      ctx.lineTo(cx + 11, mouthY + 9);
+      ctx.lineTo(cx - 11, mouthY + 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Passengers peeking over the rim; one of them waves.
+      const n = b.passengers.length;
+      b.passengers.forEach((p, i) => {
+        const px = cx + (i - (n - 1) / 2) * 14;
+        const hy = basket.y - 9 + Math.sin(time * 3 + p.seed) * 1.2;
+        ctx.lineWidth = 2.5;
+        ctx.fillStyle = p.color;
+        roundRect(ctx, px - 6, hy + 4, 12, 12, 4);
+        ctx.fill();
+        ctx.stroke();
+        if (i === n - 1) {
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(px + 5, hy + 6);
+          ctx.lineTo(px + 12 + Math.sin(time * 9 + p.seed) * 4, hy - 8);
+          ctx.stroke();
+        }
+        ctx.lineWidth = 2.5;
+        ctx.fillStyle = "#f1c27d";
+        ctx.beginPath();
+        ctx.arc(px, hy, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = p.seed % 2 > 1 ? "#3d405b" : "#6b4226";
+        ctx.beginPath();
+        ctx.arc(px, hy - 1.5, 6, Math.PI, Math.PI * 2);
+        ctx.fill();
+      });
+    } else if (!b.landed) {
+      // Limp ropes trailing above the falling basket.
+      ctx.lineWidth = 2;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + s * 20, basket.y);
+        ctx.quadraticCurveTo(cx + s * (26 + Math.sin(time * 20 + s) * 4), basket.y - 18, cx + s * 14, basket.y - 34);
+        ctx.stroke();
+      }
+    }
+
+    // Wicker basket.
+    ctx.save();
+    if (b.landed) {
+      ctx.translate(basket.x + basket.w / 2, basket.y + basket.h);
+      ctx.rotate(0.12);
+      ctx.translate(-(basket.x + basket.w / 2), -(basket.y + basket.h));
+    }
+    ctx.lineWidth = 3;
+    ctx.fillStyle = "#c68b59";
+    ctx.beginPath();
+    ctx.moveTo(basket.x, basket.y);
+    ctx.lineTo(basket.x + basket.w, basket.y);
+    ctx.lineTo(basket.x + basket.w - 4, basket.y + basket.h);
+    ctx.lineTo(basket.x + 4, basket.y + basket.h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = "rgba(90,50,20,0.45)";
+    ctx.lineWidth = 1.5;
+    for (let y = basket.y + 10; y < basket.y + basket.h; y += 6) {
+      ctx.beginPath();
+      ctx.moveTo(basket.x, y);
+      ctx.lineTo(basket.x + basket.w, y);
+      ctx.stroke();
+    }
+    for (let x = basket.x + 6; x < basket.x + basket.w; x += 9) {
+      ctx.beginPath();
+      ctx.moveTo(x, basket.y);
+      ctx.lineTo(x, basket.y + basket.h);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = "#8b5a2b";
+    roundRect(ctx, basket.x - 3, basket.y - 3, basket.w + 6, 8, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    ctx.lineCap = "butt";
   }
 
   private drawPigeon(l: PowerLine, p: Pigeon, time: number): void {
@@ -621,6 +1000,12 @@ export class Renderer {
     if (t.kind === "car") drawCar(ctx, t, time);
     else if (t.kind === "pedestrian") drawPedestrian(ctx, t, time);
     else if (t.kind === "paparazzo") drawPaparazzo(ctx, t, time);
+    else if (t.kind === "kid") drawKid(ctx, t, time);
+    else if (t.kind === "bride") drawBride(ctx, t, time);
+    else if (t.kind === "groom") drawGroom(ctx, t, time);
+    else if (t.kind === "guest") drawGuest(ctx, t, time);
+    else if (t.kind === "photographer") drawWeddingPhotographer(ctx, t, time);
+    else if (t.kind === "parachutist") drawParachutist(ctx, t, time);
     else drawStatue(ctx, t);
     drawTargetSplats(ctx, t.splats);
     ctx.restore();
@@ -971,6 +1356,64 @@ export class Renderer {
     }
   }
 
+  // --- slingshot kids -------------------------------------------------------------
+
+  /**
+   * The aim of a kid who's winding up: a dotted arc that reaches out further
+   * the more he pulls, ending in a crosshair on the bird.
+   */
+  private drawKidAim(t: Target, game: Game): void {
+    const k = t.kid;
+    if (!k || k.state !== "aiming" || game.phase !== "playing") return;
+    const ctx = this.ctx;
+    const g = config.kidPebbleGravity;
+    const s = slingshotPos(t);
+    const pts: { x: number; y: number }[] = [];
+    const step = 1 / 60;
+    for (let i = 0; i < 180; i++) {
+      const tt = i * step;
+      const x = s.x + k.aimVx * tt;
+      const y = s.y + k.aimVy * tt + 0.5 * g * tt * tt;
+      pts.push({ x, y });
+      if (x <= game.bird.x) break;
+    }
+    const shown = Math.ceil(pts.length * (0.3 + 0.7 * k.pull));
+    const march = Math.floor(game.time * 30) % 3;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(255,255,255,0.8)";
+    for (let i = 0; i < shown; i++) {
+      if ((i + march) % 3 !== 0) continue;
+      const p = pts[i];
+      ctx.globalAlpha = (0.35 + 0.65 * k.pull) * (1 - (i / pts.length) * 0.3);
+      ctx.fillStyle = "#ff3b3b";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3 + k.pull * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    if (k.pull < 0.45) return;
+    // Crosshair where the pebble's going
+    const end = pts[pts.length - 1];
+    const a = Math.min(1, (k.pull - 0.45) / 0.3);
+    const r = 40 - k.pull * 10 + Math.sin(game.time * 20) * 1.5;
+    ctx.save();
+    ctx.translate(end.x, end.y);
+    ctx.rotate(game.time * 2);
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = "#ff3b3b";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    for (let i = 0; i < 4; i++) {
+      const ang = (i * Math.PI) / 2;
+      ctx.moveTo(Math.cos(ang) * (r - 7), Math.sin(ang) * (r - 7));
+      ctx.lineTo(Math.cos(ang) * (r + 7), Math.sin(ang) * (r + 7));
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // --- paparazzi ----------------------------------------------------------------
 
   /**
@@ -1048,7 +1491,19 @@ export class Renderer {
     const p = game.polaroid;
     if (!p) return;
     const ctx = this.ctx;
-    const age = 2.2 - p.life;
+    const age = p.maxLife - p.life;
+    if (p.wedding) {
+      // The official wedding photo: a big framed print in the top corner, developing from white.
+      const pop = age < 0.22 ? 0.3 + (age / 0.22) * 0.8 : 1.1 - Math.min(0.1, (age - 0.22) * 0.8);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, p.life / 0.4);
+      ctx.translate(this.width - 140, 140);
+      ctx.rotate(-0.05 + Math.sin(age * 2) * 0.01);
+      ctx.scale(pop, pop);
+      drawWeddingPrint(ctx, -110, -100, 220, p.wedding, this.photos.get(p.photoId), Math.max(0, 1 - age / 0.7));
+      ctx.restore();
+      return;
+    }
     const pop = age < 0.18 ? 0.4 + (age / 0.18) * 0.75 : 1.15 - Math.min(0.15, (age - 0.18) * 1.2);
     const alpha = Math.min(1, p.life / 0.35);
     const w = 120;
@@ -1078,6 +1533,181 @@ export class Renderer {
     ctx.textBaseline = "middle";
     ctx.fillText("gotcha ;)", 0, h / 2 - 11);
     ctx.restore();
+  }
+
+  /**
+   * Over the couple: the photographer's countdown in a heart (3… 2… 1…), then
+   * a pulsing "KISS!" heart whose ring runs out with the jackpot window. A
+   * ruined kiss breaks the heart. The run's first wedding gets a hint.
+   */
+  private drawWeddingCue(w: Wedding, game: Game): void {
+    const ctx = this.ctx;
+    const x = weddingX(w);
+    if (x < -80 || x > this.width + 80) return;
+    const y = GROUND_Y - 185;
+    const playing = game.phase === "playing";
+    if (w.phase === "countdown" && playing) {
+      const toKiss = (x - game.bird.x - config.weddingKissLead) / Math.max(1, game.speed);
+      const into = Math.min(1, Math.max(0, w.count - toKiss / Math.max(0.05, config.weddingBeat)));
+      const pop = 1 + 0.45 * (1 - into) ** 3;
+      drawHeart(ctx, x, y, 24 * pop, "#ff8fab");
+      outlinedText(ctx, String(w.count), x, y + 1, 28 * pop, "#fff");
+    } else if (w.phase === "kiss" && playing) {
+      const left = 1 - Math.min(1, w.t / Math.max(0.05, config.weddingKissTime));
+      const pulse = 1 + Math.max(0, Math.sin(game.time * 16)) * 0.12;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.arc(x, y, 46, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
+      ctx.stroke();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.lineCap = "butt";
+      drawHeart(ctx, x, y, 34 * pulse, "#ff3b6b");
+      outlinedText(ctx, "KISS!", x, y + 2, 20 * pulse, "#fff");
+      // Little hearts floating up from the couple
+      for (let i = 0; i < 4; i++) {
+        const k = (game.time * 1.4 + i / 4) % 1;
+        ctx.globalAlpha = 1 - k;
+        drawHeart(ctx, x + Math.sin(k * 9 + i) * 10 + (i - 1.5) * 6, GROUND_Y - 50 - k * 70, 5 + k * 3, "#ff8fab");
+      }
+      ctx.globalAlpha = 1;
+    } else if (w.outcome === "ruined" && w.t < 1.8) {
+      // The heart cracks in two and the halves fall apart.
+      const k = Math.min(1, w.t / 1.2);
+      ctx.globalAlpha = Math.min(1, (1.8 - w.t) / 0.5);
+      for (const s of [-1, 1]) {
+        ctx.save();
+        ctx.translate(x + s * (4 + k * 22), y + k * k * 60);
+        ctx.rotate(s * k * 0.6);
+        ctx.beginPath();
+        ctx.rect(s < 0 ? -60 : 0, -60, 60, 120);
+        ctx.clip();
+        drawHeart(ctx, 0, 0, 34, "#7a4a1e");
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // The furious bride winds up: a warning over her head.
+    if (w.outcome === "ruined" && !w.thrown && w.t > WEDDING_WINDUP - 0.5 && playing) {
+      const b = w.bride;
+      outlinedText(ctx, "!", b.x, b.y - b.h - 34 + Math.sin(game.time * 30) * 2, 26, "#ff595e");
+    }
+    if (w.tutorial && !w.outcome && playing && w.phase !== "kiss") {
+      const bob = Math.sin(game.time * 6) * 4;
+      outlinedText(ctx, "\u{1F48B} Drop it on the KISS!", x, y - 52 + bob, 20, "#ffd60a");
+    }
+  }
+
+  /**
+   * The official wedding photo, composed at the moment it's taken: the couple
+   * under the arch with the church behind and the guests around, and the
+   * bird photobombing from the corner. In face mode `face` (the player's
+   * face at the kiss) is stuck on the bird. Kept in memory for this run only.
+   */
+  captureWedding(game: Game, face: Photo | null): Photo | null {
+    const w = game.wedding;
+    if (!w) return null;
+    const W = 320;
+    const H = 240;
+    const out = document.createElement("canvas");
+    out.width = W;
+    out.height = H;
+    const octx = out.getContext("2d");
+    if (!octx) return null;
+    const sky = octx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "#8ecae6");
+    sky.addColorStop(0.7, "#ffe8d6");
+    sky.addColorStop(1, "#ffd6a5");
+    octx.fillStyle = sky;
+    octx.fillRect(0, 0, W, H);
+
+    // World → photo: the couple slightly left of centre, the church on the right.
+    const s = 1.6;
+    const focusX = weddingX(w) + 12;
+    const feet = GROUND_Y + 20;
+    const groundY = 228;
+    const toWorld = (px: number, py: number) => ({ x: focusX + (px - W / 2) / s, y: feet + (py - groundY) / s });
+    const ruined = w.outcome === "ruined";
+    const birdAt = { x: W * 0.82, y: H * 0.22 };
+    const birdCharge = ruined ? 0 : 0.9;
+
+    const main = this.ctx;
+    const b = game.bird;
+    const savedBird = { ...b };
+    const savedCharge = game.charge;
+    const savedZap = game.zapFlash;
+    this.ctx = octx;
+    try {
+      octx.setTransform(s, 0, 0, s, W / 2 - focusX * s, groundY - feet * s);
+      octx.fillStyle = "#d9d4c7";
+      octx.fillRect(focusX - 200, GROUND_Y, 400, 22);
+      octx.fillStyle = "#9e9a8f";
+      octx.fillRect(focusX - 200, GROUND_Y + 20, 400, 5);
+      octx.fillStyle = "#4a4e69";
+      octx.fillRect(focusX - 200, GROUND_Y + 25, 400, 80);
+      drawChurch(octx, w.church, game.time);
+      drawWeddingBackdrop(octx, w, game.time);
+      for (const t of [...w.guests, w.groom, w.bride]) this.drawTarget(t, game.time);
+      // Whatever's flying (splatter, the veil, confetti) is in the shot too.
+      this.drawParticles(game);
+      // The bird photobombs: straining if the kiss went through, blissfully relieved if it just let go on them.
+      const at = toWorld(birdAt.x, birdAt.y);
+      Object.assign(b, { x: at.x, y: at.y, rot: -0.3, stretch: 1, stretchV: 0, relief: ruined ? 0.4 : 0, flap: 0 });
+      game.charge = { ...savedCharge, charge: birdCharge };
+      game.zapFlash = 0;
+      this.drawBird(game);
+    } finally {
+      this.ctx = main;
+      Object.assign(b, savedBird);
+      game.charge = savedCharge;
+      game.zapFlash = savedZap;
+    }
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+
+    if (face && face.width > 0 && face.height > 0) {
+      // The player's face on the bird's body, with the beak stuck back on top.
+      const r = BIRD_RADIUS * (1 + birdCharge * 0.28) * s;
+      octx.save();
+      octx.translate(birdAt.x, birdAt.y);
+      octx.rotate(-0.3);
+      const fr = r * 0.95;
+      octx.save();
+      octx.beginPath();
+      octx.arc(r * 0.1, -r * 0.05, fr, 0, Math.PI * 2);
+      octx.clip();
+      const k = Math.max((fr * 2) / face.width, (fr * 2) / face.height);
+      octx.drawImage(face, r * 0.1 - (face.width * k) / 2, -r * 0.05 - (face.height * k) / 2, face.width * k, face.height * k);
+      octx.restore();
+      octx.strokeStyle = OUTLINE;
+      octx.lineWidth = 3;
+      octx.beginPath();
+      octx.arc(r * 0.1, -r * 0.05, fr, 0, Math.PI * 2);
+      octx.stroke();
+      octx.fillStyle = "#f78c3b";
+      octx.beginPath();
+      octx.moveTo(r * 0.9, -r * 0.12);
+      octx.lineTo(r * 1.55, r * 0.08);
+      octx.lineTo(r * 0.9, r * 0.3);
+      octx.closePath();
+      octx.fill();
+      octx.stroke();
+      octx.restore();
+    }
+    // The photographer's lens got splatted: so did the photo.
+    const smudges = Math.min(3, w.photographer.splats.length);
+    for (let i = 0; i < smudges; i++) {
+      drawSplat(octx, 40 + rnd(w.photographer.seed + i) * 240, 40 + rnd(w.photographer.seed + i + 9) * 160, 45 + i * 10, w.photographer.seed + i, 0.85);
+    }
+    // Soft vignette
+    const v = octx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+    v.addColorStop(0, "rgba(80,40,20,0)");
+    v.addColorStop(1, "rgba(80,40,20,0.35)");
+    octx.fillStyle = v;
+    octx.fillRect(0, 0, W, H);
+    return out;
   }
 
   // --- ocean ------------------------------------------------------------------
@@ -1268,243 +1898,6 @@ export class Renderer {
       }
       ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fillRect(base.x + base.w - 12, base.y + 18, 9, Math.max(0, base.h - 18));
-    }
-  }
-
-  /** City → ocean gate: a harbour building whose gap is a doorway into the sea. */
-  private drawHarbourGate(o: Obstacle, time: number): void {
-    const ctx = this.ctx;
-    const [base, top] = obstacleRects(o);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = OUTLINE;
-
-    // The gap: a doorway full of sea, with arrows pointing down.
-    const gx = o.x + 6;
-    const gw = o.w - 12;
-    const gh = o.gapBottom - o.gapTop;
-    const water = ctx.createLinearGradient(0, o.gapTop, 0, o.gapBottom);
-    water.addColorStop(0, "rgba(72,202,228,0.35)");
-    water.addColorStop(1, "rgba(15,95,138,0.6)");
-    ctx.fillStyle = water;
-    ctx.fillRect(gx, o.gapTop, gw, gh);
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 4; i++) {
-      const y = o.gapTop + ((time * 40 + (i * gh) / 4) % gh);
-      ctx.beginPath();
-      for (let x = gx; x <= gx + gw; x += 8) ctx.lineTo(x, y + Math.sin(x * 0.15 + time * 3) * 2);
-      ctx.stroke();
-    }
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2.5;
-    const bob = Math.sin(time * 5) * 5;
-    for (let i = 0; i < 2; i++) {
-      const ay = o.gapTop + gh * (0.35 + i * 0.3) + bob;
-      const ax = o.x + o.w / 2;
-      ctx.beginPath();
-      ctx.moveTo(ax - 16, ay - 8);
-      ctx.lineTo(ax, ay + 8);
-      ctx.lineTo(ax + 16, ay - 8);
-      ctx.lineTo(ax + 10, ay - 12);
-      ctx.lineTo(ax, ay - 2);
-      ctx.lineTo(ax - 10, ay - 12);
-      ctx.closePath();
-      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(time * 6 - i);
-      ctx.fill();
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    // Door frame posts on both sides of the gap
-    ctx.fillStyle = "#e0c097";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    for (const px of [o.x, o.x + o.w - 6]) {
-      ctx.fillRect(px, o.gapTop, 6, gh);
-      ctx.strokeRect(px, o.gapTop, 6, gh);
-    }
-
-    // Upper building with portholes, and a striped lintel over the door.
-    ctx.fillStyle = o.color;
-    roundRect(ctx, top.x, top.y - 5, top.w, top.h + 5, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#ffe8a3";
-    for (let y = top.y + 24; y < top.y + top.h - 70; y += 40) {
-      for (let x = top.x + 26; x < top.x + top.w - 16; x += 38) {
-        ctx.beginPath();
-        ctx.arc(x, y, 9, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-    const lintelY = top.y + top.h - 22;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(top.x, lintelY, top.w, 22);
-    ctx.clip();
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(top.x, lintelY, top.w, 22);
-    ctx.fillStyle = "#e63946";
-    for (let x = top.x - 22; x < top.x + top.w; x += 22) {
-      ctx.beginPath();
-      ctx.moveTo(x, lintelY + 22);
-      ctx.lineTo(x + 11, lintelY + 22);
-      ctx.lineTo(x + 22, lintelY);
-      ctx.lineTo(x + 11, lintelY);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-    ctx.strokeRect(top.x, lintelY, top.w, 22);
-    // Sign
-    if (top.h > 70) {
-      const sy = lintelY - 34;
-      ctx.fillStyle = "#1d3557";
-      roundRect(ctx, top.x + 8, sy, top.w - 16, 28, 6);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 16px 'Trebuchet MS', sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("⚓ HARBOUR", top.x + top.w / 2, sy + 15);
-    }
-
-    // Pier below: stone blocks, a life ring and a bollard.
-    ctx.fillStyle = "#8d99ae";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    roundRect(ctx, base.x, base.y, base.w, base.h + 4, 4);
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(0,0,0,0.2)";
-    ctx.lineWidth = 2;
-    for (let y = base.y + 18, row = 0; y < GROUND_Y; y += 18, row++) {
-      ctx.beginPath();
-      ctx.moveTo(base.x + 3, y);
-      ctx.lineTo(base.x + base.w - 3, y);
-      ctx.stroke();
-      for (let x = base.x + (row % 2 ? 14 : 34); x < base.x + base.w - 4; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, y - 18);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-      }
-    }
-    ctx.fillStyle = "#3d405b";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 3;
-    roundRect(ctx, base.x + base.w / 2 - 10, base.y - 14, 20, 16, 5);
-    ctx.fill();
-    ctx.stroke();
-    if (base.h > 70) {
-      const rx = base.x + base.w / 2;
-      const ry = base.y + 44;
-      ctx.lineWidth = 9;
-      ctx.strokeStyle = OUTLINE;
-      ctx.beginPath();
-      ctx.arc(rx, ry, 16, 0, Math.PI * 2);
-      ctx.stroke();
-      for (let i = 0; i < 4; i++) {
-        ctx.strokeStyle = i % 2 ? "#fff" : "#ff6b35";
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(rx, ry, 16, (i * Math.PI) / 2, ((i + 1) * Math.PI) / 2);
-        ctx.stroke();
-      }
-    }
-    for (const s of o.splats) drawSplat(ctx, o.x + s.dx, s.dy, s.r, s.seed, 1);
-  }
-
-  /** Ocean → city gate: a reef arch whose gap holds a glowing bubble ring up to the surface. */
-  private drawReefGate(o: Obstacle, time: number): void {
-    const ctx = this.ctx;
-    const [base, top] = obstacleRects(o);
-    const cx = o.x + o.w / 2;
-    const cy = (o.gapTop + o.gapBottom) / 2;
-    const gh = o.gapBottom - o.gapTop;
-
-    // A shaft of surface light through the gap.
-    ctx.fillStyle = `rgba(255,255,220,${0.18 + 0.06 * Math.sin(time * 3)})`;
-    ctx.fillRect(o.x + 4, o.gapTop, o.w - 8, gh);
-
-    // Rock overhang and rock column
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = OUTLINE;
-    ctx.fillStyle = o.color;
-    roundRect(ctx, top.x, top.y - 10, top.w, top.h + 10, 18);
-    ctx.fill();
-    ctx.stroke();
-    roundRect(ctx, base.x, base.y, base.w, base.h + 6, 18);
-    ctx.fill();
-    ctx.stroke();
-    // Kelp hanging from the overhang, coral on the column
-    ctx.strokeStyle = "#2a9d73";
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    for (let i = 0; i < 3; i++) {
-      const kx = top.x + 16 + i * ((top.w - 32) / 2);
-      ctx.beginPath();
-      ctx.moveTo(kx, top.y + top.h - 4);
-      ctx.quadraticCurveTo(kx + Math.sin(time * 2 + i) * 8, top.y + top.h + 10, kx + Math.sin(time * 2 + i + 1) * 5, top.y + top.h + 20);
-      ctx.stroke();
-    }
-    ctx.lineCap = "butt";
-    ctx.fillStyle = "#ff7f6e";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2.5;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.arc(base.x + 18 + i * ((base.w - 36) / 2), base.y + 4, 8, Math.PI, 0);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // The bubble ring
-    const rx = o.w * 0.42;
-    const ry = gh * 0.42;
-    const n = 22;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + time * 0.8;
-      const bx = cx + Math.cos(a) * rx;
-      const by = cy + Math.sin(a) * ry;
-      const br = 4 + (Math.sin(time * 4 + i) + 1) * 1.6;
-      ctx.fillStyle = "rgba(224,251,252,0.55)";
-      ctx.strokeStyle = "rgba(255,255,255,0.95)";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(bx, by, br, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-    // Arrow up
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2.5;
-    const ay = cy + Math.sin(time * 5) * 6;
-    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(time * 6);
-    ctx.beginPath();
-    ctx.moveTo(cx, ay - 18);
-    ctx.lineTo(cx + 16, ay);
-    ctx.lineTo(cx + 6, ay);
-    ctx.lineTo(cx + 6, ay + 16);
-    ctx.lineTo(cx - 6, ay + 16);
-    ctx.lineTo(cx - 6, ay);
-    ctx.lineTo(cx - 16, ay);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    if (top.h > 60) {
-      ctx.font = "900 14px 'Trebuchet MS', sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = OUTLINE;
-      ctx.strokeText("SURFACE", cx, top.y + top.h - 20);
-      ctx.fillStyle = "#e0fbfc";
-      ctx.fillText("SURFACE", cx, top.y + top.h - 20);
     }
   }
 
@@ -1949,65 +2342,6 @@ export class Renderer {
       ctx.fillText(label, x + w / 2, y - 12);
     }
   }
-
-  /** Splash between stages: water rises over the city (dive) or the sky drops over the sea (surface). */
-  private drawTransition(game: Game): void {
-    const tr = game.transition;
-    if (!tr) return;
-    const ctx = this.ctx;
-    const w = this.width + 40;
-    const t = tr.t / tr.duration;
-    const time = game.time;
-    if (!tr.swapped) {
-      const k = Math.min(1, t / TRANSITION_SWAP_AT);
-      const cover = k * k * (3 - 2 * k);
-      const wave = (x: number) => Math.sin(x * 0.025 + time * 9) * 14 + Math.sin(x * 0.06 - time * 5) * 6;
-      ctx.beginPath();
-      if (tr.to === "ocean") {
-        const level = VIEW_H + 40 - cover * (VIEW_H + 110);
-        const g = ctx.createLinearGradient(0, level, 0, VIEW_H);
-        g.addColorStop(0, "#48cae4");
-        g.addColorStop(1, "#0f5f8a");
-        ctx.fillStyle = g;
-        ctx.moveTo(-20, VIEW_H + 20);
-        for (let x = -20; x <= w; x += 16) ctx.lineTo(x, level + wave(x));
-        ctx.lineTo(w, VIEW_H + 20);
-      } else {
-        const level = -40 + cover * (VIEW_H + 110);
-        const g = ctx.createLinearGradient(0, 0, 0, Math.max(1, level));
-        g.addColorStop(0, "#5ec8f2");
-        g.addColorStop(1, "#bfeaf7");
-        ctx.fillStyle = g;
-        ctx.moveTo(-20, -20);
-        for (let x = -20; x <= w; x += 16) ctx.lineTo(x, level + wave(x));
-        ctx.lineTo(w, -20);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.95)";
-      ctx.lineWidth = 8;
-      ctx.stroke();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    } else {
-      // Foam clears between the swap and the hold point.
-      const k = Math.min(1, Math.max(0, (t - TRANSITION_SWAP_AT) / (TRANSITION_HOLD_AT - TRANSITION_SWAP_AT)));
-      const a = (1 - k) * 0.85;
-      if (a > 0.01) {
-        ctx.fillStyle = `rgba(255,255,255,${a * 0.6})`;
-        ctx.fillRect(-20, -20, w, VIEW_H + 40);
-        ctx.fillStyle = `rgba(255,255,255,${a})`;
-        for (let i = 0; i < 18; i++) {
-          const fx = rnd(i + 200) * this.width;
-          const fy = rnd(i + 210) * VIEW_H - k * 200 * (tr.to === "ocean" ? 1 : -1);
-          ctx.beginPath();
-          ctx.arc(fx, fy, 20 + rnd(i + 220) * 40 * (1 - k), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-  }
 }
 
 // --- shape helpers ---------------------------------------------------------------
@@ -2130,6 +2464,7 @@ function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
   // Headlight
   ctx.fillStyle = "#fff3b0";
   ctx.fillRect(w / 2 - 8, -h * 0.5, 6, 6);
+  if (t.wedding) drawGetawayDecor(ctx, t, time);
   // Wheels
   for (const wx of [-w * 0.3, w * 0.3]) {
     ctx.fillStyle = OUTLINE;
@@ -2236,6 +2571,165 @@ function drawStatue(ctx: CanvasRenderingContext2D, t: Target): void {
   ctx.stroke();
 }
 
+/** The envelope outline: a dome on top, tapering down to the mouth. */
+function envelopePath(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
+  const rx = BALLOON_RX;
+  const ry = BALLOON_RY;
+  ctx.beginPath();
+  ctx.moveTo(cx - 14, cy + ry);
+  ctx.bezierCurveTo(cx - rx * 0.75, cy + ry * 0.6, cx - rx, cy + ry * 0.25, cx - rx, cy - ry * 0.1);
+  ctx.ellipse(cx, cy - ry * 0.1, rx, ry * 0.9, 0, Math.PI, Math.PI * 2);
+  ctx.bezierCurveTo(cx + rx, cy + ry * 0.25, cx + rx * 0.75, cy + ry * 0.6, cx + 14, cy + ry);
+  ctx.closePath();
+}
+
+/** A flame standing on (x, y): a teardrop `h` tall and `w` wide at its base. */
+function flamePath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x - w, y);
+  ctx.quadraticCurveTo(x - w * 0.9, y - h * 0.55, x, y - h);
+  ctx.quadraticCurveTo(x + w * 0.9, y - h * 0.55, x + w, y);
+  ctx.closePath();
+}
+
+/** The popped envelope: a crumpled, flapping rag that falls and lies flat on the street. */
+function drawRag(ctx: CanvasRenderingContext2D, b: Balloon, time: number): void {
+  const r = b.rag!;
+  if (r.x < -100) return;
+  const flat = r.landed ? 0.45 : 1;
+  const n = 12;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const wob = r.landed ? 0 : Math.sin(time * 11 + i * 1.7 + b.seed) * 4;
+    const rad = 26 + rnd(b.seed + i) * 14 + wob;
+    pts.push({ x: r.x + Math.cos(a) * rad * 1.3, y: r.y + Math.sin(a) * rad * 0.7 * flat });
+  }
+  ctx.save();
+  ctx.beginPath();
+  pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+  ctx.closePath();
+  ctx.fillStyle = b.colors[0];
+  ctx.fill();
+  ctx.clip();
+  ctx.fillStyle = b.colors[1];
+  for (let i = -2; i <= 2; i += 2) {
+    ctx.beginPath();
+    ctx.ellipse(r.x + i * 14, r.y, 6, 40, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.beginPath();
+  pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+  ctx.closePath();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+}
+
+/** A bailed-out balloon passenger: tumbling with arms flailing, then hanging under a striped canopy. */
+function drawParachutist(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const c = t.chute!;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  if (c.open) {
+    // Swing like a pendulum under the canopy; it pops open with a little overshoot.
+    const age = c.t - c.openAt;
+    const pop = age < 0.25 ? 0.4 + (age / 0.25) * 0.75 : 1.15 - Math.min(0.15, (age - 0.25) * 0.6);
+    ctx.translate(0, -96);
+    ctx.rotate(Math.sin(time * 1.8 + t.seed) * 0.13);
+    ctx.translate(0, 96);
+    // Lines
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (const dx of [-25, -9, 9, 25]) {
+      ctx.moveTo(dx * pop, -74);
+      ctx.lineTo(Math.sign(dx) * 5, -38);
+    }
+    ctx.stroke();
+    // Canopy with a white centre panel and a scalloped hem.
+    ctx.save();
+    ctx.translate(0, -76);
+    ctx.scale(pop, pop);
+    ctx.beginPath();
+    ctx.arc(0, 0, 26, Math.PI, Math.PI * 2);
+    for (let i = 0; i < 4; i++) {
+      const x0 = 26 - i * 13;
+      ctx.quadraticCurveTo(x0 - 6.5, 6, x0 - 13, 0);
+    }
+    ctx.closePath();
+    ctx.fillStyle = c.canopy;
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(-6, -30, 12, 40);
+    ctx.restore();
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    // Tumbling
+    ctx.translate(0, -24);
+    ctx.rotate(c.t * 9 * (t.facing || 1));
+    ctx.translate(0, 24);
+  }
+  const flail = c.open ? Math.sin(time * 3 + t.seed) * 0.2 : Math.sin(time * 30 + t.seed);
+  // Legs
+  ctx.lineWidth = 5;
+  for (const s of [1, -1]) {
+    ctx.beginPath();
+    ctx.moveTo(0, -18);
+    ctx.lineTo(s * (5 + flail * 4), 0);
+    ctx.stroke();
+  }
+  // Body (with a backpack)
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#6c757d";
+  roundRect(ctx, -11 * t.facing - 3, -36, 6, 14, 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = t.color;
+  roundRect(ctx, -8, -38, 16, 21, 6);
+  ctx.fill();
+  ctx.stroke();
+  // Arms: holding the lines, or windmilling.
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  for (const s of [1, -1]) {
+    ctx.moveTo(s * 5, -34);
+    if (c.open) ctx.lineTo(s * 6, -46);
+    else ctx.lineTo(s * 14 + flail * 6, -46 + s * flail * 8);
+  }
+  ctx.stroke();
+  // Head, with a mouth wide open in freefall.
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#f1c27d";
+  ctx.beginPath();
+  ctx.arc(0, -45, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = t.seed % 2 > 1 ? "#3d405b" : "#6b4226";
+  ctx.beginPath();
+  ctx.arc(0, -47, 8, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = OUTLINE;
+  ctx.beginPath();
+  ctx.arc(-3, -45, 1.4, 0, Math.PI * 2);
+  ctx.arc(3, -45, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  if (c.open) ctx.arc(0, -41, 2, 0.1 * Math.PI, 0.9 * Math.PI);
+  else ctx.ellipse(0, -40.5, 2.2, 3, 0, 0, Math.PI * 2);
+  if (c.open) {
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else ctx.fill();
+  ctx.restore();
+  ctx.lineCap = "butt";
+}
+
 function drawX(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -2332,6 +2826,12 @@ function lerpColor(a: RGB, b: RGB, t: number): RGB {
 
 function shade(c: RGB, d: number): string {
   return `rgb(${c.map((v) => Math.max(0, Math.min(255, Math.round(v + d)))).join(",")})`;
+}
+
+/** `shade` for a "#rrggbb" colour. */
+function shadeHex(hex: string, d: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return shade([(n >> 16) & 255, (n >> 8) & 255, n & 255], d);
 }
 
 function rgb(c: RGB): string {
@@ -2501,6 +3001,343 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
   ctx.restore();
   ctx.restore();
   ctx.lineCap = "butt";
+}
+
+/**
+ * A slingshot kid: propeller beanie, striped shirt, and a slingshot whose band
+ * stretches back as he winds up. `t.x, t.y` is the origin (his feet).
+ */
+function drawKid(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const k = t.kid;
+  if (!k) return;
+  // Drawn larger than his proportions suggest, so the slingshot reads at a glance.
+  const scale = KID_SCALE;
+  const h = t.h / scale;
+  const f = t.facing;
+  const moving = t.speed !== 0;
+  const stride = moving ? Math.sin(time * (k.state === "crying" ? 18 : 11) + t.seed) * 0.6 : 0;
+  const hop =
+    k.state === "cheering" ? Math.abs(Math.sin(time * 11 + t.seed)) * 9 :
+    k.state === "taunting" ? Math.abs(Math.sin(time * 7 + t.seed)) * 3 : 0;
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.translate(0, -hop);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const hipY = -h * 0.34;
+  const shoulderY = -h * 0.62;
+  const headY = -h * 0.8;
+
+  // Legs (planted wide while aiming) and sneakers
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 4.5;
+  const aiming = k.state === "aiming" || k.state === "reloading";
+  const feet: number[] = [];
+  for (const s of [1, -1]) {
+    const footX = moving ? Math.sin(stride * s) * 9 : aiming ? s * 7 : s * 4;
+    feet.push(footX);
+    ctx.beginPath();
+    ctx.moveTo(s * 3, hipY);
+    ctx.lineTo(footX, -2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#fff";
+  ctx.lineWidth = 2;
+  for (const fx of feet) {
+    roundRect(ctx, fx - 3 + f * 1, -5, 8, 5, 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  // Shorts
+  ctx.lineWidth = 2.5;
+  ctx.fillStyle = "#3a86ff";
+  roundRect(ctx, -8, -h * 0.44, 16, h * 0.13, 3);
+  ctx.fill();
+  ctx.stroke();
+  // Striped shirt
+  ctx.save();
+  roundRect(ctx, -8.5, -h * 0.68, 17, h * 0.27, 5);
+  ctx.fillStyle = t.color;
+  ctx.fill();
+  ctx.clip();
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  for (let i = 0; i < 4; i++) ctx.fillRect(-10, -h * 0.66 + i * 3.4, 20, 1.6);
+  ctx.restore();
+  ctx.strokeStyle = OUTLINE;
+  roundRect(ctx, -8.5, -h * 0.68, 17, h * 0.27, 5);
+  ctx.stroke();
+
+  // Arms and slingshot (screen space, so the aim angle works both ways)
+  drawKidArms(ctx, t, time, shoulderY);
+
+  // Head
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = OUTLINE;
+  ctx.fillStyle = "#f1c27d";
+  ctx.beginPath();
+  ctx.arc(0, headY, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Propeller beanie: spins faster when he's excited
+  const cap = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4"];
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = cap[i];
+    ctx.beginPath();
+    ctx.moveTo(0, headY - 3);
+    ctx.arc(0, headY - 3, 10.5, Math.PI + (i * Math.PI) / 4, Math.PI + ((i + 1) * Math.PI) / 4);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(0, headY - 3, 10.5, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, headY - 13);
+  ctx.lineTo(0, headY - 18);
+  ctx.stroke();
+  const spin = time * (k.state === "cheering" || k.state === "crying" ? 40 : k.state === "aiming" ? 6 + k.pull * 30 : 12) + t.seed;
+  const blade = Math.cos(spin) * 9;
+  ctx.fillStyle = "#ffca3a";
+  ctx.beginPath();
+  ctx.ellipse(blade / 2, headY - 18, Math.abs(blade / 2) + 0.8, 2, 0, 0, Math.PI * 2);
+  ctx.ellipse(-blade / 2, headY - 18, Math.abs(blade / 2) + 0.8, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Face (facing direction)
+  ctx.save();
+  ctx.scale(f, 1);
+  ctx.fillStyle = OUTLINE;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.8;
+  const ey = headY + 1;
+  if (k.state === "crying") {
+    // Squeezed-shut eyes and a wailing mouth
+    for (const ex of [1, 7]) {
+      ctx.beginPath();
+      ctx.moveTo(ex - 2.5, ey - 1);
+      ctx.lineTo(ex + 0.5, ey + 1);
+      ctx.lineTo(ex - 2.5, ey + 2.5);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.ellipse(4, headY + 6.5, 3, 3.5 + Math.sin(time * 20) * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (k.state === "aiming") {
+    // One eye squinted, tongue poking out in concentration
+    ctx.beginPath();
+    ctx.arc(7, ey, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-0.5, ey);
+    ctx.lineTo(3, ey);
+    ctx.stroke();
+    ctx.fillStyle = "#ff8fab";
+    ctx.beginPath();
+    ctx.ellipse(7.5, headY + 6.5, 2.2, 1.8, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(1.5, ey, 1.6, 0, Math.PI * 2);
+    ctx.arc(7, ey, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    if (k.state === "taunting") {
+      // Nyah nyah: big tongue out
+      ctx.beginPath();
+      ctx.arc(4.5, headY + 5.5, 3, 0, Math.PI);
+      ctx.stroke();
+      ctx.fillStyle = "#ff5d8f";
+      roundRect(ctx, 3, headY + 6, 3.4, 4.5 + Math.sin(time * 9) * 1, 1.7);
+      ctx.fill();
+    } else if (k.state === "cheering") {
+      ctx.fillStyle = "#6a040f";
+      ctx.beginPath();
+      ctx.arc(4.5, headY + 5, 3.5, 0, Math.PI);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // A cheeky grin
+      ctx.beginPath();
+      ctx.arc(3.5, headY + 4, 3.5, 0.3, Math.PI - 0.6);
+      ctx.stroke();
+    }
+  }
+  // Freckles
+  ctx.fillStyle = "#c68642";
+  for (const [fx, fy] of [[-1, 3.5], [1, 4.8], [8.5, 4], [6.8, 5.2]]) ctx.fillRect(fx, headY + fy, 1.1, 1.1);
+  ctx.restore();
+
+  // Tears fountaining off both sides
+  if (k.state === "crying") {
+    ctx.fillStyle = "#8ecae6";
+    for (let i = 0; i < 6; i++) {
+      const ph = (time * 2.6 + i / 6) % 1;
+      const side = i % 2 ? 1 : -1;
+      ctx.globalAlpha = 1 - ph;
+      ctx.beginPath();
+      ctx.arc(side * (6 + ph * 22), headY + 1 - ph * 10 + ph * ph * 34, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Warning: a "!" that grows and flashes as the band stretches
+  if (k.state === "aiming") {
+    const s = 0.8 + k.pull * 0.6;
+    const flash = k.pull > 0.65 && Math.sin(time * 30) > 0;
+    ctx.save();
+    ctx.translate(0, headY - 34 - k.pull * 4);
+    ctx.scale(s, s);
+    ctx.fillStyle = flash ? "#fff" : "#ff3b3b";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = flash ? "#ff3b3b" : "#fff";
+    ctx.font = "900 17px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("!", 0, 1);
+    ctx.restore();
+  }
+  ctx.restore();
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
+}
+
+function drawKidArms(ctx: CanvasRenderingContext2D, t: Target, time: number, shoulderY: number): void {
+  const k = t.kid!;
+  const f = t.facing;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3.5;
+  const arm = (x: number, y: number) => {
+    ctx.beginPath();
+    ctx.moveTo(0, shoulderY + 1);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+  if (k.state === "crying") {
+    // Arms flailing over his head, slingshot dropped
+    const w = Math.sin(time * 22) * 4;
+    arm(-8 + w, shoulderY - 12);
+    arm(8 - w, shoulderY - 12);
+    return;
+  }
+  if (k.state === "cheering") {
+    const wave = Math.sin(time * 14) * 3;
+    arm(-15, shoulderY - 15 + wave);
+    drawSlingshotFork(ctx, 15, shoulderY - 15 - wave, -Math.PI / 2, 0, 0, false);
+    arm(15, shoulderY - 15 - wave);
+    return;
+  }
+  if (k.state === "taunting" || k.state === "walking" || (k.state === "reloading" && t.speed !== 0)) {
+    // Slingshot dangling at his side; when taunting, a waggle at the bird
+    const swing = Math.sin(time * 11 + t.seed) * 3;
+    drawSlingshotFork(ctx, -f * 6, shoulderY + 14 + swing, Math.PI / 2, 0, 0, false);
+    arm(-f * 6, shoulderY + 14 + swing);
+    if (k.state === "taunting") {
+      const wag = Math.sin(time * 16) * 3;
+      arm(f * 11, shoulderY - 8 + wag);
+    } else arm(f * 6, shoulderY + 13 - swing);
+    return;
+  }
+  // Aiming / reloading: front arm out along the aim, back hand pulls the pouch.
+  const a = Math.atan2(k.aimVy, k.aimVx);
+  const forkX = Math.cos(a) * 13;
+  const forkY = shoulderY + Math.sin(a) * 13;
+  const pull = k.state === "aiming" ? k.pull : 0;
+  const shake = pull > 0.8 ? (Math.random() - 0.5) * 1.5 : 0;
+  const twang = k.twang > 0 ? Math.sin(time * 90) * k.twang * 20 : 0;
+  const back = 4 + pull * 15 - twang;
+  drawSlingshotFork(ctx, forkX + shake, forkY + shake, a, back, pull, k.state === "aiming");
+  arm(forkX + shake, forkY + shake);
+  arm(forkX - Math.cos(a) * back, forkY - Math.sin(a) * back);
+}
+
+/**
+ * A Y-shaped slingshot at (x, y), shooting along angle `a`. The band runs from
+ * the prong tips back to a pouch `back` px behind the fork.
+ */
+function drawSlingshotFork(
+  ctx: CanvasRenderingContext2D, x: number, y: number, a: number, back: number, pull: number, loaded: boolean,
+): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  // In this frame +x is the shot direction; the prongs point "up" (-y) across it.
+  const tipA = { x: 2, y: -8 };
+  const tipB = { x: -1, y: -9 };
+  ctx.lineCap = "round";
+  // Band behind
+  ctx.strokeStyle = pull > 0.7 ? "#d00000" : "#9d0208";
+  ctx.lineWidth = 1.6 + (1 - pull) * 0.6;
+  ctx.beginPath();
+  ctx.moveTo(tipB.x, tipB.y);
+  ctx.lineTo(-back, -4);
+  ctx.lineTo(tipA.x, tipA.y);
+  ctx.stroke();
+  // Wooden fork
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.lineTo(0, -2);
+  ctx.lineTo(tipA.x, tipA.y);
+  ctx.moveTo(0, -2);
+  ctx.lineTo(tipB.x, tipB.y);
+  ctx.stroke();
+  ctx.strokeStyle = "#a47148";
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  // Pebble in the pouch
+  if (loaded) {
+    ctx.fillStyle = "#8d99ae";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(-back, -4, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** A pebble: a lumpy grey rock with a speed streak. */
+function drawPebble(ctx: CanvasRenderingContext2D, p: Pebble): void {
+  const sp = Math.hypot(p.vx, p.vy) || 1;
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = PEBBLE_R * 1.2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+  ctx.lineTo(p.x - (p.vx / sp) * 26, p.y - (p.vy / sp) * 26);
+  ctx.stroke();
+  ctx.lineCap = "butt";
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.rot);
+  ctx.fillStyle = "#8d99ae";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 7; i++) {
+    const ang = (i / 7) * Math.PI * 2;
+    // Drawn a bit larger than its hit radius so it reads in flight.
+    const r = PEBBLE_R * 1.35 * (0.85 + 0.3 * rnd(i * 13.7 + p.from.seed));
+    ctx.lineTo(Math.cos(ang) * r, Math.sin(ang) * r);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.beginPath();
+  ctx.arc(-1.5, -1.5, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 /** Draws `photo` cover-cropped into the rect, or a "no photo" placeholder. */
@@ -2676,4 +3513,1086 @@ function drawBillboardAd(
   ctx.fillText("EXCL!", 0, 1);
   ctx.restore();
   ctx.restore();
+}
+
+// --- wedding -----------------------------------------------------------------
+
+/** Black-outlined bold text, centred. */
+function outlinedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, color: string): void {
+  ctx.font = `900 ${Math.round(size)}px 'Trebuchet MS', sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(3, size * 0.22);
+  ctx.strokeStyle = OUTLINE;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+  ctx.lineJoin = "miter";
+}
+
+/** A heart centred roughly on (x, y), `r` about half its width. */
+function heartPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x, y + r * 0.95);
+  ctx.bezierCurveTo(x - r * 1.7, y - r * 0.15, x - r * 0.75, y - r * 1.3, x, y - r * 0.45);
+  ctx.bezierCurveTo(x + r * 0.75, y - r * 1.3, x + r * 1.7, y - r * 0.15, x, y + r * 0.95);
+  ctx.closePath();
+}
+
+function drawHeart(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string): void {
+  heartPath(ctx, x, y, r);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  // Shine
+  ctx.fillStyle = "rgba(255,255,255,0.45)";
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.5, y - r * 0.45, r * 0.22, r * 0.13, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Lean, hop and kiss of the couple, from how the wedding is going. */
+function couplePose(w: Wedding, time: number): { lean: number; hop: number; kissing: boolean } {
+  if (w.phase === "countdown") return { lean: (4 - w.count) * 0.05, hop: 0, kissing: false };
+  if (w.phase === "kiss") return { lean: 0.32, hop: 0, kissing: true };
+  if (w.outcome === "married") return { lean: 0, hop: Math.abs(Math.sin(time * 9)) * 4, kissing: false };
+  return { lean: 0, hop: 0, kissing: false };
+}
+
+/** A hand-tied bouquet: stems and a ribbon below, flowers on top. (x, y) is where it's held. */
+function drawBouquetFlowers(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.strokeStyle = "#2d6a4f";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const dx of [-3, 0, 3]) {
+    ctx.moveTo(dx * 0.5, 0);
+    ctx.lineTo(dx, 9);
+  }
+  ctx.stroke();
+  ctx.fillStyle = "#ffb3c6";
+  ctx.fillRect(-3, 1, 6, 3);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.5;
+  const flowers: [number, number, string][] = [
+    [-5, -3, "#fb6f92"], [5, -3, "#ffffff"], [0, -7, "#ff8fab"], [-3, -9, "#ffffff"], [4, -9, "#c9184a"], [0, -2, "#ffe5ec"],
+  ];
+  ctx.fillStyle = "#52b788";
+  ctx.beginPath();
+  ctx.ellipse(-7, -1, 4, 2, -0.5, 0, Math.PI * 2);
+  ctx.ellipse(7, -1, 4, 2, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  for (const [fx, fy, c] of flowers) {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** The flying bouquet: tossed (catch it!) or thrown in fury. */
+function drawBouquet(ctx: CanvasRenderingContext2D, q: Bouquet): void {
+  if (!q.angry) {
+    ctx.fillStyle = "rgba(255,240,170,0.35)";
+    ctx.beginPath();
+    ctx.arc(q.x, q.y - 4, BOUQUET_R + 10, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.save();
+  ctx.translate(q.x, q.y);
+  ctx.rotate(q.rot);
+  drawBouquetFlowers(ctx, 0, 4, 1.4);
+  ctx.restore();
+  if (!q.angry) outlinedText(ctx, "CATCH!", q.x, q.y - BOUQUET_R - 22, 16, "#ffb3c6");
+}
+
+/** A released white dove, flapping hard. */
+function drawDove(ctx: CanvasRenderingContext2D, d: Dove, time: number): void {
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  ctx.scale(d.vx < 0 ? -1.2 : 1.2, 1.2);
+  ctx.rotate(-0.4);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.fillStyle = "#ffffff";
+  // Tail
+  ctx.beginPath();
+  ctx.moveTo(-7, -1);
+  ctx.lineTo(-16, -4);
+  ctx.lineTo(-15, 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Body and head
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 10, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(9, -4, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#f4a261";
+  ctx.beginPath();
+  ctx.moveTo(13, -5);
+  ctx.lineTo(17, -3.5);
+  ctx.lineTo(13, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = OUTLINE;
+  ctx.beginPath();
+  ctx.arc(10, -5, 1.1, 0, Math.PI * 2);
+  ctx.fill();
+  // Wing
+  const flap = Math.sin(time * 22 + d.seed) * 1.1;
+  ctx.save();
+  ctx.translate(-1, -3);
+  ctx.rotate(-0.3 + flap * 0.8);
+  ctx.fillStyle = "#f1f3f5";
+  ctx.beginPath();
+  ctx.ellipse(-2, -7, 5, 9, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+}
+
+/**
+ * The church: a nave with stained-glass windows, a tower with a swinging
+ * bell, a door with a ribbon, and a spire whose tip is the gap's bottom edge.
+ */
+function drawChurch(ctx: CanvasRenderingContext2D, o: Obstacle, time: number): void {
+  const { cx, towerTop, naveTop } = churchGeometry(o);
+  const x = o.x;
+  const w = o.w;
+  const tw = CHURCH_TOWER_W;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = OUTLINE;
+
+  // Nave roof and walls
+  ctx.fillStyle = "#a44a3f";
+  ctx.beginPath();
+  ctx.moveTo(x - 8, naveTop + 2);
+  ctx.lineTo(x + 6, naveTop - 16);
+  ctx.lineTo(x + w - 6, naveTop - 16);
+  ctx.lineTo(x + w + 8, naveTop + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = o.color;
+  ctx.fillRect(x, naveTop, w, GROUND_Y - naveTop + 4);
+  ctx.strokeRect(x, naveTop, w, GROUND_Y - naveTop + 4);
+
+  // Stained-glass windows either side of the tower
+  const winH = Math.min(50, GROUND_Y - naveTop - 34);
+  if (winH > 16) {
+    for (const wx of [x + (w - tw) / 4, x + w - (w - tw) / 4]) {
+      const top = naveTop + 16;
+      ctx.beginPath();
+      ctx.moveTo(wx - 9, top + winH);
+      ctx.lineTo(wx - 9, top + 9);
+      ctx.arc(wx, top + 9, 9, Math.PI, 0);
+      ctx.lineTo(wx + 9, top + winH);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(0, top, 0, top + winH);
+      g.addColorStop(0, "#ff8fab");
+      g.addColorStop(0.45, "#5390d9");
+      g.addColorStop(1, "#ffd166");
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(wx, top);
+      ctx.lineTo(wx, top + winH);
+      ctx.moveTo(wx - 9, top + winH * 0.55);
+      ctx.lineTo(wx + 9, top + winH * 0.55);
+      ctx.stroke();
+      ctx.lineWidth = 3;
+    }
+  }
+  // Bunting along the eaves
+  const flags = ["#ff8fab", "#ffffff", "#ffd166", "#a2d2ff"];
+  ctx.lineWidth = 1.5;
+  for (const [x0, x1] of [[x + 4, cx - tw / 2], [cx + tw / 2, x + w - 4]]) {
+    const n = Math.max(1, Math.floor((x1 - x0) / 11));
+    for (let i = 0; i < n; i++) {
+      const fx = x0 + ((x1 - x0) * (i + 0.5)) / n;
+      const sag = Math.sin(((i + 0.5) / n) * Math.PI) * 4;
+      ctx.fillStyle = flags[i % flags.length];
+      ctx.beginPath();
+      ctx.moveTo(fx - 4.5, naveTop + 3 + sag);
+      ctx.lineTo(fx + 4.5, naveTop + 3 + sag);
+      ctx.lineTo(fx, naveTop + 12 + sag);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  ctx.lineWidth = 3;
+
+  // Tower
+  ctx.fillStyle = "#e9dcc3";
+  ctx.fillRect(cx - tw / 2, towerTop, tw, GROUND_Y - towerTop + 4);
+  ctx.strokeRect(cx - tw / 2, towerTop, tw, GROUND_Y - towerTop + 4);
+  const towerH = GROUND_Y - towerTop;
+  const by = towerTop + 10;
+  if (towerH > 110) {
+    // Belfry with the bell swinging
+    ctx.fillStyle = "#3d405b";
+    ctx.beginPath();
+    ctx.moveTo(cx - 13, by + 36);
+    ctx.lineTo(cx - 13, by + 13);
+    ctx.arc(cx, by + 13, 13, Math.PI, 0);
+    ctx.lineTo(cx + 13, by + 36);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(cx - 13, by - 2, 26, 38);
+    ctx.clip();
+    ctx.translate(cx, by + 6);
+    ctx.rotate(Math.sin(time * 5) * 0.55);
+    ctx.fillStyle = "#e9c46a";
+    ctx.beginPath();
+    ctx.moveTo(-10, 22);
+    ctx.quadraticCurveTo(-9, 4, 0, 3);
+    ctx.quadraticCurveTo(9, 4, 10, 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#b08968";
+    ctx.beginPath();
+    ctx.arc(0, 23, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  if (towerH > 160) {
+    // Rose window
+    const ry = by + 62;
+    ctx.fillStyle = "#ff8fab";
+    ctx.beginPath();
+    ctx.arc(cx, ry, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.moveTo(cx, ry);
+      ctx.lineTo(cx + Math.cos(a) * 11, ry + Math.sin(a) * 11);
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#ffd166";
+    ctx.beginPath();
+    ctx.arc(cx, ry, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 3;
+  }
+  // Door with a ribbon bow
+  ctx.fillStyle = "#6b4226";
+  ctx.beginPath();
+  ctx.moveTo(cx - 15, GROUND_Y + 2);
+  ctx.lineTo(cx - 15, GROUND_Y - 30);
+  ctx.arc(cx, GROUND_Y - 30, 15, Math.PI, 0);
+  ctx.lineTo(cx + 15, GROUND_Y + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, GROUND_Y - 45);
+  ctx.lineTo(cx, GROUND_Y);
+  ctx.stroke();
+  ctx.fillStyle = "#ffb3c6";
+  ctx.beginPath();
+  ctx.ellipse(cx - 6, GROUND_Y - 50, 6, 4, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(cx + 6, GROUND_Y - 50, 6, 4, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, GROUND_Y - 50, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.lineWidth = 3;
+
+  // Spire with a cross on the tip
+  ctx.fillStyle = "#5c677d";
+  ctx.beginPath();
+  ctx.moveTo(cx - tw / 2 - 5, towerTop);
+  ctx.lineTo(cx, o.gapBottom);
+  ctx.lineTo(cx + tw / 2 + 5, towerTop);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 1; i < 4; i++) {
+    const yy = o.gapBottom + (CHURCH_SPIRE_H * i) / 4;
+    const half = ((tw / 2 + 5) * i) / 4;
+    ctx.moveTo(cx - half, yy);
+    ctx.lineTo(cx + half, yy);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = "#e9c46a";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx, o.gapBottom);
+  ctx.lineTo(cx, o.gapBottom - 15);
+  ctx.moveTo(cx - 5, o.gapBottom - 10);
+  ctx.lineTo(cx + 5, o.gapBottom - 10);
+  ctx.stroke();
+  ctx.lineCap = "butt";
+  ctx.strokeStyle = OUTLINE;
+
+  for (const sp of o.splats) drawSplat(ctx, o.x + sp.dx, sp.dy, sp.r, sp.seed, 1);
+}
+
+/** On the sidewalk in front of the church: the red carpet, and the flower arch with the couple's names. */
+function drawWeddingBackdrop(ctx: CanvasRenderingContext2D, w: Wedding, time: number): void {
+  const x = weddingX(w);
+  if (x < -120) return;
+  const ground = GROUND_Y + 20;
+  const { cx: doorX } = churchGeometry(w.church);
+  // Red carpet out of the church door
+  ctx.fillStyle = "#c1121f";
+  ctx.beginPath();
+  ctx.moveTo(x - 52, ground);
+  ctx.lineTo(doorX + 16, ground);
+  ctx.lineTo(doorX + 12, GROUND_Y + 1);
+  ctx.lineTo(x - 46, GROUND_Y + 1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#e9c46a";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Flower arch
+  const ah = 100;
+  const ar = 40;
+  const top = ground - ah;
+  ctx.lineCap = "round";
+  for (const [lw, col] of [[8, OUTLINE], [4.5, "#fffdf8"]] as const) {
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(x - ar, ground);
+    ctx.lineTo(x - ar, top);
+    ctx.arc(x, top, ar, Math.PI, 0);
+    ctx.lineTo(x + ar, ground);
+    ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+  // Flowers and leaves along it: up the left post, over the top, down the right post.
+  const along = (u: number): { x: number; y: number } => {
+    const post = ah / (ah * 2 + Math.PI * ar);
+    if (u < post) return { x: x - ar, y: ground - (u / post) * ah };
+    if (u > 1 - post) return { x: x + ar, y: top + ((u - (1 - post)) / post) * ah };
+    const a = Math.PI + ((u - post) / (1 - 2 * post)) * Math.PI;
+    return { x: x + Math.cos(a) * ar, y: top + Math.sin(a) * ar };
+  };
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = OUTLINE;
+  for (let i = 0; i < 26; i++) {
+    const u = 0.1 + (i / 25) * 0.8;
+    const p = along(u);
+    const r = rnd(i + 3.3);
+    if (i % 2 === 0) {
+      ctx.fillStyle = "#52b788";
+      ctx.beginPath();
+      ctx.ellipse(p.x + (r - 0.5) * 8, p.y + 3, 5, 2.5, r * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = ["#fb6f92", "#ffffff", "#ffb3c6", "#c9184a", "#ffe5ec"][i % 5];
+    ctx.beginPath();
+    ctx.arc(p.x + (r - 0.5) * 5, p.y + (rnd(i + 7.1) - 0.5) * 5, 3.5 + r * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  // Name banner on the crown
+  ctx.font = "italic 700 13px Georgia, 'Times New Roman', serif";
+  const tw = ctx.measureText(w.names).width + 18;
+  const by = top - ar + 2 + Math.sin(time * 2) * 1.5;
+  ctx.fillStyle = "#ffe5ec";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(x + s * (tw / 2 - 4), by - 6);
+    ctx.lineTo(x + s * (tw / 2 + 10), by - 4);
+    ctx.lineTo(x + s * (tw / 2 + 5), by + 4);
+    ctx.lineTo(x + s * (tw / 2 + 10), by + 12);
+    ctx.lineTo(x + s * (tw / 2 - 4), by + 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  roundRect(ctx, x - tw / 2, by - 9, tw, 18, 3);
+  ctx.fillStyle = "#fff5f8";
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#c9184a";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(w.names, x, by + 1);
+}
+
+/** The bride: a big white gown with a train, a veil, and her bouquet (until she lets it go). */
+function drawBride(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const w = t.wedding;
+  if (!w) return;
+  const h = t.h;
+  const pose = couplePose(w, time);
+  const ruined = w.outcome === "ruined";
+  const married = w.outcome === "married";
+  const shrieking = ruined && w.t < WEDDING_WINDUP - 0.5;
+  const windingUp = ruined && !w.thrown && !shrieking;
+  ctx.save();
+  ctx.scale(t.facing, 1);
+  ctx.translate(0, -pose.hop);
+  ctx.lineCap = "round";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = OUTLINE;
+  // Train behind her, then the skirt
+  ctx.fillStyle = "#fffdf8";
+  ctx.beginPath();
+  ctx.moveTo(-4, -h * 0.35);
+  ctx.quadraticCurveTo(-20, -8, -36, 0);
+  ctx.lineTo(4, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-7, -h * 0.5);
+  ctx.bezierCurveTo(-12, -h * 0.3, -18, -h * 0.12, -19, 0);
+  ctx.lineTo(19, 0);
+  ctx.bezierCurveTo(18, -h * 0.12, 12, -h * 0.3, 7, -h * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = -3; i <= 3; i++) ctx.arc(i * 5.2, -2, 2.6, Math.PI, 0);
+  ctx.stroke();
+  ctx.lineWidth = 3;
+
+  // Upper body, leaning toward the groom
+  ctx.save();
+  ctx.translate(0, -h * 0.5);
+  ctx.rotate(pose.lean);
+  ctx.translate(0, h * 0.5);
+  ctx.fillStyle = "#fffdf8";
+  roundRect(ctx, -7, -h * 0.76, 14, h * 0.27, 5);
+  ctx.fill();
+  ctx.stroke();
+  const hy = -h * 0.86;
+  // Veil, flowing back
+  const flutter = Math.sin(time * 3 + t.seed) * 2;
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.strokeStyle = "rgba(43,45,66,0.45)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-1, hy - 9);
+  ctx.quadraticCurveTo(-22 + flutter, hy + 4, -19 + flutter, -h * 0.34);
+  ctx.lineTo(-7, -h * 0.42);
+  ctx.quadraticCurveTo(-9, hy + 4, 3, hy - 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = OUTLINE;
+  // Head, hair in a bun, tiara
+  ctx.fillStyle = ruined && !shrieking ? "#f4a29a" : "#f1c27d";
+  ctx.beginPath();
+  ctx.arc(0, hy, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#d4a24c";
+  ctx.beginPath();
+  ctx.arc(0, hy - 1, 8, Math.PI * 1.05, Math.PI * 1.95);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(-6, hy - 6, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#ffd60a";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-4, hy - 7);
+  ctx.lineTo(-2, hy - 12);
+  ctx.lineTo(0, hy - 8);
+  ctx.lineTo(2, hy - 13);
+  ctx.lineTo(4, hy - 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Face
+  ctx.fillStyle = OUTLINE;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.8;
+  if (pose.kissing) {
+    ctx.beginPath();
+    ctx.arc(3.5, hy - 1, 2, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+    ctx.fillStyle = "#e5383b";
+    ctx.beginPath();
+    ctx.arc(7.5, hy + 3, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shrieking) {
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(3.5, hy - 2, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = OUTLINE;
+    ctx.beginPath();
+    ctx.arc(4, hy - 2, 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(4, hy + 4, 2.4, 3.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (ruined) {
+    // Furious: brow down, teeth gritted
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(0.5, hy - 5.5);
+    ctx.lineTo(6.5, hy - 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(4, hy - 1.5, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(1.5, hy + 2.5, 5.5, 2.5);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(1.5, hy + 2.5, 5.5, 2.5);
+  } else {
+    ctx.beginPath();
+    ctx.arc(3.5, hy - 1, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(3.5, hy + 2, 3, 0.3, Math.PI - 0.6);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,105,135,0.5)";
+    ctx.beginPath();
+    ctx.arc(1.5, hy + 2.5, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Arms and the bouquet
+  ctx.strokeStyle = "#f1c27d";
+  ctx.lineWidth = 3.5;
+  const shoulder = { x: 3, y: -h * 0.72 };
+  let hand: { x: number; y: number };
+  if (shrieking) hand = { x: 6, y: hy + 6 };
+  else if (windingUp) hand = { x: -12, y: hy - 12 };
+  else if (ruined) hand = { x: 7, y: hy - 14 + Math.sin(time * 22) * 3 };
+  else if (married && w.thrown) hand = { x: 4 + Math.sin(time * 7) * 3, y: hy - 15 };
+  else hand = { x: 10, y: -h * 0.55 };
+  ctx.beginPath();
+  ctx.moveTo(shoulder.x, shoulder.y);
+  ctx.lineTo(hand.x, hand.y);
+  if (shrieking) {
+    ctx.moveTo(-3, shoulder.y);
+    ctx.lineTo(-5, hy + 6);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = OUTLINE;
+  if (!w.thrown) drawBouquetFlowers(ctx, hand.x, hand.y, 1);
+  else if (ruined) {
+    ctx.fillStyle = "#f1c27d";
+    ctx.beginPath();
+    ctx.arc(hand.x, hand.y, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.restore();
+  ctx.lineCap = "butt";
+}
+
+/** The groom: tailcoat, bow tie and top hat. If the kiss is ruined he faints flat on his back. */
+function drawGroom(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const w = t.wedding;
+  if (!w) return;
+  const h = t.h;
+  const pose = couplePose(w, time);
+  const ruined = w.outcome === "ruined";
+  const faint = ruined ? Math.min(1, w.t / 0.45) : 0;
+  ctx.save();
+  ctx.scale(t.facing, 1);
+  ctx.translate(0, -pose.hop);
+  if (faint > 0) {
+    // Topples backwards, away from the bride, and lands with a little bounce.
+    const bounce = faint >= 1 ? Math.max(0, Math.sin(Math.min(Math.PI, (w.t - 0.45) * 12))) * 0.08 : 0;
+    ctx.translate(-6 * faint, -4 * faint);
+    ctx.rotate(-(faint * faint) * 1.45 + bounce);
+  }
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  // Legs
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.42);
+  ctx.lineTo(-5, 0);
+  ctx.moveTo(0, -h * 0.42);
+  ctx.lineTo(5, 0);
+  ctx.stroke();
+  // Upper body, leaning toward the bride
+  ctx.save();
+  ctx.translate(0, -h * 0.5);
+  ctx.rotate(pose.lean);
+  ctx.translate(0, h * 0.5);
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#3d3d5c";
+  // Tails
+  ctx.beginPath();
+  ctx.moveTo(-9, -h * 0.5);
+  ctx.lineTo(-12, -h * 0.3);
+  ctx.lineTo(-5, -h * 0.4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  roundRect(ctx, -10, -h * 0.79, 20, h * 0.4, 5);
+  ctx.fill();
+  ctx.stroke();
+  // Shirt, bow tie, buttonhole
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.moveTo(-4, -h * 0.79);
+  ctx.lineTo(5, -h * 0.79);
+  ctx.lineTo(1, -h * 0.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#c9184a";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(1, -h * 0.765);
+  ctx.lineTo(-3, -h * 0.79);
+  ctx.lineTo(-3, -h * 0.74);
+  ctx.closePath();
+  ctx.moveTo(1, -h * 0.765);
+  ctx.lineTo(5, -h * 0.79);
+  ctx.lineTo(5, -h * 0.74);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#ff8fab";
+  ctx.beginPath();
+  ctx.arc(-6, -h * 0.7, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Arm: holding her hand, waving once married, flung out when he faints
+  const married = w.outcome === "married";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(4, -h * 0.72);
+  if (married) ctx.lineTo(6 + Math.sin(time * 9) * 3, -h * 1.02);
+  else if (ruined) ctx.lineTo(-2, -h * 1.05);
+  else ctx.lineTo(13, -h * 0.5);
+  ctx.stroke();
+  // Head and hair
+  const hy = -h * 0.88;
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#e0ac69";
+  ctx.beginPath();
+  ctx.arc(0, hy, 8.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#3b2414";
+  ctx.beginPath();
+  ctx.arc(0, hy - 1, 8.5, Math.PI * 1.02, Math.PI * 1.98);
+  ctx.fill();
+  // Top hat (it flew off if the kiss was ruined)
+  if (!ruined) {
+    ctx.fillStyle = "#22223b";
+    ctx.fillRect(-7, hy - 22, 14, 14);
+    ctx.strokeRect(-7, hy - 22, 14, 14);
+    ctx.fillRect(-11, hy - 9, 22, 3);
+    ctx.strokeRect(-11, hy - 9, 22, 3);
+    ctx.fillStyle = "#ff8fab";
+    ctx.fillRect(-6, hy - 12, 12, 3);
+  }
+  // Face
+  ctx.fillStyle = OUTLINE;
+  ctx.lineWidth = 1.8;
+  if (ruined) {
+    ctx.lineWidth = 1.6;
+    drawX(ctx, 3.5, hy - 1, 2);
+    ctx.fillStyle = "#ff8fab";
+    ctx.beginPath();
+    ctx.ellipse(5, hy + 4.5, 1.8, 2.6, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (pose.kissing) {
+    ctx.beginPath();
+    ctx.arc(3.5, hy - 1, 2, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(8, hy + 3, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(3.5, hy - 1, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(3.5, hy + 2, 3, 0.3, Math.PI - 0.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.restore();
+  ctx.lineCap = "butt";
+  // Little birds circling the fainted groom's head
+  if (faint >= 1) {
+    for (let i = 0; i < 3; i++) {
+      const a = time * 4 + (i * Math.PI * 2) / 3;
+      drawStar(ctx, -t.facing * 58 + Math.cos(a) * 14, -14 + Math.sin(a) * 5, 4.5, "#ffd166");
+    }
+  }
+}
+
+/** A wedding guest in their best outfit: claps, holds their breath, cheers, or gasps. */
+function drawGuest(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const w = t.wedding;
+  const h = t.h;
+  const ruined = w?.outcome === "ruined";
+  const married = w?.outcome === "married";
+  const gasp = ruined && (w?.t ?? 0) < 3;
+  const hop = married ? Math.abs(Math.sin(time * 8 + t.seed)) * 6 : 0;
+  const dress = rnd(t.seed) > 0.5;
+  ctx.save();
+  ctx.scale(t.facing, 1);
+  ctx.translate(0, -hop);
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.4);
+  ctx.lineTo(-4, 0);
+  ctx.moveTo(0, -h * 0.4);
+  ctx.lineTo(4, 0);
+  ctx.stroke();
+  ctx.lineWidth = 3;
+  ctx.fillStyle = t.color;
+  if (dress) {
+    ctx.beginPath();
+    ctx.moveTo(-6, -h * 0.76);
+    ctx.lineTo(6, -h * 0.76);
+    ctx.lineTo(12, -h * 0.22);
+    ctx.lineTo(-12, -h * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    roundRect(ctx, -9, -h * 0.77, 18, h * 0.42, 5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.moveTo(-3, -h * 0.77);
+    ctx.lineTo(3, -h * 0.77);
+    ctx.lineTo(0, -h * 0.64);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Arms
+  const hy = -h * 0.87;
+  const sh = -h * 0.7;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  if (gasp) {
+    ctx.moveTo(-4, sh);
+    ctx.lineTo(-7, hy + 3);
+    ctx.moveTo(4, sh);
+    ctx.lineTo(7, hy + 3);
+  } else if (married) {
+    const wave = Math.sin(time * 10 + t.seed) * 4;
+    ctx.moveTo(-4, sh);
+    ctx.lineTo(-9 + wave, hy - 14);
+    ctx.moveTo(4, sh);
+    ctx.lineTo(9 - wave, hy - 14);
+  } else if (w && (w.phase === "countdown" || w.phase === "kiss")) {
+    // Hands clasped, holding their breath
+    ctx.moveTo(-4, sh);
+    ctx.lineTo(5, sh + 8);
+    ctx.moveTo(4, sh);
+    ctx.lineTo(6, sh + 8);
+  } else {
+    // Polite clapping
+    const clap = Math.abs(Math.sin(time * 7 + t.seed)) * 4;
+    ctx.moveTo(-4, sh);
+    ctx.lineTo(7 - clap, sh + 6);
+    ctx.moveTo(4, sh);
+    ctx.lineTo(8 + clap * 0.5, sh + 5);
+  }
+  ctx.stroke();
+  // Head, hair and hat
+  ctx.lineWidth = 3;
+  ctx.fillStyle = rnd(t.seed + 1) > 0.5 ? "#f1c27d" : "#c68642";
+  ctx.beginPath();
+  ctx.arc(0, hy, 7.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = ["#3b2414", "#d4a24c", "#6b4226", "#adb5bd"][Math.floor(rnd(t.seed + 2) * 4)];
+  ctx.beginPath();
+  ctx.arc(0, hy - 1, 7.5, Math.PI * 1.05, Math.PI * 1.95);
+  ctx.fill();
+  if (dress) {
+    // Fascinator with a feather
+    ctx.fillStyle = t.color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(-2, hy - 8, 6, 2.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-4, hy - 9);
+    ctx.quadraticCurveTo(-10, hy - 18, -2, hy - 20);
+    ctx.stroke();
+  }
+  ctx.fillStyle = OUTLINE;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(3, hy - 1, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+  if (gasp) {
+    ctx.beginPath();
+    ctx.ellipse(3.5, hy + 3.5, 1.8, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(3, hy + 1.5, 2.6, 0.3, Math.PI - 0.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.lineCap = "butt";
+  if (gasp) outlinedText(ctx, "!", 0, -h - 14 - hop, 18, "#ff595e");
+}
+
+/** The wedding photographer: an old plate camera on a tripod, a black hood, and a flash pan held high. */
+function drawWeddingPhotographer(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const w = t.wedding;
+  const h = t.h;
+  ctx.save();
+  ctx.scale(t.facing, 1);
+  ctx.lineCap = "round";
+  const camX = 14;
+  const camY = -h * 0.66;
+  // Tripod
+  ctx.strokeStyle = "#6b4226";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (const fx of [camX - 9, camX + 1, camX + 9]) {
+    ctx.moveTo(camX, camY + 6);
+    ctx.lineTo(fx, 0);
+  }
+  ctx.stroke();
+  // Him: legs, coat
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(-5, -h * 0.4);
+  ctx.lineTo(-9, 0);
+  ctx.moveTo(-5, -h * 0.4);
+  ctx.lineTo(-1, 0);
+  ctx.stroke();
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#6c757d";
+  roundRect(ctx, -13, -h * 0.78, 16, h * 0.42, 5);
+  ctx.fill();
+  ctx.stroke();
+  // Flash pan up high in one hand
+  const fx = -16;
+  const fy = -h * 1.08;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-9, -h * 0.72);
+  ctx.lineTo(fx, fy + 4);
+  ctx.stroke();
+  ctx.lineWidth = 2.5;
+  ctx.fillStyle = "#adb5bd";
+  ctx.beginPath();
+  ctx.moveTo(fx - 8, fy);
+  ctx.lineTo(fx + 8, fy);
+  ctx.lineTo(fx + 6, fy + 3);
+  ctx.lineTo(fx - 6, fy + 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // The black hood draped from the camera's back over his head
+  ctx.fillStyle = "#22223b";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(camX - 7, camY - 8);
+  ctx.quadraticCurveTo(-4, -h * 1.02, -13, -h * 0.9);
+  ctx.lineTo(-15, -h * 0.62);
+  ctx.quadraticCurveTo(-4, -h * 0.66, camX - 7, camY + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Camera: wooden box, bellows, brass lens
+  ctx.fillStyle = "#8b5e3c";
+  roundRect(ctx, camX - 8, camY - 8, 12, 14, 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#3d405b";
+  ctx.beginPath();
+  ctx.moveTo(camX + 4, camY - 6);
+  ctx.lineTo(camX + 12, camY - 3);
+  ctx.lineTo(camX + 12, camY + 3);
+  ctx.lineTo(camX + 4, camY + 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = t.splats.length ? "#7a4a1e" : "#e9c46a";
+  ctx.beginPath();
+  ctx.arc(camX + 14, camY, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Flash: a burst and a puff of smoke
+  if (w && w.flash > 0) {
+    const k = w.flash / 0.3;
+    ctx.fillStyle = `rgba(255,255,220,${k})`;
+    ctx.beginPath();
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2;
+      const r = i % 2 ? 9 : 30 + (1 - k) * 18;
+      ctx.lineTo(fx + Math.cos(a) * r, fy - 6 + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  if (w && w.outcome && w.t < 2) {
+    const s = Math.min(1, w.t * 2);
+    ctx.fillStyle = `rgba(220,220,220,${0.7 * (1 - w.t / 2)})`;
+    ctx.beginPath();
+    ctx.arc(fx - 4 * s, fy - 12 - w.t * 20, 6 + s * 8, 0, Math.PI * 2);
+    ctx.arc(fx + 7 * s, fy - 18 - w.t * 24, 5 + s * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.lineCap = "butt";
+  void time;
+}
+
+/** The getaway car: a ribbon on the bonnet, a JUST MARRIED sign and tin cans on strings. */
+function drawGetawayDecor(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const w = t.w;
+  const h = t.h;
+  // Cans dragging behind (local −x is the back of the car)
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = OUTLINE;
+  for (let i = 0; i < 3; i++) {
+    const cx = -w / 2 - 12 - i * 9;
+    const cy = -4 - (i % 2) * 2 + Math.sin(time * 6 + i) * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(-w / 2 + 2, -h * 0.3);
+    ctx.lineTo(cx + 3, cy - 3);
+    ctx.stroke();
+    ctx.fillStyle = "#adb5bd";
+    ctx.fillRect(cx, cy - 6, 6, 7);
+    ctx.strokeRect(cx, cy - 6, 6, 7);
+  }
+  // Ribbon over the bonnet
+  ctx.strokeStyle = "#ff8fab";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(w * 0.3, -h * 0.6);
+  ctx.lineTo(w * 0.48, -h * 0.4);
+  ctx.stroke();
+  ctx.fillStyle = "#ff8fab";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(w * 0.36, -h * 0.62, 5, 3, -0.4, 0, Math.PI * 2);
+  ctx.ellipse(w * 0.44, -h * 0.66, 5, 3, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Sign on the boot, unmirrored so it reads either way round
+  const sx = -w * 0.32;
+  const sy = -h * 0.42;
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.scale(t.facing, 1);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(-15, -6, 30, 12);
+  ctx.strokeRect(-15, -6, 30, 12);
+  ctx.fillStyle = "#c9184a";
+  ctx.font = "900 5px 'Trebuchet MS', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("JUST", 0, -2);
+  ctx.fillText("MARRIED", 0, 3);
+  ctx.restore();
+  ctx.lineWidth = 3;
+}
+
+/**
+ * The official wedding photo as a framed print: gilt frame, the photo, the
+ * couple's names and a caption. `develop` (0..1) whites the photo out while
+ * it develops. Returns the print's height.
+ */
+export function drawWeddingPrint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  info: WeddingPhoto,
+  photo: Photo | undefined,
+  develop = 0,
+): number {
+  const pad = w * 0.06;
+  const pw = w - pad * 2;
+  const ph = pw * 0.75;
+  const capH = w * 0.2;
+  const h = pad + ph + capH;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fillRect(x + 5, y + 7, w, h);
+  ctx.fillStyle = "#fffaf0";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, w, h);
+  ctx.strokeStyle = "#c9a227";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + pad * 0.35, y + pad * 0.35, w - pad * 0.7, h - pad * 0.7);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + pad * 0.55, y + pad * 0.55, w - pad * 1.1, h - pad * 1.1);
+  drawPhoto(ctx, photo, x + pad, y + pad, pw, ph);
+  if (develop > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${develop})`;
+    ctx.fillRect(x + pad, y + pad, pw, ph);
+  }
+  // Caption
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#6d4c41";
+  ctx.font = `italic 700 ${Math.round(w * 0.075)}px Georgia, 'Times New Roman', serif`;
+  ctx.fillText(info.names, x + w / 2, y + pad + ph + capH * 0.36, pw);
+  ctx.fillStyle = "#8d6e63";
+  ctx.font = `italic ${Math.round(w * 0.05)}px Georgia, 'Times New Roman', serif`;
+  const date = new Date().toLocaleDateString("de-CH");
+  const caption = info.ruined ? `“Best day of our lives” · ${date}` : `Just married ♥ ${date}`;
+  ctx.fillText(caption, x + w / 2, y + pad + ph + capH * 0.72, pw);
+  // A sticker in the corner
+  ctx.font = `${Math.round(w * 0.1)}px sans-serif`;
+  ctx.translate(x + w - pad * 0.6, y + pad * 0.6);
+  ctx.rotate(0.3);
+  ctx.fillText(info.ruined ? "\u{1F4A9}" : "\u{1F496}", 0, 0);
+  ctx.restore();
+  return h;
 }
