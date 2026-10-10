@@ -575,41 +575,6 @@ export class Renderer {
     // Bottom part
     if (o.bottom === "billboard") {
       this.drawBillboard(o, time);
-    } else if (o.bottom === "chimney") {
-      ctx.fillStyle = "#a44a3f";
-      roundRect(ctx, base.x, base.y, base.w, base.h + 4, 4);
-      ctx.fill();
-      ctx.stroke();
-      // Bricks
-      ctx.strokeStyle = "rgba(0,0,0,0.18)";
-      ctx.lineWidth = 2;
-      for (let y = base.y + 16, row = 0; y < GROUND_Y; y += 14, row++) {
-        ctx.beginPath();
-        ctx.moveTo(base.x + 3, y);
-        ctx.lineTo(base.x + base.w - 3, y);
-        ctx.stroke();
-        for (let x = base.x + (row % 2 ? 10 : 22); x < base.x + base.w - 4; x += 24) {
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x, y + 14);
-          ctx.stroke();
-        }
-      }
-      // Cap
-      ctx.fillStyle = "#6b2d26";
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 3;
-      roundRect(ctx, base.x - 6, base.y - 2, base.w + 12, 16, 3);
-      ctx.fill();
-      ctx.stroke();
-      // Smoke puffs
-      for (let i = 0; i < 3; i++) {
-        const t = (time * 0.6 + i / 3) % 1;
-        ctx.fillStyle = `rgba(230,230,230,${0.6 * (1 - t)})`;
-        ctx.beginPath();
-        ctx.arc(base.x + base.w / 2 - t * 30, base.y - 10 - t * 50, 8 + t * 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
     } else {
       ctx.fillStyle = o.color;
       roundRect(ctx, base.x, base.y, base.w, base.h + 4, 5);
