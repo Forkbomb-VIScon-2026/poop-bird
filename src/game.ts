@@ -31,6 +31,11 @@
 // jackpot), and the photo of that moment becomes the official wedding photo.
 // Miss and they're married: confetti, doves, and the bride tosses her bouquet.
 // Ruin it and she throws the bouquet at you instead.
+// Some city obstacle slots become a hot-air balloon instead. Flying through
+// (or pooping on) the envelope pops it: a gust of hot air lifts the bird, the
+// basket drops, and the passengers bail out under parachutes, drifting down
+// as targets. The basket is solid: flying into it ends the run. Slipping
+// through the ropes between envelope and basket untouched pays a bonus.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -240,7 +245,6 @@ export interface Pebble {
   from: Target;
 }
 
-export type TargetKind = "car" | "pedestrian" | "statue" | "paparazzo" | "kid" | "bride" | "groom" | "guest" | "photographer";
 
 /**
  * The wedding's progress. Arriving: the party scrolls in. Countdown: the
@@ -302,6 +306,47 @@ export interface WeddingPhoto {
   ruined: boolean;
   names: string;
 }
+/**
+ * A hot-air balloon (city). The envelope bobs around `baseY` until it pops;
+ * then the basket drops to the street and the envelope flutters down as a rag.
+ */
+export interface Balloon {
+  /** Screen x of the centre line. */
+  x: number;
+  /** Centre of the envelope. */
+  y: number;
+  baseY: number;
+  phase: number;
+  /** Envelope gores: main colour, stripe colour. */
+  colors: [string, string];
+  passengers: { color: string; seed: number }[];
+  seed: number;
+  popped: boolean;
+  /** Set once the balloon has passed the bird (the thread-the-ropes check ran). */
+  passed: boolean;
+  /** After the pop: how far the basket has dropped, its fall speed, and whether it hit the street. */
+  drop: number;
+  dropV: number;
+  landed: boolean;
+  /** The deflated envelope fluttering down after the pop (screen space). */
+  rag: { x: number; y: number; vy: number; landed: boolean } | null;
+  /** Seconds left of the burner's blast, and until the next one. */
+  burn: number;
+  nextBurn: number;
+}
+
+/** A balloon passenger who bailed out: tumbling, then drifting down under a canopy. */
+export interface Chute {
+  open: boolean;
+  /** Seconds since bailing out. */
+  t: number;
+  /** When the canopy opens (seconds since bailing out). */
+  openAt: number;
+  vy: number;
+  canopy: string;
+}
+
+export type TargetKind = "car" | "pedestrian" | "statue" | "paparazzo" | "kid" | "bride" | "groom" | "guest" | "photographer" | "parachutist";
 
 export interface Target {
   x: number;
@@ -322,6 +367,8 @@ export interface Target {
   kid: Kid | null;
   /** Wedding guests and the couple react to how it's going. Set on wedding party members (and the getaway car). */
   wedding?: Wedding;
+  /** Only on parachutists. */
+  chute?: Chute | null;
 }
 
 export interface Poop {
@@ -407,7 +454,12 @@ export type GameEvent =
   | { type: "weddingPhoto"; photoId: number; ruined: boolean }
   | { type: "bouquetThrown"; angry: boolean }
   | { type: "bouquetCaught"; points: number }
-  | { type: "bouquetHit" };
+  | { type: "bouquetHit" }
+  | { type: "balloonPop"; points: number; combo: number }
+  | { type: "chuteOpen" }
+  | { type: "basketLanded" }
+  | { type: "burner" }
+  | { type: "threaded"; points: number };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -441,6 +493,17 @@ const ZAP_MESSAGES = [
 ];
 
 const BONK_MESSAGES = ["BONK!", "Right in the beak!", "Headshot!", "Ow ow ow", "Seeing stars", "Little brat!"];
+
+const BASKET_MESSAGES = ["BASKET CASE!", "Wrong end of the balloon", "Wicker 1, Bird 0", "Hot air, hard landing", "Passengers: unharmed"];
+
+const BALLOON_COLORS: [string, string][] = [
+  ["#e63946", "#ffd166"],
+  ["#3a86ff", "#ffffff"],
+  ["#8338ec", "#ffbe0b"],
+  ["#06d6a0", "#ef476f"],
+  ["#ff7f50", "#2a9d8f"],
+];
+const CHUTE_COLORS = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f78c6b"];
 
 const SNAP_MESSAGES = ["SNAP!", "SAY CHEESE!", "CAUGHT ON CAMERA!", "*CLICK*", "GOT YOU!"];
 
@@ -541,6 +604,7 @@ export class Game {
 
   obstacles: Obstacle[] = [];
   powerLines: PowerLine[] = [];
+  balloons: Balloon[] = [];
   targets: Target[] = [];
   pebbles: Pebble[] = [];
   poops: Poop[] = [];
@@ -574,6 +638,7 @@ export class Game {
   weddingPhotos: WeddingPhoto[] = [];
   weddingsRuined = 0;
   bouquetsCaught = 0;
+  balloonsPopped = 0;
   message: { text: string; life: number } | null = null;
   dyingTime = 0;
   /** The run ended on a wire: the bird is drawn charred. */
@@ -632,6 +697,7 @@ export class Game {
     this.stageTime = 0;
     this.obstacles = [];
     this.powerLines = [];
+    this.balloons = [];
     this.targets = [];
     this.pebbles = [];
     this.poops = [];
@@ -654,6 +720,7 @@ export class Game {
     this.kidsDisarmed = 0;
     this.pebblesShot = 0;
     this.bonks = 0;
+    this.balloonsPopped = 0;
     this.lastKidAt = -Infinity;
     this.wedding = null;
     this.bouquet = null;
@@ -792,6 +859,7 @@ export class Game {
     this.updateShore(dt, speed);
     this.updateObstacles(dt, speed);
     this.updatePowerLines(dt, speed);
+    this.updateBalloons(dt, speed);
     this.updateTargets(dt, speed);
     this.updatePoops(dt, speed);
     this.updatePebbles(dt);
@@ -1332,6 +1400,10 @@ export class Game {
     if (this.shore) this.shore.x -= dx;
     for (const o of this.obstacles) o.x -= dx;
     for (const l of this.powerLines) l.x -= dx;
+    for (const b of this.balloons) {
+      b.x -= dx;
+      if (b.rag) b.rag.x -= dx;
+    }
     for (const t of this.targets) t.x -= dx;
     for (const j of this.jellies) j.x -= dx;
     for (const p of this.poops) p.x -= dx;
@@ -1353,6 +1425,7 @@ export class Game {
     this.gateSpawned = false;
     this.obstacles = [];
     this.powerLines = [];
+    this.balloons = [];
     this.targets = [];
     this.pebbles = [];
     this.poops = [];
@@ -1407,6 +1480,7 @@ export class Game {
     this.shore = { x: this.bird.x - DIVE_TAKEOVER, kind: "dive" };
     this.obstacles = [];
     this.powerLines = [];
+    this.balloons = [];
     this.targets = this.targets.filter((t) => t.x + t.w / 2 < this.shore!.x);
     this.startTransition("ocean");
   }
@@ -1416,6 +1490,7 @@ export class Game {
     if (this.phase !== "playing" || this.transition || this.gateSpawned) return;
     this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
     this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < this.width - 260);
+    this.balloons = this.balloons.filter((b) => b.x + BALLOON_RX < this.width - 260);
     this.spawnShore();
   }
 
@@ -1424,6 +1499,14 @@ export class Game {
     if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
     this.obstacles = this.obstacles.filter((o) => o.x < this.width - 150);
     const length = this.spawnPowerLine();
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + length + config.obstacleSpacingMin);
+  }
+
+  /** Debug: a balloon floats in right now (city only). */
+  spawnBalloonNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 150);
+    const length = this.spawnBalloon();
     this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + length + config.obstacleSpacingMin);
   }
 
@@ -1445,13 +1528,18 @@ export class Game {
       // The waterfront waits until a paparazzo's front page has hung in the city.
       const holdGate = !ocean && (this.pendingTabloids.length > 0 || this.targets.some((t) => t.pap?.state === "watching"));
       // A power line takes up more room: the next obstacle waits until it's past.
+      // So does a balloon, which drifts along with the wind.
       // A pending front page always gets the next slot.
-      const powerLine = this.stageObstacles > 0 && this.pendingTabloids.length === 0 && Math.random() < config.powerLineChance;
+      const special = this.stageObstacles > 0 && this.pendingTabloids.length === 0;
+      const roll = Math.random();
+      const powerLine = special && roll < config.powerLineChance;
+      const balloon = special && !powerLine && roll < config.powerLineChance + config.balloonChance;
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnShore();
       else if (ocean) this.spawnOceanObstacle();
       else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();
+      else if (balloon) extra = this.spawnBalloon();
       else this.spawnObstacle();
       this.stageObstacles++;
       this.nextObstacleAt = this.distance + extra + (ocean
@@ -1606,6 +1694,233 @@ export class Game {
     return false;
   }
 
+  // --- balloons ----------------------------------------------------------------
+
+  /** Spawns a balloon just off-screen. Returns the extra room it needs (it's wide and drifts forward). */
+  private spawnBalloon(): number {
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+    const baseY = 100 + Math.random() * 140;
+    this.balloons.push({
+      x: this.width + BALLOON_RX + 30, y: baseY, baseY, phase: Math.random() * Math.PI * 2,
+      colors: pick(BALLOON_COLORS),
+      passengers: Array.from({ length: n }, () => ({ color: pick(PERSON_COLORS), seed: Math.random() * 1000 })),
+      seed: Math.random() * 1000,
+      popped: false, passed: false, drop: 0, dropV: 0, landed: false, rag: null,
+      burn: 0, nextBurn: 0.4 + Math.random(),
+    });
+    return 180;
+  }
+
+  private updateBalloons(dt: number, speed: number): void {
+    const drift = config.balloonDrift;
+    for (const b of this.balloons) {
+      b.x -= (speed - (b.landed ? 0 : drift)) * dt;
+      if (!b.popped) {
+        b.y = b.baseY + Math.sin(this.time * 0.9 + b.phase) * 10;
+        // Now and then the pilot fires the burner.
+        b.burn = Math.max(0, b.burn - dt);
+        b.nextBurn -= dt;
+        if (b.nextBurn <= 0) {
+          b.burn = 0.6;
+          b.nextBurn = 2.2 + Math.random() * 2;
+          if (b.x > 0 && b.x < this.width && this.phase === "playing") this.events.push({ type: "burner" });
+        }
+      } else if (!b.landed) {
+        b.dropV += 1100 * dt;
+        b.drop += b.dropV * dt;
+        const r = basketRect(b);
+        const floor = GROUND_Y + 24;
+        if (r.y + r.h >= floor) {
+          b.drop -= r.y + r.h - floor;
+          b.landed = true;
+          this.basketLanded(b);
+        }
+      }
+      const rag = b.rag;
+      if (rag) {
+        rag.x -= (speed - (rag.landed ? 0 : drift * 0.5)) * dt;
+        if (!rag.landed) {
+          rag.vy = Math.min(110, rag.vy + 300 * dt);
+          rag.y += rag.vy * dt;
+          if (rag.y >= GROUND_Y + 14) {
+            rag.y = GROUND_Y + 14;
+            rag.landed = true;
+          }
+        }
+      }
+    }
+    this.balloons = this.balloons.filter((b) => b.x > -160 || (b.rag && b.rag.x > -160));
+    if (this.phase !== "playing" || this.stage !== "city" || this.transition) return;
+
+    const bird = this.bird;
+    const r = this.hitRadius;
+    for (const b of this.balloons) {
+      // The envelope is soft (generous hitbox: popping is the good outcome); the basket is not.
+      if (!b.popped && inEnvelope(b, bird.x, bird.y, r * 0.6)) this.popBalloon(b, true);
+      if (circleRect(bird.x, bird.y, r, basketRect(b))) {
+        this.basketCrash();
+        return;
+      }
+      if (!b.passed && b.x <= bird.x) {
+        b.passed = true;
+        // Slipped between the envelope and the basket without touching either.
+        if (!b.popped && bird.y > b.y + BALLOON_RY && bird.y < basketRect(b).y) this.threaded();
+      }
+    }
+  }
+
+  private popBalloon(b: Balloon, byBird: boolean): void {
+    b.popped = true;
+    b.dropV = -30;
+    b.rag = { x: b.x, y: b.y + BALLOON_RY * 0.3, vy: -40, landed: false };
+    this.balloonsPopped++;
+    this.combo++;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    this.targetsHit++;
+    const points = Math.round(config.targetPoints * config.balloonPopMultiplier * this.comboMultiplier);
+    this.bonus += points;
+    this.shake = Math.max(this.shake, 9);
+    this.floaters.push({ x: b.x, y: b.y - 20, text: "POP!", color: "#fff", size: 46, life: 0.9, maxLife: 0.9 });
+    const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
+    this.floaters.push({ x: b.x, y: b.y + 22, text: label, color: "#ffe14d", size: 26, life: 1.2, maxLife: 1.2 });
+    // Shreds of envelope.
+    for (let i = 0; i < 44; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.sqrt(Math.random());
+      const s = 120 + Math.random() * 280;
+      this.particles.push({
+        x: b.x + Math.cos(a) * BALLOON_RX * d, y: b.y + Math.sin(a) * BALLOON_RY * d,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+        life: 0.6 + Math.random() * 0.6, maxLife: 1.2, size: 3 + Math.random() * 5,
+        color: b.colors[i % 2], gravity: 500, world: true,
+      });
+    }
+    // The hot air escapes upward.
+    for (let i = 0; i < 16; i++) {
+      this.particles.push({
+        x: b.x + (Math.random() - 0.5) * BALLOON_RX, y: b.y + (Math.random() - 0.5) * BALLOON_RY,
+        vx: (Math.random() - 0.5) * 60, vy: -80 - Math.random() * 120,
+        life: 0.7 + Math.random() * 0.5, maxLife: 1.2, size: 8 + Math.random() * 10,
+        color: "rgba(255,190,110,0.35)", gravity: -80, world: true,
+      });
+    }
+    // Everyone out!
+    const basket = basketRect(b);
+    const n = b.passengers.length;
+    b.passengers.forEach((p, i) => {
+      const off = i - (n - 1) / 2;
+      const x = b.x + off * 12;
+      this.targets.push({
+        x, y: basket.y + 10, w: 26, h: 46, kind: "parachutist",
+        speed: this.speed * config.balloonChuteWind + off * 45,
+        color: p.color, seed: p.seed, splats: [], hitFlash: 0, facing: off < 0 ? -1 : 1, pap: null, kid: null,
+        chute: { open: false, t: 0, openAt: 0.3 + i * 0.18 + Math.random() * 0.1, vy: -170 - Math.random() * 60, canopy: pick(CHUTE_COLORS) },
+      });
+      this.floaters.push({ x: x + off * 20, y: basket.y - 30 - i * 14, text: "AAAH!", color: "#fff", size: 16, life: 0.9, maxLife: 0.9 });
+    });
+    b.passengers = [];
+    if (byBird) {
+      // A free ride on the escaping hot air.
+      const bird = this.bird;
+      bird.vy = Math.min(bird.vy, -config.balloonLift);
+      bird.stretchV += 8;
+      bird.flap = 0.35;
+      this.floaters.push({ x: bird.x, y: bird.y - 44, text: "HOT AIR!", color: "#ffb703", size: 22, life: 0.9, maxLife: 0.9 });
+    }
+    this.events.push({ type: "balloonPop", points, combo: this.combo });
+  }
+
+  private basketLanded(b: Balloon): void {
+    const r = basketRect(b);
+    this.shake = Math.max(this.shake, 6);
+    for (let i = 0; i < 18; i++) {
+      const a = -Math.PI * Math.random();
+      const s = 60 + Math.random() * 160;
+      this.particles.push({
+        x: r.x + Math.random() * r.w, y: r.y + r.h,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s * 0.6,
+        life: 0.4 + Math.random() * 0.4, maxLife: 0.8, size: 3 + Math.random() * 5,
+        color: Math.random() < 0.5 ? "rgba(200,190,170,0.7)" : "#a0703f", gravity: 400, world: true,
+      });
+    }
+    if (b.x > -40 && b.x < this.width + 40) this.events.push({ type: "basketLanded" });
+  }
+
+  /** Flew into a basket: wicker everywhere, run over. */
+  private basketCrash(): void {
+    this.crash();
+    this.message = { text: pick(BASKET_MESSAGES), life: 2.2 };
+    const b = this.bird;
+    for (let i = 0; i < 20; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 100 + Math.random() * 220;
+      this.particles.push({
+        x: b.x, y: b.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 80,
+        life: 0.6 + Math.random() * 0.4, maxLife: 1, size: 2 + Math.random() * 3,
+        color: Math.random() < 0.5 ? "#c68b59" : "#8b5a2b", gravity: 700, world: true,
+      });
+    }
+  }
+
+  private threaded(): void {
+    const points = Math.round(config.targetPoints * config.balloonThreadMultiplier);
+    this.bonus += points;
+    const b = this.bird;
+    this.floaters.push({ x: b.x, y: b.y - 50, text: "THREADED IT!", color: "#7ae582", size: 26, life: 1.3, maxLife: 1.3 });
+    this.floaters.push({ x: b.x, y: b.y - 22, text: `+${points}`, color: "#ffe14d", size: 22, life: 1.1, maxLife: 1.1 });
+    this.events.push({ type: "threaded", points });
+  }
+
+  /** Returns true if the poop hit a balloon (popping the envelope, or splatting the basket). */
+  private poopHitsBalloon(p: Poop): boolean {
+    for (const b of this.balloons) {
+      if (!b.popped && inEnvelope(b, p.x, p.y, p.r)) {
+        this.popBalloon(b, false);
+        this.splatParticles(p.x, p.y, p.r, true);
+        this.events.push({ type: "splat", big: p.big });
+        return true;
+      }
+      if (circleRect(p.x, p.y, p.r, basketRect(b))) {
+        this.splatParticles(p.x, p.y, p.r, false);
+        this.events.push({ type: "splat", big: p.big });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** A bailed-out passenger: tumbles, pops the canopy, drifts down, then walks off as a pedestrian. */
+  private updateParachutist(t: Target, dt: number, speed: number): void {
+    const c = t.chute!;
+    c.t += dt;
+    if (!c.open) {
+      c.vy += 900 * dt;
+      if (c.t >= c.openAt || t.y > GROUND_Y - 170) {
+        c.open = true;
+        t.w = 50;
+        t.h = 100;
+        this.events.push({ type: "chuteOpen" });
+      }
+    } else {
+      c.vy += (config.balloonChuteFall - c.vy) * Math.min(1, dt * 5);
+      // The wind carries them along under the bird, so there's time to aim.
+      const spread = ((t.seed % 1) - 0.5) * 30;
+      t.speed += (speed * config.balloonChuteWind + spread - t.speed) * Math.min(1, dt * 1.5);
+    }
+    t.y += c.vy * dt;
+    if (t.y < GROUND_Y + 20) return;
+    // Touchdown.
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    t.y = GROUND_Y + 20;
+    t.kind = "pedestrian";
+    t.chute = null;
+    t.w = 24;
+    t.h = 52;
+    t.splats = t.splats.filter((s) => s.dy > -t.h);
+    t.speed = dir * (18 + Math.random() * 30);
+    t.facing = dir;
+  }
+
   // --- targets -----------------------------------------------------------------
 
   private updateTargets(dt: number, speed: number): void {
@@ -1620,6 +1935,7 @@ export class Game {
       t.hitFlash = Math.max(0, t.hitFlash - dt);
       if (t.pap) this.updatePaparazzo(t, dt);
       if (t.kid) this.updateKid(t, dt);
+      if (t.chute) this.updateParachutist(t, dt, speed);
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
@@ -1656,7 +1972,7 @@ export class Game {
       speed: tutorial ? config.paparazziTutorialWalk : 0,
       color: "#6d6875", seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1,
       pap: { state: "watching", timer: 0, startX: x, tutorial, aim: -2.4, flash: 0, beep: 0 },
-      kid: null,
+      kid: null, chute: null,
     });
   }
 
@@ -1743,18 +2059,18 @@ export class Game {
       const dir = Math.random() < 0.6 ? 1 : -1;
       t = {
         x: this.width + 120, y: roadY, w: 92, h: 40, kind, speed: dir * (40 + Math.random() * 90),
-        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null,
+        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
       };
     } else if (kind === "pedestrian") {
       const dir = Math.random() < 0.5 ? 1 : -1;
       t = {
         x: this.width + 60, y: GROUND_Y + 20, w: 24, h: 52, kind, speed: dir * (18 + Math.random() * 30),
-        color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null,
+        color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
       };
     } else {
       t = {
         x: this.width + 80, y: GROUND_Y + 20, w: 46, h: 96, kind, speed: 0,
-        color: "#8fa3a8", seed, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null,
+        color: "#8fa3a8", seed, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null, chute: null,
       };
     }
     this.targets.push(t);
@@ -1778,7 +2094,7 @@ export class Game {
     const d = this.difficulty;
     this.targets.push({
       x: this.width + 40, y: GROUND_Y + 20, w: 34, h: 62, kind: "kid", speed: -config.kidWalkSpeed,
-      color: pick(PERSON_COLORS), seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null,
+      color: pick(PERSON_COLORS), seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, chute: null,
       kid: {
         state: "walking", t: 0, pull: 0, windup: 1,
         shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + Math.floor(d * config.kidShotsMax)),
@@ -2117,6 +2433,7 @@ export class Game {
     if (this.phase !== "playing" || this.transition || this.stage !== "city" || this.wedding) return;
     this.obstacles = this.obstacles.filter((o) => o.x < this.width - 280);
     this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < this.width - 280);
+    this.balloons = this.balloons.filter((b) => b.x + BALLOON_RX < this.width - 280);
     this.targets = this.targets.filter((t) => t.kind === "car" || t.x < this.width - 280);
     const extra = this.spawnWedding();
     this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + extra + config.obstacleSpacingMin);
@@ -2388,6 +2705,7 @@ export class Game {
   /** Returns true if the poop was consumed. */
   private poopHits(p: Poop): boolean {
     if (this.poopHitsPigeon(p)) return true;
+    if (this.poopHitsBalloon(p)) return true;
     // Targets
     for (const t of this.targets) {
       const rect = targetRect(t);
@@ -2402,7 +2720,15 @@ export class Game {
       const armed = kidArmed(t);
       if (armed) this.disarmKid(t);
       const wed = t.wedding ? this.weddingHit(t, t.wedding) : null;
-      const kindMult = wed ? wed.mult : camera ? config.paparazziMultiplier : armed ? config.kidMultiplier : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
+      const kindMult = wed
+        ? wed.mult
+        : camera
+          ? config.paparazziMultiplier
+          : armed
+            ? config.kidMultiplier
+            : t.kind === "parachutist"
+              ? config.balloonPassengerMultiplier
+              : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
       const points = Math.round(config.targetPoints * kindMult * this.comboMultiplier * (p.big ? 2 : 1));
       this.bonus += points;
       if (wed?.ruin && t.wedding) this.ruinWedding(t.wedding, points);
@@ -2591,6 +2917,26 @@ export function wireAt(l: PowerLine, w: number, x: number): { y: number; slope: 
 export function pigeonPos(l: PowerLine, p: Pigeon): { x: number; y: number } {
   const wire = l.wires[p.wire];
   return { x: l.x + (p.span + p.t) * l.span, y: wire.y + 4 * wire.sags[p.span] * p.t * (1 - p.t) };
+}
+
+/** Balloon envelope half-width and half-height (its centre is Balloon.x, .y). */
+export const BALLOON_RX = 60;
+export const BALLOON_RY = 70;
+/** Gap between the bottom of the envelope and the top of the basket (the ropes). */
+export const BALLOON_ROPES = 56;
+export const BASKET_W = 50;
+export const BASKET_H = 32;
+
+/** The basket's collision rectangle (also its drawn body). */
+export function basketRect(b: Balloon): Rect {
+  return { x: b.x - BASKET_W / 2, y: b.y + BALLOON_RY + BALLOON_ROPES + b.drop, w: BASKET_W, h: BASKET_H };
+}
+
+/** True if a circle of radius `pad` at (x, y) touches the envelope (an ellipse). */
+function inEnvelope(b: Balloon, x: number, y: number, pad: number): boolean {
+  const dx = (x - b.x) / (BALLOON_RX + pad);
+  const dy = (y - b.y) / (BALLOON_RY + pad);
+  return dx * dx + dy * dy < 1;
 }
 
 /** Where a kid's slingshot pouch sits (the pebble's launch point). */
