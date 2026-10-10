@@ -47,6 +47,7 @@ import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
 import {
   applyWaterDrag,
+  guidePuff,
   initialSpikeState,
   popProgress,
   popWarning,
@@ -83,6 +84,10 @@ export const SURFACE_Y = 36;
 export const WATER_Y = GROUND_Y + 16;
 /** How far the ocean sits below the city: ocean y + OCEAN_DEPTH = city y. */
 export const OCEAN_DEPTH = WATER_Y - SURFACE_Y;
+/** Ocean y halfway between the surface and the sea floor. */
+export const OCEAN_MID_Y = (SURFACE_Y + GROUND_Y) / 2;
+/** s a guided fish (Game.guideY) takes to close the distance to its target, at most at full speed. */
+const GUIDE_TIME = 0.5;
 /** Ocean y where the fish settles after the dive. */
 const DIVE_DEPTH = 240;
 /** How far past the quay's edge the bird is when the game takes over and dives it in. */
@@ -706,6 +711,12 @@ export class Game {
    * oceanFirstObstacleDelay after it's cleared.
    */
   calmWater = false;
+  /**
+   * Set by main.ts at the end of the swim lesson: the fish swims to this ocean
+   * y on its own, puffing as needed, whatever puffInput says. null = the
+   * player steers.
+   */
+  guideY: number | null = null;
   /** Was calmWater set last step (to start the floor grace when it's cleared). */
   private wasCalm = false;
   /** Seconds left in which the sea floor still doesn't kill, after calm water (oceanCalmFloorGrace). */
@@ -844,6 +855,7 @@ export class Game {
     this.stage = "city";
     this.transition = null;
     this.calmWater = false;
+    this.guideY = null;
     this.wasCalm = false;
     this.floorGrace = 0;
     this.shore = null;
@@ -1425,7 +1437,8 @@ export class Game {
     const f = this.fish;
     const dying = this.phase !== "playing";
     const stunned = this.stunned;
-    const input = dying || stunned ? 0 : Math.min(1, Math.max(0, this.puffInput));
+    const guided = this.guideY !== null ? guidePuff(b.y, this.guideY, GUIDE_TIME, config) : null;
+    const input = dying || stunned ? 0 : (guided ?? Math.min(1, Math.max(0, this.puffInput)));
     // The displayed puff eases quickly so a pop visibly deflates instead of snapping.
     f.puff += (input - f.puff) * (1 - Math.exp(-dt / (stunned ? 0.12 : 0.06)));
     const spiked = this.spike.spiked && !dying;

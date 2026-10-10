@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { config, ramp } from "./config";
 import {
-  ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, PERCH_Y, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects,
+  ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, PERCH_Y, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects,
 } from "./game";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
@@ -90,6 +90,18 @@ describe("calm water", () => {
     for (let i = 0; i < 60 * 6 && game.phase === "playing"; i++) game.step(1 / 60);
     expect(game.phase).not.toBe("playing");
   });
+
+  for (const [where, puff] of [["sea floor", 0], ["surface", 1]] as const) {
+    it(`guides a fish from the ${where} to the middle, whatever the puff input`, () => {
+      const game = calm();
+      game.puffInput = puff;
+      for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+      game.guideY = OCEAN_MID_Y;
+      for (let i = 0; i < 60 * 4; i++) game.step(1 / 60);
+      expect(Math.abs(game.bird.y - OCEAN_MID_Y)).toBeLessThan(15);
+      expect(Math.abs(game.bird.vy)).toBeLessThan(25);
+    });
+  }
 
   it("brings the first obstacle a full delay after it ends", () => {
     const game = calm();
