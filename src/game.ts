@@ -10,6 +10,12 @@
 // In the city, some obstacle slots become power lines instead of buildings:
 // poles with sagging wires. Touching a wire zaps the bird; pigeons sitting on
 // the wires are targets.
+//
+// Slingshot kids walk on along the sidewalk, plant their feet and take aim at
+// the bird (a dotted arc shows where). A pebble that hits bonks the bird: it
+// tumbles, stunned, and loses its charge and combo. Buildings block pebbles,
+// a falling poop can shoot one down mid-air, and splatting the kid before he
+// lets go disarms him.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -153,7 +159,44 @@ export interface Pigeon {
   flyer: { x: number; y: number; vx: number; vy: number } | null;
 }
 
-export type TargetKind = "car" | "pedestrian" | "statue" | "paparazzo";
+/**
+ * A slingshot kid's state. Walking: trotting toward the bird. Aiming: feet
+ * planted, pulling the band back while tracking the bird; fires when `pull`
+ * reaches 1. Reloading: a beat between shots. Taunting: out of shots or the
+ * bird got past. Cheering: a pebble bonked the bird. Crying: a poop got him.
+ */
+export type KidState = "walking" | "aiming" | "reloading" | "taunting" | "cheering" | "crying";
+
+export interface Kid {
+  state: KidState;
+  /** Seconds in the current state. */
+  t: number;
+  /** 0..1 how far the band is pulled back while aiming. */
+  pull: number;
+  /** Seconds the current wind-up takes. */
+  windup: number;
+  shots: number;
+  /** Launch velocity of the next pebble (screen space, px/s), tracked while aiming. */
+  aimVx: number;
+  aimVy: number;
+  /** Seconds of the band's snap-back after a shot. */
+  twang: number;
+}
+
+/** A slingshot pebble, in screen space. */
+export interface Pebble {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  /** Closest it came to the bird so far (for the "close one" bonus). */
+  closest: number;
+  /** The kid who shot it. */
+  from: Target;
+}
+
+export type TargetKind = "car" | "pedestrian" | "statue" | "paparazzo" | "kid";
 
 export interface Target {
   x: number;
@@ -170,6 +213,8 @@ export interface Target {
   facing: 1 | -1;
   /** Only on paparazzi. */
   pap: Paparazzo | null;
+  /** Only on slingshot kids. */
+  kid: Kid | null;
 }
 
 export interface Poop {
@@ -238,7 +283,13 @@ export type GameEvent =
   | { type: "jellyPopped"; points: number; combo: number }
   | { type: "paparazzoBeep"; timer: number }
   | { type: "photo"; photoId: number }
-  | { type: "cameraSmashed" };
+  | { type: "cameraSmashed" }
+  | { type: "slingshotDraw"; windup: number }
+  | { type: "slingshotFire" }
+  | { type: "bonk" }
+  | { type: "pebbleShot"; points: number; combo: number }
+  | { type: "ricochet" }
+  | { type: "kidCried" };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -271,6 +322,8 @@ const ZAP_MESSAGES = [
   "Current situation: bad",
 ];
 
+const BONK_MESSAGES = ["BONK!", "Right in the beak!", "Headshot!", "Ow ow ow", "Seeing stars", "Little brat!"];
+
 const SNAP_MESSAGES = ["SNAP!", "SAY CHEESE!", "CAUGHT ON CAMERA!", "*CLICK*", "GOT YOU!"];
 
 const HEADLINES = [
@@ -298,6 +351,10 @@ export type GamePhase = "playing" | "dying" | "over";
 const WIRE_HIT = 2;
 /** Pigeon hit radius for poops. */
 export const PIGEON_R = 16;
+/** Pebble radius (drawn and for collisions). */
+export const PEBBLE_R = 5;
+/** A kid stops shooting once he's this close to (or behind) the bird. */
+const KID_MIN_AHEAD = 70;
 
 export class Game {
   width = 1000;
@@ -346,6 +403,7 @@ export class Game {
   obstacles: Obstacle[] = [];
   powerLines: PowerLine[] = [];
   targets: Target[] = [];
+  pebbles: Pebble[] = [];
   poops: Poop[] = [];
   particles: Particle[] = [];
   decals: Decal[] = [];
@@ -367,6 +425,9 @@ export class Game {
   /** Photos that went to print, in order. */
   frontPages: Tabloid[] = [];
   camerasSmashed = 0;
+  kidsDisarmed = 0;
+  pebblesShot = 0;
+  bonks = 0;
   message: { text: string; life: number } | null = null;
   dyingTime = 0;
   /** The run ended on a wire: the bird is drawn charred. */
@@ -387,6 +448,7 @@ export class Game {
   private nextPhotoId = 1;
   private lastPaparazzoAt = -Infinity;
   private paparazziSeen = 0;
+  private lastKidAt = -Infinity;
 
   events: GameEvent[] = [];
 
@@ -420,6 +482,7 @@ export class Game {
     this.obstacles = [];
     this.powerLines = [];
     this.targets = [];
+    this.pebbles = [];
     this.poops = [];
     this.particles = [];
     this.decals = [];
@@ -437,6 +500,10 @@ export class Game {
     this.polaroid = null;
     this.frontPages = [];
     this.camerasSmashed = 0;
+    this.kidsDisarmed = 0;
+    this.pebblesShot = 0;
+    this.bonks = 0;
+    this.lastKidAt = -Infinity;
     this.pendingTabloids = [];
     this.lastPaparazzoAt = -Infinity;
     this.paparazziSeen = 0;
@@ -557,6 +624,7 @@ export class Game {
     this.updatePowerLines(dt, speed);
     this.updateTargets(dt, speed);
     this.updatePoops(dt, speed);
+    this.updatePebbles(dt);
     this.updateJellies(dt, speed);
     this.updateEffects(dt, speed);
 
@@ -993,6 +1061,7 @@ export class Game {
     this.obstacles = [];
     this.powerLines = [];
     this.targets = [];
+    this.pebbles = [];
     this.poops = [];
     this.decals = [];
     this.jellies = [];
@@ -1237,6 +1306,7 @@ export class Game {
       t.x += (t.speed - speed) * dt;
       t.hitFlash = Math.max(0, t.hitFlash - dt);
       if (t.pap) this.updatePaparazzo(t, dt);
+      if (t.kid) this.updateKid(t, dt);
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 400);
     if (this.phase !== "playing" || this.stage !== "city") return;
@@ -1244,6 +1314,7 @@ export class Game {
     if (this.targetSpawnAcc >= 1) {
       this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
       if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
+      else if (this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
       else this.spawnTarget();
     }
   }
@@ -1255,7 +1326,8 @@ export class Game {
       !this.gateSpawned &&
       this.distance >= config.paparazziMinDistance &&
       this.distance - this.lastPaparazzoAt >= config.paparazziMinGap &&
-      !this.targets.some((t) => t.pap?.state === "watching")
+      !this.targets.some((t) => t.pap?.state === "watching") &&
+      !this.targets.some(kidArmed)
     );
   }
 
@@ -1269,6 +1341,7 @@ export class Game {
       speed: tutorial ? config.paparazziTutorialWalk : 0,
       color: "#6d6875", seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1,
       pap: { state: "watching", timer: 0, startX: x, tutorial, aim: -2.4, flash: 0, beep: 0 },
+      kid: null,
     });
   }
 
@@ -1355,21 +1428,300 @@ export class Game {
       const dir = Math.random() < 0.6 ? 1 : -1;
       t = {
         x: this.width + 120, y: roadY, w: 92, h: 40, kind, speed: dir * (40 + Math.random() * 90),
-        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null,
+        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null,
       };
     } else if (kind === "pedestrian") {
       const dir = Math.random() < 0.5 ? 1 : -1;
       t = {
         x: this.width + 60, y: GROUND_Y + 20, w: 24, h: 52, kind, speed: dir * (18 + Math.random() * 30),
-        color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null,
+        color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null,
       };
     } else {
       t = {
         x: this.width + 80, y: GROUND_Y + 20, w: 46, h: 96, kind, speed: 0,
-        color: "#8fa3a8", seed, splats: [], hitFlash: 0, facing: -1, pap: null,
+        color: "#8fa3a8", seed, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null,
       };
     }
     this.targets.push(t);
+  }
+
+  // --- slingshot kids ----------------------------------------------------------
+
+  private kidDue(): boolean {
+    return (
+      !this.gateSpawned &&
+      this.distance >= config.kidMinDistance &&
+      this.distance - this.lastKidAt >= config.kidMinGap &&
+      !this.targets.some(kidArmed) &&
+      !this.targets.some((t) => t.pap?.state === "watching")
+    );
+  }
+
+  private spawnKid(): void {
+    this.lastKidAt = this.distance;
+    const d = this.difficulty;
+    this.targets.push({
+      x: this.width + 40, y: GROUND_Y + 20, w: 34, h: 62, kind: "kid", speed: -config.kidWalkSpeed,
+      color: pick(PERSON_COLORS), seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null,
+      kid: {
+        state: "walking", t: 0, pull: 0, windup: 1,
+        shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + Math.floor(d * config.kidShotsMax)),
+        aimVx: 0, aimVy: 0, twang: 0,
+      },
+    });
+  }
+
+  /** Debug: a slingshot kid walks on right now. */
+  spawnKidNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
+    this.spawnKid();
+  }
+
+  private setKidState(t: Target, state: KidState): void {
+    const k = t.kid!;
+    k.state = state;
+    k.t = 0;
+    k.pull = 0;
+  }
+
+  private updateKid(t: Target, dt: number): void {
+    const k = t.kid!;
+    k.t += dt;
+    k.twang = Math.max(0, k.twang - dt);
+    const ahead = t.x - this.bird.x;
+    if (this.phase !== "playing") {
+      // The bird's going down: whoever still had shots left is thrilled.
+      if (k.state === "aiming" || k.state === "reloading" || k.state === "walking") {
+        t.speed = 0;
+        this.setKidState(t, "cheering");
+      }
+      return;
+    }
+    switch (k.state) {
+      case "walking":
+        // Plants his feet once he's on screen, in range and has a clear shot.
+        if (ahead < KID_MIN_AHEAD) this.setKidState(t, "taunting");
+        else if (ahead < config.kidRange && t.x < this.width - 30 && !this.kidCovered(t)) {
+          t.speed = 0;
+          this.startAim(t);
+        }
+        break;
+      case "aiming":
+        if (ahead < KID_MIN_AHEAD) {
+          this.setKidState(t, "taunting");
+          break;
+        }
+        this.aimKid(t);
+        k.pull = Math.min(1, k.t / k.windup);
+        if (k.pull >= 1) this.fireKid(t);
+        break;
+      case "reloading":
+        if (k.t < 0.45) break;
+        if (k.shots <= 0 || ahead < KID_MIN_AHEAD + 60) {
+          t.speed = 0;
+          this.setKidState(t, "taunting");
+        } else if (this.kidCovered(t)) {
+          t.speed = -config.kidWalkSpeed; // steps out from behind the building
+        } else {
+          t.speed = 0;
+          this.startAim(t);
+        }
+        break;
+      case "cheering":
+        // A little victory dance, then back to it if he has pebbles left.
+        if (k.t > 1.1) this.setKidState(t, "reloading");
+        break;
+      case "taunting":
+      case "crying":
+        break;
+    }
+  }
+
+  /** True if a building or pole is in front of his slingshot (he'd only hit the wall). */
+  private kidCovered(t: Target): boolean {
+    const s = slingshotPos(t);
+    for (const o of this.obstacles) for (const r of obstacleRects(o)) if (circleRect(s.x, s.y, 14, r)) return true;
+    for (const l of this.powerLines) for (let i = 0; i < l.poles; i++) if (circleRect(s.x, s.y, 14, poleRect(l, i))) return true;
+    return false;
+  }
+
+  private startAim(t: Target): void {
+    const k = t.kid!;
+    this.setKidState(t, "aiming");
+    k.windup = ramp(config.kidWindup, config.kidWindupMin, this.difficulty);
+    this.aimKid(t);
+    this.events.push({ type: "slingshotDraw", windup: k.windup });
+  }
+
+  /**
+   * Aims a lob that reaches the bird (plus a bit of lead along its current
+   * vertical speed) after the flight time: plain projectile maths.
+   */
+  private aimKid(t: Target): void {
+    const k = t.kid!;
+    const T = Math.max(0.2, ramp(config.kidFlightTime, config.kidFlightTimeMin, this.difficulty));
+    const s = slingshotPos(t);
+    const b = this.bird;
+    const ty = Math.max(BIRD_RADIUS, Math.min(GROUND_Y - 40, b.y + b.vy * T * config.kidLead));
+    k.aimVx = (b.x - s.x) / T;
+    k.aimVy = (ty - s.y) / T - 0.5 * config.kidPebbleGravity * T;
+  }
+
+  private fireKid(t: Target): void {
+    const k = t.kid!;
+    const s = slingshotPos(t);
+    this.pebbles.push({ x: s.x, y: s.y, vx: k.aimVx, vy: k.aimVy, rot: 0, closest: Infinity, from: t });
+    k.shots--;
+    this.setKidState(t, "reloading");
+    k.twang = 0.3;
+    this.events.push({ type: "slingshotFire" });
+  }
+
+  /** A poop got him while he was armed: he drops the slingshot and runs off crying. */
+  private disarmKid(t: Target): void {
+    this.kidsDisarmed++;
+    this.setKidState(t, "crying");
+    t.speed = config.kidWalkSpeed * 3;
+    t.facing = 1;
+    this.floaters.push({ x: t.x, y: t.y - t.h - 44, text: "DISARMED!", color: "#7ae582", size: 24, life: 1.3, maxLife: 1.3 });
+    this.events.push({ type: "kidCried" });
+  }
+
+  private updatePebbles(dt: number): void {
+    const g = config.kidPebbleGravity;
+    const keep: Pebble[] = [];
+    for (const p of this.pebbles) {
+      p.vy += g * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += dt * 14;
+      if (this.pebbleHits(p)) continue;
+      if (p.y > GROUND_Y + 80 || p.x < -60 || p.x > this.width + 160 || p.y < -600) continue;
+      keep.push(p);
+    }
+    this.pebbles = keep;
+  }
+
+  /** Returns true if the pebble is used up. */
+  private pebbleHits(p: Pebble): boolean {
+    // A falling poop shoots it down.
+    for (let i = 0; i < this.poops.length; i++) {
+      const poop = this.poops[i];
+      const reach = poop.r + PEBBLE_R + 6;
+      if ((poop.x - p.x) ** 2 + (poop.y - p.y) ** 2 >= reach * reach) continue;
+      this.poops.splice(i, 1);
+      this.shootDownPebble(p, poop);
+      return true;
+    }
+    const b = this.bird;
+    const playing = this.phase === "playing" && this.stage === "city" && !this.transition;
+    if (playing) {
+      const dist = Math.hypot(p.x - b.x, p.y - b.y);
+      if (dist < this.hitRadius + PEBBLE_R) {
+        this.bonk(p);
+        return true;
+      }
+      p.closest = Math.min(p.closest, dist);
+      // Dodged it by a whisker.
+      if (p.x < b.x - 30 && p.closest < this.hitRadius + PEBBLE_R + 28) {
+        p.closest = Infinity;
+        this.bonus += Math.round(config.targetPoints * 0.5);
+        this.floaters.push({ x: b.x, y: b.y - 46, text: "CLOSE ONE!", color: "#bde0fe", size: 20, life: 0.9, maxLife: 0.9 });
+      }
+    }
+    // Buildings and poles are cover: it pings off.
+    const rects: Rect[] = [];
+    for (const o of this.obstacles) if (Math.abs(o.x + o.w / 2 - p.x) < o.w) rects.push(...obstacleRects(o));
+    for (const l of this.powerLines) for (let i = 0; i < l.poles; i++) rects.push(poleRect(l, i));
+    for (const r of rects) {
+      if (!circleRect(p.x, p.y, PEBBLE_R, r)) continue;
+      for (let i = 0; i < 8; i++) {
+        const a = Math.random() * Math.PI * 2;
+        this.particles.push({
+          x: p.x, y: p.y, vx: Math.cos(a) * 160 - p.vx * 0.2, vy: Math.sin(a) * 160,
+          life: 0.25, maxLife: 0.25, size: 1.5 + Math.random() * 1.5, color: Math.random() < 0.5 ? "#fff3b0" : "#adb5bd",
+          gravity: 500, world: false,
+        });
+      }
+      this.events.push({ type: "ricochet" });
+      return true;
+    }
+    // Sitting pigeons get knocked off their wire (no points for the kid).
+    for (const l of this.powerLines) {
+      for (const pg of l.pigeons) {
+        if (pg.flyer) continue;
+        const pos = pigeonPos(l, pg);
+        const reach = PEBBLE_R + PIGEON_R;
+        if ((pos.x - p.x) ** 2 + (pos.y - PIGEON_R - p.y) ** 2 >= reach * reach) continue;
+        pg.flyer = { x: pos.x, y: pos.y, vx: 60 + Math.random() * 60, vy: -160 };
+        this.floaters.push({ x: pos.x, y: pos.y - 40, text: "COO!", color: "#fff", size: 18, life: 0.8, maxLife: 0.8 });
+        this.events.push({ type: "ricochet" });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private shootDownPebble(p: Pebble, poop: Poop): void {
+    this.pebblesShot++;
+    this.combo++;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    this.targetsHit++;
+    const points = Math.round(config.targetPoints * config.kidParryMultiplier * this.comboMultiplier);
+    this.bonus += points;
+    this.shake = Math.max(this.shake, 7);
+    const x = (p.x + poop.x) / 2;
+    const y = (p.y + poop.y) / 2;
+    this.floaters.push({ x, y: y - 30, text: "INTERCEPTED!", color: "#7ae582", size: 26, life: 1.2, maxLife: 1.2 });
+    this.floaters.push({ x, y: y - 2, text: `+${points}`, color: "#ffe14d", size: 22, life: 1.1, maxLife: 1.1 });
+    // A mid-air burst of poop and gravel.
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 80 + Math.random() * 260;
+      this.particles.push({
+        x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+        life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 2 + Math.random() * 4,
+        color: pick(["#6b3e14", "#8b5a2b", "#ffe14d", "#adb5bd"]), gravity: 800, world: true,
+      });
+    }
+    this.events.push({ type: "pebbleShot", points, combo: this.combo });
+  }
+
+  /** A pebble got the bird: knocked down, stunned, charge and combo gone. */
+  private bonk(p: Pebble): void {
+    const b = this.bird;
+    this.bonks++;
+    this.charge = { charge: 0, fullHold: 0, stun: config.kidBonkStun, needsRelease: true };
+    b.vy = Math.max(b.vy, config.kidKnockback);
+    b.stretchV -= 10;
+    this.shake = Math.max(this.shake, 12);
+    if (this.combo > 1) {
+      this.floaters.push({ x: b.x, y: b.y + 40, text: "combo lost", color: "#ffd6d6", size: 16, life: 0.8, maxLife: 0.8 });
+    }
+    this.combo = 0;
+    this.message = { text: pick(BONK_MESSAGES), life: 1.6 };
+    // Loose feathers and an impact burst.
+    for (let i = 0; i < 12; i++) {
+      this.particles.push({
+        x: b.x + (Math.random() - 0.5) * 20, y: b.y + (Math.random() - 0.5) * 20,
+        vx: (Math.random() - 0.5) * 160 + p.vx * 0.15, vy: -60 - Math.random() * 120,
+        life: 1 + Math.random() * 0.6, maxLife: 1.6, size: 3 + Math.random() * 3,
+        color: Math.random() < 0.6 ? "#ffd166" : "#fff", gravity: 160, world: true,
+      });
+    }
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.particles.push({
+        x: p.x, y: p.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220,
+        life: 0.2, maxLife: 0.2, size: 2.5, color: "#fff", gravity: 0, world: false,
+      });
+    }
+    const kid = p.from.kid;
+    if (kid && kid.state !== "crying") {
+      p.from.speed = 0;
+      this.setKidState(p.from, "cheering");
+    }
+    this.events.push({ type: "bonk" });
   }
 
   // --- poops -------------------------------------------------------------------
@@ -1421,7 +1773,9 @@ export class Game {
       this.targetsHit++;
       const camera = t.pap?.state === "watching";
       if (camera) this.smashCamera(t);
-      const kindMult = camera ? config.paparazziMultiplier : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
+      const armed = kidArmed(t);
+      if (armed) this.disarmKid(t);
+      const kindMult = camera ? config.paparazziMultiplier : armed ? config.kidMultiplier : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
       const points = Math.round(config.targetPoints * kindMult * this.comboMultiplier * (p.big ? 2 : 1));
       this.bonus += points;
       const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
@@ -1559,6 +1913,17 @@ export function wireAt(l: PowerLine, w: number, x: number): { y: number; slope: 
 export function pigeonPos(l: PowerLine, p: Pigeon): { x: number; y: number } {
   const wire = l.wires[p.wire];
   return { x: l.x + (p.span + p.t) * l.span, y: wire.y + 4 * wire.sags[p.span] * p.t * (1 - p.t) };
+}
+
+/** Where a kid's slingshot pouch sits (the pebble's launch point). */
+export function slingshotPos(t: Target): { x: number; y: number } {
+  return { x: t.x + t.facing * 17, y: t.y - t.h * 0.64 };
+}
+
+/** True while a kid can still shoot (not crying, taunting or out of shots). */
+export function kidArmed(t: Target): boolean {
+  const k = t.kid;
+  return !!k && (k.state === "walking" || k.state === "aiming" || (k.state === "reloading" && k.shots > 0));
 }
 
 export function targetRect(t: Target): Rect {

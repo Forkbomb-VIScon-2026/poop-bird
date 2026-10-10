@@ -95,6 +95,24 @@ export const CONFIG_SPEC = {
   paparazziTutorialWalk: { value: 60, min: 0, max: 200, step: 5, group: "Paparazzi", label: "First one walks", hint: "px/s the run's first paparazzo walks along (more time to react)" },
   paparazziMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Paparazzi", label: "Points", hint: "× points for splatting him before the shot (× combo)" },
 
+  // --- Slingshot kids -----------------------------------------------------
+  kidChance: { value: 0.3, min: 0, max: 1, step: 0.01, group: "Slingshot kids", label: "Spawn chance", hint: "chance that a target spawn is a slingshot kid instead" },
+  kidMinDistance: { value: 1100, min: 0, max: 10000, step: 50, group: "Slingshot kids", label: "First after", hint: "px of distance before the first kid" },
+  kidMinGap: { value: 1500, min: 0, max: 10000, step: 50, group: "Slingshot kids", label: "Min gap", hint: "px of distance between kids" },
+  kidWalkSpeed: { value: 35, min: 0, max: 200, step: 5, group: "Slingshot kids", label: "Walk speed", hint: "px/s he trots toward the bird before taking aim" },
+  kidRange: { value: 560, min: 150, max: 1200, step: 10, group: "Slingshot kids", label: "Aim range", hint: "px ahead of the bird where he plants his feet and aims" },
+  kidWindup: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Slingshot kids", label: "Wind-up (start)", hint: "s of pulling back (the warning) before the shot" },
+  kidWindupMin: { value: 0.65, min: 0.2, max: 3, step: 0.05, group: "Slingshot kids", label: "Wind-up (hardest)", hint: "s" },
+  kidFlightTime: { value: 0.85, min: 0.2, max: 2, step: 0.05, group: "Slingshot kids", label: "Flight time (start)", hint: "s a pebble takes to reach the bird (time to dodge)" },
+  kidFlightTimeMin: { value: 0.65, min: 0.2, max: 2, step: 0.05, group: "Slingshot kids", label: "Flight time (hardest)", hint: "s" },
+  kidLead: { value: 0.3, min: 0, max: 1, step: 0.05, group: "Slingshot kids", label: "Lead", hint: "how much he aims ahead of the bird's vertical speed (0 = at the bird)" },
+  kidPebbleGravity: { value: 700, min: 0, max: 2000, step: 50, group: "Slingshot kids", label: "Pebble gravity", hint: "px/s² (more = loftier arcs)" },
+  kidShotsMax: { value: 2, min: 1, max: 5, step: 1, group: "Slingshot kids", label: "Max shots", hint: "pebbles per kid at full difficulty (1 at the start)" },
+  kidBonkStun: { value: 0.6, min: 0, max: 3, step: 0.05, group: "Slingshot kids", label: "Bonk stun", hint: "s the bird tumbles without push after a hit" },
+  kidKnockback: { value: 300, min: 0, max: 1000, step: 10, group: "Slingshot kids", label: "Knockback", hint: "px/s downward speed after a hit" },
+  kidMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Disarm points", hint: "× points for splatting him while he can still shoot (× combo)" },
+  kidParryMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Intercept points", hint: "× points for shooting a pebble down with a poop (× combo)" },
+
   // --- Ocean stage ---------------------------------------------------------
   cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before gate", hint: "then the harbour gate appears" },
   oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the exit gate appears" },
