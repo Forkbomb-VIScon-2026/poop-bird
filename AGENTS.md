@@ -18,6 +18,21 @@ build to the live VM. Green checks are all that stands between a PR and
 production, so run `npm run lint`, `npm test` and `npm run build` locally first,
 and actually try changes that the checks can't see (gameplay, camera, audio).
 
+## Set up a new checkout
+
+A fresh worktree has none of the gitignored runtime files, and the game fails
+without them. Before running or previewing anything:
+
+```sh
+npm install          # dependencies; also copies the WASM into public/mediapipe/wasm
+npm run fetch-model  # public/mediapipe/face_landmarker.task
+```
+
+Instead of downloading, you can copy the model from another checkout that
+already has it (e.g. `cp ../../../repos/poop-bird/public/mediapipe/face_landmarker.task
+public/mediapipe/`). Without the model, Vite serves `index.html` in its place
+and face tracking fails with `Unable to open zip archive ... StartGraph failed`.
+
 ## Preview the change
 
 When you finish implementing a change, leave a dev server running from your
