@@ -1394,9 +1394,16 @@ body.debug-open #cam {
     padding: 10px 44px;
   }
 
-  /* Calibration: webcam on the left, card on the right. */
+  /*
+   * Calibration: webcam on the left, card on the right. They split the width
+   * left after both safe-area insets and three 16px gaps, 40/60.
+   */
+  #app {
+    --calib-space: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 48px);
+  }
+
   #cam.large {
-    width: min(40vw, calc((100dvh - 32px) * 4 / 3));
+    width: min(calc(var(--calib-space) * 0.4), calc((100dvh - 32px) * 4 / 3));
     right: auto;
     left: calc(16px + env(safe-area-inset-left));
     top: 50%;
@@ -1406,11 +1413,12 @@ body.debug-open #cam {
   #screen-calibrate {
     align-items: center;
     justify-content: flex-end;
+    padding-right: calc(16px + env(safe-area-inset-right));
     padding-bottom: 16px;
   }
 
   .calib {
-    width: calc(60vw - 48px);
+    width: calc(var(--calib-space) * 0.6);
     padding: 8px 14px 4px;
   }
 
