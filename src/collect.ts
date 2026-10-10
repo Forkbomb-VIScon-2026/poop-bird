@@ -294,7 +294,7 @@ function buildSession(recorders: SegmentRecorder[], recordedAt: Date): Session {
 let pending: { session: Session; blob: Blob } | null = null;
 let uploaded: { participant: string; sessionId: string; deleteKey: string } | null = null;
 
-const uploadButtons = ["btn-retry", "btn-save", "btn-delete", "btn-again"] as const;
+const uploadButtons = ["btn-retry", "btn-save", "btn-delete", "btn-again", "btn-next"] as const;
 function showButtons(...visible: (typeof uploadButtons)[number][]): void {
   for (const id of uploadButtons) $(id).hidden = !visible.includes(id);
 }
@@ -373,14 +373,14 @@ function uploadDone(mb: string, flags: string[]): void {
     }),
   );
   $("upload-done").hidden = false;
-  showButtons("btn-delete", "btn-again");
+  showButtons("btn-delete", "btn-again", "btn-next");
 }
 
 function uploadFailed(message: string): void {
   $("upload-title").textContent = "Upload failed";
   $("upload-error").textContent = message;
   $("upload-error").hidden = false;
-  showButtons("btn-retry", "btn-save", "btn-again");
+  showButtons("btn-retry", "btn-save", "btn-again", "btn-next");
 }
 
 $("btn-retry").addEventListener("click", () => void send());
@@ -418,19 +418,44 @@ $("btn-delete").addEventListener("click", async () => {
     $("upload-title").textContent = "Deleted";
     $("upload-done").hidden = true;
     $("upload-status").textContent = "The session is gone from the server.";
-    showButtons("btn-again");
+    showButtons("btn-again", "btn-next");
   } else {
     $("upload-error").textContent = "Deleting didn't work. Send your participant code to the team and we'll delete it.";
     $("upload-error").hidden = false;
   }
 });
 
-$("btn-again").addEventListener("click", () => {
+function clearLastSession(): void {
   pending = null;
   uploaded = null;
+  confirmDelete = false;
+  $("btn-delete").textContent = "Delete this session";
+}
+
+/** The same participant records again: straight back to the camera check. */
+$("btn-again").addEventListener("click", () => {
+  clearLastSession();
   show("camera");
   checking = true;
   requestAnimationFrame(updateCheck);
+});
+
+/**
+ * Shared device: start over at consent with a fresh participant code and a
+ * clean profile, so every person agrees for themselves and counts as their
+ * own participant. The camera stays on.
+ */
+$("btn-next").addEventListener("click", () => {
+  clearLastSession();
+  agree.checked = false;
+  agreedAt = "";
+  participantInput.value = newParticipantCode();
+  participantInput.setCustomValidity("");
+  for (const input of document.querySelectorAll<HTMLInputElement>("#screen-profile input[type=radio], #screen-profile input[type=checkbox]")) {
+    input.checked = input.defaultChecked;
+  }
+  show("consent");
+  updateConsent();
 });
 
 show("consent");
