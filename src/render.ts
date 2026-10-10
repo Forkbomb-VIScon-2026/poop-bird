@@ -11,9 +11,14 @@ import {
   TRANSITION_SWAP_AT,
   VIEW_H,
   obstacleRects,
+  pigeonPos,
+  poleRect,
+  poleX,
   type Game,
   type Jelly,
   type Obstacle,
+  type Pigeon,
+  type PowerLine,
   type Splat,
   type Tabloid,
   type Target,
@@ -23,6 +28,8 @@ import {
 export type Photo = HTMLCanvasElement;
 
 const OUTLINE = "#2b2d42";
+/** Pigeons are drawn at this scale (their hit radius is PIGEON_R in game.ts). */
+const PIGEON_SCALE = 1.35;
 const POOP = "#7a4a1e";
 const POOP_DARK = "#5c3310";
 
@@ -146,6 +153,7 @@ export class Renderer {
     for (const d of game.decals) drawSplat(ctx, d.x, d.y, d.r, d.seed, 0.45);
     for (const t of game.targets) if (t.kind !== "car") this.drawTarget(t, game.time);
     for (const o of game.obstacles) this.drawObstacle(o, game.time);
+    for (const l of game.powerLines) this.drawPowerLine(l, game.time);
     for (const t of game.targets) if (t.kind === "car") this.drawTarget(t, game.time);
     // Over the buildings, so a paparazzo's timer is never hidden.
     for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
@@ -168,6 +176,11 @@ export class Renderer {
     if (game.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(1, game.flash * 1.2)})`;
       ctx.fillRect(-40, -40, this.width + 80, VIEW_H + 80);
+    }
+    // Electrocution flash: the whole screen flickers.
+    if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) {
+      ctx.fillStyle = `rgba(220,245,255,${Math.min(0.55, game.zapFlash)})`;
+      ctx.fillRect(-20, -20, this.width + 40, VIEW_H + 40);
     }
   }
 
@@ -348,6 +361,177 @@ export class Renderer {
     for (const s of o.splats) drawSplat(ctx, o.x + s.dx, s.dy, s.r, s.seed, 1);
   }
 
+  // --- power lines ------------------------------------------------------------
+
+  private drawPowerLine(l: PowerLine, time: number): void {
+    const ctx = this.ctx;
+    const last = l.poles - 1;
+    if (l.x > this.width + 60 || poleX(l, last) < -60) return;
+
+    // Poles: wooden trunk, a cross-arm with an insulator per wire, a cap.
+    for (let i = 0; i < l.poles; i++) {
+      const r = poleRect(l, i);
+      const px = poleX(l, i);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = OUTLINE;
+      ctx.fillStyle = "#8b5e3c";
+      ctx.fillRect(r.x, r.y, r.w, r.h + 4);
+      ctx.strokeRect(r.x, r.y, r.w, r.h + 4);
+      ctx.strokeStyle = "rgba(0,0,0,0.18)";
+      ctx.lineWidth = 2;
+      for (let y = r.y + 20; y < GROUND_Y - 10; y += 34 + rnd(l.seed + i + y) * 20) {
+        ctx.beginPath();
+        ctx.moveTo(r.x + 3, y);
+        ctx.lineTo(r.x + 3, y + 14);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#6f4a2f";
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.5;
+      roundRect(ctx, px - 9, l.topY - 6, 18, 8, 3);
+      ctx.fill();
+      ctx.stroke();
+      for (const w of l.wires) {
+        ctx.fillStyle = "#6f4a2f";
+        ctx.fillRect(px - 20, w.y - 3, 40, 6);
+        ctx.strokeRect(px - 20, w.y - 3, 40, 6);
+        ctx.fillStyle = "#7ec8a9";
+        for (const dx of [-15, 15]) {
+          ctx.beginPath();
+          ctx.ellipse(px + dx, w.y - 7, 4, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Wires: a parabola per span (a symmetric quadratic Bézier is exactly one).
+    ctx.lineCap = "round";
+    for (const w of l.wires) {
+      for (let s = 0; s < last; s++) {
+        const x0 = poleX(l, s);
+        const x1 = x0 + l.span;
+        ctx.beginPath();
+        ctx.moveTo(x0, w.y);
+        ctx.quadraticCurveTo((x0 + x1) / 2, w.y + 2 * w.sags[s], x1, w.y);
+        ctx.strokeStyle = "#1b1b2a";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    ctx.lineCap = "butt";
+
+    // Current running down the wires, so they read as live.
+    l.wires.forEach((w, wi) => {
+      const along = ((time * 0.45 + rnd(l.seed + wi) ) % 1) * last;
+      const s = Math.min(last - 1, Math.floor(along));
+      const t = along - s;
+      const x = poleX(l, s) + t * l.span;
+      const y = w.y + 4 * w.sags[s] * t * (1 - t);
+      const flick = 0.6 + 0.4 * Math.sin(time * 40 + wi);
+      ctx.fillStyle = `rgba(255,240,140,${0.35 * flick})`;
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, Math.PI * 2);
+      ctx.fill();
+      drawStar(ctx, x, y, 5 + flick * 2, "#fff3b0");
+    });
+
+    for (const p of l.pigeons) this.drawPigeon(l, p, time);
+  }
+
+  private drawPigeon(l: PowerLine, p: Pigeon, time: number): void {
+    const ctx = this.ctx;
+    const f = p.flyer;
+    let x: number;
+    let y: number;
+    if (f) {
+      if (f.y < -40 || f.x < -40 || f.x > this.width + 40) return;
+      x = f.x;
+      y = f.y;
+    } else {
+      ({ x, y } = pigeonPos(l, p));
+      if (p.startle > 0) y -= Math.sin((p.startle / 0.35) * Math.PI) * 10;
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(PIGEON_SCALE * (f ? 1 : p.facing), PIGEON_SCALE);
+    if (f) ctx.rotate(-0.35);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = OUTLINE;
+
+    if (!f) {
+      // Feet gripping the wire
+      ctx.strokeStyle = "#e07a5f";
+      ctx.beginPath();
+      ctx.moveTo(-3, -6);
+      ctx.lineTo(-3, 0);
+      ctx.moveTo(3, -6);
+      ctx.lineTo(3, 0);
+      ctx.stroke();
+      ctx.strokeStyle = OUTLINE;
+    }
+    // Tail
+    ctx.fillStyle = "#5c6370";
+    ctx.beginPath();
+    ctx.moveTo(-8, -12);
+    ctx.lineTo(-19, -9);
+    ctx.lineTo(-17, -4);
+    ctx.lineTo(-6, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Body
+    ctx.fillStyle = "#9aa3ad";
+    ctx.beginPath();
+    ctx.ellipse(0, -12, 12, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Wing: folded, or flapping hard when flying off
+    ctx.fillStyle = "#7d8691";
+    ctx.save();
+    ctx.translate(-2, -14);
+    if (f) ctx.rotate(Math.sin(time * 30 + p.seed) * 1.1 - 0.4);
+    ctx.beginPath();
+    ctx.ellipse(-3, 0, 8, 4.5, f ? -0.3 : 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    // Head with an iridescent neck; sitting pigeons bob.
+    const bob = f ? 0 : Math.max(0, Math.sin(time * 4 + p.seed)) * 3;
+    const hx = 10 + bob;
+    const hy = -20;
+    ctx.fillStyle = "#6a994e";
+    ctx.beginPath();
+    ctx.ellipse(7 + bob * 0.5, -16, 4.5, 4, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#8a92a0";
+    ctx.beginPath();
+    ctx.arc(hx, hy, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#e9c46a";
+    ctx.beginPath();
+    ctx.moveTo(hx + 4, hy - 1);
+    ctx.lineTo(hx + 9, hy + 1);
+    ctx.lineTo(hx + 4, hy + 2);
+    ctx.closePath();
+    ctx.fill();
+    if (f) {
+      drawX(ctx, hx + 1, hy - 1, 2.2);
+      // Splattered
+      drawSplat(ctx, -2, -16, 7, p.seed, 1);
+    } else {
+      ctx.fillStyle = "#ff7b00";
+      ctx.beginPath();
+      ctx.arc(hx + 1.5, hy - 1.5, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   /** Roadside billboard: the front page on a framed board, on a steel frame with a catwalk and lamps. */
   private drawBillboard(o: Obstacle, time: number): void {
     const ctx = this.ctx;
@@ -490,6 +674,7 @@ export class Renderer {
   // --- bird -------------------------------------------------------------------
 
   private drawBird(game: Game): void {
+    if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) return this.drawZappedBird(game);
     const ctx = this.ctx;
     const b = game.bird;
     const c = game.charge.charge;
@@ -512,8 +697,10 @@ export class Renderer {
     const sy = b.stretch;
     ctx.scale(1 / Math.sqrt(sy), sy);
 
-    // Body color: yellow → red as it charges
-    const body = lerpColor([255, 209, 102], [239, 71, 111], Math.min(1, c * 1.1));
+    // Body color: yellow → red as it charges, charred after a zap.
+    const body: RGB = game.zapped
+      ? [74, 66, 60]
+      : lerpColor([255, 209, 102], [239, 71, 111], Math.min(1, c * 1.1));
     ctx.lineWidth = 3;
     ctx.strokeStyle = OUTLINE;
 
@@ -682,6 +869,63 @@ export class Renderer {
         drawStar(ctx, b.x + Math.cos(a) * 30, b.y - 34 + Math.sin(a) * 8, 7, "#ffd166");
       }
     }
+  }
+
+  /** The cartoon X-ray frame of an electrocution: glowing outline, skeleton inside. */
+  private drawZappedBird(game: Game): void {
+    const ctx = this.ctx;
+    const b = game.bird;
+    const r = BIRD_RADIUS;
+    ctx.save();
+    ctx.translate(b.x + (Math.random() - 0.5) * 6, b.y + (Math.random() - 0.5) * 6);
+    ctx.rotate(b.rot);
+    ctx.fillStyle = "rgba(155,246,255,0.35)";
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1d3557";
+    ctx.strokeStyle = "#9bf6ff";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.05, r, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.8, -r * 0.1);
+    ctx.lineTo(-r * 1.45, -r * 0.55);
+    ctx.lineTo(-r * 1.5, r * 0.4);
+    ctx.lineTo(-r * 0.8, r * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Skull, spine, ribs
+    ctx.fillStyle = "#fff";
+    ctx.strokeStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(r * 0.45, -r * 0.2, r * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1d3557";
+    ctx.beginPath();
+    ctx.arc(r * 0.55, -r * 0.28, r * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.1, 0);
+    ctx.lineTo(-r * 1.2, r * 0.05);
+    for (let i = 0; i < 4; i++) {
+      const x = -r * (0.05 + i * 0.25);
+      ctx.moveTo(x, -r * 0.45);
+      ctx.quadraticCurveTo(x - r * 0.12, 0, x, r * 0.45);
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.moveTo(r * 0.8, -r * 0.12);
+    ctx.lineTo(r * 1.45, r * 0.08);
+    ctx.lineTo(r * 0.8, r * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   private drawChargeMeter(game: Game): void {

@@ -980,6 +980,9 @@ function handleGameEvents(): void {
       case "crash":
         sound.splat(true);
         break;
+      case "zap":
+        sound.zap();
+        break;
       case "gameover":
         onGameOver();
         break;
@@ -1056,6 +1059,10 @@ window.addEventListener("keydown", (e) => {
     case "g":
       // Debug shortcut: the next obstacle is the stage's gate.
       if (debug?.visible && state === "playing") game.spawnGateNow();
+      break;
+    case "l":
+      // Debug shortcut: a power line right now.
+      if (debug?.visible && state === "playing") game.spawnPowerLineNow();
       break;
     case "f":
       // Debug shortcut: a paparazzo walks on.

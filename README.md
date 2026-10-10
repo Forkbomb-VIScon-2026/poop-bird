@@ -62,6 +62,7 @@ access on anything other than localhost, put it behind HTTPS.
 | **C** | Re-run calibration |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
 | **G** | With the debug panel open: spawn the next gate now |
+| **L** | With the debug panel open: spawn a power line now |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration |
 
@@ -84,6 +85,11 @@ there's no countdown.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
+- **Power lines:** some city obstacles are a run of poles with wires sagging
+  between them (`powerLineChance`). Touching a wire zaps the bird and ends the
+  run, and so does hitting a pole. Fly over, under, or (later, when the wires
+  stack up to three) between them. Pigeons sit on the wires and are targets
+  too (×2).
 - **Paparazzi:** now and then a paparazzo walks on with his camera raised.
   The ring over his head fills as he closes in; when it's full (just past the
   bird) he takes your picture. Splat him first to smash the camera (×3).
@@ -248,6 +254,7 @@ build is always the plain one:
   puff input, with hover and spike threshold lines and the spiked windows
 - **G** spawns the next gate right away, so you can test the ocean without
   flying through the city first
+- **L** spawns a power line right away (city only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
