@@ -3,3 +3,6 @@ dist
 .git
 public/mediapipe/wasm
 *.log
+# Face recordings never go into an image
+data
+poopbird-face-*

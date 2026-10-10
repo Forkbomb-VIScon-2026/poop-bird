@@ -47,14 +47,16 @@ npm install            # postinstall copies MediaPipe WASM into public/mediapipe
 npm run fetch-model    # one-time: downloads face_landmarker.task into public/mediapipe/
 npm run dev            # http://localhost:5173 (host: true; webcam needs localhost or HTTPS)
 npm run dev:debug      # same, with the debug panel, tuning overrides and window.poopBird
-npm run build          # tsc --noEmit && vite build → dist/ (production: no debug tooling)
-npm run build:debug    # build with debug tooling
-npm test               # vitest run (src/**/*.test.ts)
+npm run build          # typecheck && vite build → dist/ (production: no debug tooling, no collect.html)
+npm run build:debug    # build with debug tooling (and the dataset recorder, collect.html)
+npm test               # vitest run (src/**/*.test.ts, collector/**/*.test.ts)
 npx vitest run src/strain.test.ts      # single file
 npx vitest run -t "overstrain"         # tests matching a name
 npm run lint           # eslint
-npm run typecheck
-docker compose up --build              # Caddy serving dist/ on :8080
+npm run typecheck      # tsconfig.json (browser) + tsconfig.node.json (collector, scripts, session.ts)
+npm run data:pull      # face dataset from the VM into data/ (needs POOPBIRD_DEV_TOKEN; see README "Face dataset")
+npm run eval           # detection scoreboard over data/ (variants in scripts/eval/variants.ts)
+docker compose up --build              # Caddy serving dist/ on :8080, plus the dataset collector
 ```
 
 `public/mediapipe/` is gitignored and generated: the game fails to load face tracking if the model hasn't been fetched.
@@ -76,7 +78,14 @@ Output: `Game` pushes `GameEvent`s into `game.events`; `main.ts` `handleGameEven
 Conventions that span files:
 - Debug tooling is opt-in: `src/env.ts` `DEBUG` is true only in `--mode debug`. Without it `debug` is null (use `debug?.`), saved tuning overrides are ignored, `window.poopBird` isn't set, and `[data-debug-only]` elements are removed.
 - **All tunables live in `src/config.ts` `CONFIG_SPEC`.** The debug panel (`D` key, `debug.ts`) auto-generates a slider per entry and mutates the live `config` object in place; overrides persist to localStorage as a diff from defaults. Add new tunables there rather than hardcoding constants, and read `config.x` at use time (not cached), so live tuning works.
-- `strain.ts`, `charge.ts`, `puff.ts` and `swim.ts` are deliberately pure (no DOM, no global `config`; params are passed in) so they are unit-testable. Keep them that way; they are the only tested modules.
-- Strain and puff share one `FeatureVector`: blendshapes (`FEATURE_SOURCES`) plus landmark geometry (`GEOMETRY_FEATURE_NAMES`, computed by `puff.ts` `faceGeometry()` in `face.ts`). MediaPipe's `cheekPuff` blendshape is dead (always ~0), so puff relies on geometry (mainly `eyeMouth`) and mouth blendshapes (mainly `mouthPress`). The puff phase uses `robustFeatureStats` (median/MAD) so the brief lip pucker while the cheeks fill gets no weight; a debug recording (`poopbird-face-*.json`, gitignored) is the way to check changes against a real face. `buildCalibration` only weights the feature subset it's given (`STRAIN_FEATURES` by default, `PUFF_FEATURES` for puff), so puff-only features never affect strain; puff uses scale-free `separationWeight` because its features have different units. Saved calibrations go through `restoreCalibration`, which fills in features added later; a missing `neutralStd` means no puff calibration is possible, so the fallback range is used.
+- `strain.ts`, `charge.ts`, `puff.ts`, `swim.ts` and `session.ts` are deliberately pure (no DOM, no global `config`; params are passed in) so they are unit-testable. Keep them that way; together with `collector/server.ts` they are the only tested modules.
+- Strain and puff share one `FeatureVector`: blendshapes (`FEATURE_SOURCES`) plus landmark geometry (`GEOMETRY_FEATURE_NAMES`, computed by `puff.ts` `faceGeometry()` in `face.ts`). MediaPipe's `cheekPuff` blendshape is dead (always ~0), so puff relies on geometry (mainly `eyeMouth`) and mouth blendshapes (mainly `mouthPress`). The puff phase uses `robustFeatureStats` (median/MAD) so the brief lip pucker while the cheeks fill gets no weight; the face dataset (`npm run data:pull`, then `npm run eval`) is the way to check detection changes against real faces. `buildCalibration` only weights the feature subset it's given (`STRAIN_FEATURES` by default, `PUFF_FEATURES` for puff), so puff-only features never affect strain; puff uses scale-free `separationWeight` because its features have different units. Saved calibrations go through `restoreCalibration`, which fills in features added later; a missing `neutralStd` means no puff calibration is possible, so the fallback range is used.
 - All localStorage access goes through `storage.ts` wrappers (try/catch), so the game must keep working without storage.
-- In debug mode, `window.poopBird` exposes `game`, `config`, `tracker`, `calibration`, `puffCalibration` for console debugging. With the debug panel open, **G** spawns the next gate and **O** (or the "Start as pufferfish" button) starts a run that dives straight into the ocean (`startOceanRun()` → `game.diveNow()`). "Record strain clip" / "Record puff clip" (`recorder.ts`, or `poopBird.recordFace("strain" | "puff")`) pause the game, prompt a scripted relax/strain or relax/puff sequence (each sample labelled with its step) and download raw features, blendshapes and landmarks as JSON for offline analysis. "Forget calibration" deletes both saved calibrations and reloads, for testing the first-time flow.
+- In debug mode, `window.poopBird` exposes `game`, `config`, `tracker`, `calibration`, `puffCalibration` for console debugging. With the debug panel open, **G** spawns the next gate and **O** (or the "Start as pufferfish" button) starts a run that dives straight into the ocean (`startOceanRun()` → `game.diveNow()`). "Record a dataset session" (or `poopBird.openDatasetRecorder()`) pauses the game and opens `collect.html`. "Forget calibration" deletes both saved calibrations and reloads, for testing the first-time flow.
+
+Face dataset (README "Face dataset" has the full picture):
+- `collect.html` + `src/collect.ts` record consented, labelled sessions (game calibration + "relax again", strain script, puff script) and upload them to `/api/recordings`. Only built in debug mode (`vite.config.ts` `rolldownOptions.input`); in dev, `/api` is proxied to the VM or `COLLECTOR_URL`. Bump `CONSENT_VERSION` in `collect.ts` when the consent text in `collect.html` changes.
+- `src/session.ts` owns the scripts, the session format (schema 2: columns per frame, landmarks as Int16 deltas), validation, quality flags and index rows. The collector runs it in plain Node with types stripped, so it must have **no runtime imports and only erasable TypeScript** (no parameter properties, enums or namespaces); `tsconfig.node.json` (`erasableSyntaxOnly`) checks this for the collector, `scripts/**/*.ts` and `session.ts`.
+- `collector/server.ts` (own container, `collector/Dockerfile`, no npm install) stores sessions on the `poopbird-data` volume. `deploy.yml` starts it on the `poopbird` network next to the game and creates its `COLLECTION_CODE` / `DEV_TOKEN` once in `~/poopbird-collector.env` on the VM. Caddy proxies `/api/*` to `collector:8787`.
+- Recordings are personal data: never commit them (`data/`, `poopbird-face-*` are gitignored and dockerignored), and they live only on the VM and in devs' `data/` (deleted with `npm run data:purge` when the VM goes).
+- `scripts/eval/` scores detection variants (`variants.ts`, first entry = the game today) against `data/`. It runs through `scripts/run-ts.mjs` (Vite's module runner), so it can import `src/` modules as they are; `scripts/data.ts` runs in plain Node and must not import `src/`.

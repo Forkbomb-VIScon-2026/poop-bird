@@ -2,13 +2,24 @@
 # so put this behind HTTPS (a reverse proxy, or change the site address to a
 # domain and let Caddy get a certificate).
 :8080 {
-	root * /srv
-	encode zstd gzip
-	file_server
+	# Face dataset uploads and downloads go to the collector container
+	# (collector/server.ts, reachable as "collector" on the shared network).
+	handle /api/* {
+		request_body {
+			max_size 40MB
+		}
+		reverse_proxy collector:8787
+	}
 
-	@wasm path *.wasm
-	header @wasm Content-Type application/wasm
+	handle {
+		root * /srv
+		encode zstd gzip
+		file_server
 
-	@static path /assets/* /mediapipe/*
-	header @static Cache-Control "public, max-age=604800"
+		@wasm path *.wasm
+		header @wasm Content-Type application/wasm
+
+		@static path /assets/* /mediapipe/*
+		header @static Cache-Control "public, max-age=604800"
+	}
 }

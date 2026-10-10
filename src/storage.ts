@@ -38,6 +38,12 @@ export function storageRemove(key: string): void {
   }
 }
 
+// --- Calibrations (written by main.ts, also read by the collect page) --------
+
+export const CALIBRATION_KEY = "poopbird.calibration.v1";
+// v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
+export const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v2";
+
 // --- Best score & Hall of Fame ----------------------------------------------
 
 const BEST_KEY = "poopbird.best.v1";

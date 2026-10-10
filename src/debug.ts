@@ -2,7 +2,6 @@
 // every tunable in config.ts.
 
 import { CONFIG_SPEC, config, defaultConfig, resetConfig, setConfigValue, type ConfigKey } from "./config";
-import type { RecorderKind } from "./recorder";
 import {
   FEATURE_NAMES,
   GEOMETRY_FEATURE_NAMES,
@@ -60,24 +59,17 @@ export class DebugPanel {
   private puffPlot!: HTMLCanvasElement;
   private puffSection!: HTMLElement;
   private lastText = 0;
-  private recordEl!: HTMLElement;
   visible = false;
 
   constructor(
     el: HTMLElement,
     private onRecalibrate: () => void,
     private onStartOcean: () => void,
-    private onRecordFace: (kind: RecorderKind) => void,
+    private onOpenRecorder: () => void,
     private onForgetCalibration: () => void,
   ) {
     this.el = el;
     this.build();
-  }
-
-  /** Big instruction line for the face recorder; null hides it. */
-  setRecordPrompt(text: string | null): void {
-    this.recordEl.textContent = text ?? "";
-    this.recordEl.classList.toggle("hidden", text === null);
   }
 
   toggle(): void {
@@ -92,12 +84,9 @@ export class DebugPanel {
     // Shortcut buttons first, so they don't need scrolling past the sliders.
     const quick = div("dbg-buttons");
     quick.append(button("🐡 Start as pufferfish (O)", () => this.onStartOcean()));
-    quick.append(button("⏺ Record strain clip", () => this.onRecordFace("strain")));
-    quick.append(button("⏺ Record puff clip", () => this.onRecordFace("puff")));
+    quick.append(button("⏺ Record a dataset session", () => this.onOpenRecorder()));
     quick.append(button("🗑 Forget calibration", () => this.onForgetCalibration()));
     el.append(quick);
-    this.recordEl = div("dbg-record hidden");
-    el.append(this.recordEl);
     el.append(h3("Stats"));
     this.statsEl = div("dbg-stats");
     el.append(this.statsEl);

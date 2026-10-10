@@ -30,9 +30,12 @@ Other scripts:
 | `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
-| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy) |
+| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, dataset sessions, collector) |
 | `npm run lint` | ESLint |
-| `npx tsc --noEmit` | Typecheck only |
+| `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
+| `npm run data:pull` / `data:purge` | Copy the face dataset from the team VM into `data/` / delete that copy (see [Face dataset](#face-dataset)) |
+| `npm run eval` | Score face detection against every recording in `data/` |
+| `npm run collector` | Run the dataset collector locally (needs `COLLECTION_CODE`, `DEV_TOKEN`, `DATA_DIR`) |
 | `npm run copy-wasm` | Re-copy the WASM from `node_modules` (also runs before `dev`/`build`) |
 | `npm run fetch-model -- --force` | Re-download the model |
 
@@ -47,7 +50,9 @@ docker compose up --build   # serves dist/ with Caddy on http://localhost:8080
 ```
 
 The image builds the game and serves it with Caddy on port 8080. For camera
-access on anything other than localhost, put it behind HTTPS.
+access on anything other than localhost, put it behind HTTPS. Compose also
+starts the face dataset collector (local credentials `local` /
+`local-dev-token`), which Caddy serves under `/api/`.
 
 ## Controls
 
@@ -259,15 +264,8 @@ build is always the plain one:
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
   quick way to retry it. From the menu it starts in keyboard mode
-- **⏺ Record strain clip** (face mode) pauses the game and prompts 45 s of
-  relax → strain and hold → relax → four 1.5 s strain/relax pulses → a long
-  strain → relax → relaxed while looking around → smiling, laughing and
-  talking. Every step beeps (high for strain), since you can't read prompts
-  with your eyes squeezed shut. Then it downloads the raw features, all
-  blendshapes and all landmarks as JSON (`poopbird-face-strain-*.json`), for
-  tuning strain detection offline. Each sample is labelled with its step
-- **⏺ Record puff clip** does the same with 16 s of relax → puff and hold →
-  relax → quick puffs, for tuning puff detection
+- **⏺ Record a dataset session** pauses the game and opens the face dataset
+  recorder in a new tab (see [Face dataset](#face-dataset))
 - **🗑 Forget calibration** deletes the saved strain and puff calibrations and
   reloads, so you can test the first-time flow (scores and settings are kept)
 - each face feature (blendshapes and landmark geometry) as a bar, with neutral
@@ -283,6 +281,72 @@ build is always the plain one:
 `window.poopBird` exposes `game`, `config`, `tracker`, `calibration` and
 `puffCalibration` in the console.
 
+## Face dataset
+
+Calibration has to work for every face, so detection changes are checked
+against a shared collection of labelled recordings from many people and
+devices. It lives on the team VM only and is deleted with it.
+
+**Recording.** `collect.html` (debug panel: **⏺ Record a dataset session**, or
+`/collect.html` on `npm run dev:debug`) takes a participant through about 3
+minutes:
+
+1. Consent. The text is stored verbatim with every session. A collect link
+   can carry the collection code: `/collect.html?code=<code>`.
+2. A random participant code (`pb-…`, no names), glasses, facial hair and
+   light. The code is remembered on the device; on another device people can
+   type it in so their sessions stay together.
+3. A camera check (face found, distance, brightness, detection rate).
+4. The game's calibration (relax, strain, same prompts and timing) plus a
+   "relax again" phase, then a strain script (pulses of random length, a light
+   strain, a long hold, looking around, laughing) and a puff script (full and
+   half puff, pulses, puffing while looking around). Every step beeps: high
+   for strain or puff, low for relax.
+5. The upload, with a "Delete this session" button and a fallback to save the
+   file when the upload fails.
+
+The scripts and the file format are in `src/session.ts`. A session is one
+gzipped JSON file of about 3–4 MB: per frame, the step label, all
+blendshapes, the features and the 478 face-mesh points (Int16, stored as
+differences from the previous frame, which compresses about 3× better).
+Device, camera, detection delegate, tuning config and the game's saved
+calibrations are stored with it. No video or images.
+
+For now the recorder is only built in debug mode; the production build
+ships just the game. In dev, `/api` is proxied to the team VM, or to
+`COLLECTOR_URL` (for example a local `npm run collector`).
+
+**Storage.** `collector/server.ts` is a small Node server without
+dependencies, in its own container next to the game, with the recordings on
+the `poopbird-data` Docker volume (it survives deploys). Caddy routes `/api/*`
+to it. On the VM, `deploy.yml` generates its two secrets once into
+`~/poopbird-collector.env`: `COLLECTION_CODE` (for collect links; uploads
+only) and `DEV_TOKEN` (for the team: list, download, review, delete). Every
+upload is validated, quality-checked (face coverage, detection rate, whether
+the strain moved brows and eyes) and added to the index. Participants can
+delete their session right after uploading; to delete everything under a
+code: `curl -X DELETE -H "Authorization: Bearer $DEV_TOKEN" <site>/api/recordings/<code>`.
+
+**Using it.**
+
+```sh
+export POOPBIRD_DEV_TOKEN=$(ssh viscon@24-direct.viscon-hackathon.ch "grep DEV_TOKEN poopbird-collector.env | cut -d= -f2")
+npm run data:pull   # new sessions into data/sessions/, sessions deleted on the server are deleted locally
+npm run eval        # scoreboard: every variant in scripts/eval/variants.ts, per recording and per participant
+npm run data:purge  # delete the local copy (everyone, when the VM goes away)
+```
+
+`npm run eval` fits each recording's calibration the way the game does and
+replays the rest. For strain it reports hits on strain steps, false strain
+while relaxed, looking around and laughing, releases in the middle of a
+strain, and press and release latency. For puff it reports the median puff
+level while relaxed, at half and at full puff, and false spikes. To try a
+detection idea, add a variant to `scripts/eval/variants.ts`; the first entry
+is what the game does today. About 1 in 5 participants are held out (picked
+by a hash of their code); score them with `npm run eval -- --holdout` only
+when a change is ready to merge. Older debug-recorder clips
+(`poopbird-face-*.json`) still work: put them in `data/local/`.
+
 ## Privacy
 
 - Video frames go to MediaPipe running in the page (WASM/WebGL) and nowhere
@@ -295,6 +359,10 @@ build is always the plain one:
   keyboard. They stay in memory for the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
+- Playing never sends face data anywhere. Only the separate dataset recorder
+  (`collect.html`) uploads, after explicit consent, and it records expression
+  scores and face-mesh points, never video or images. See
+  [Face dataset](#face-dataset).
 
 ## Project layout
 
@@ -313,7 +381,15 @@ src/
   snapshot.ts   face crops: peak-strain snapshot, paparazzi photos
   storage.ts    safe localStorage, best score, Hall of Fame
   main.ts       screens, input, loops, calibration flow
+  session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
+  collect.ts    the dataset recorder page (collect.html)
+collector/
+  server.ts     dataset upload/download server (Node, no deps)       server.test.ts
+  Dockerfile
 scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm
   fetch-model.mjs  downloads face_landmarker.task
+  data.ts          data:pull / data:purge
+  run-ts.mjs       runs a TS script through Vite (used by eval)
+  eval/            detection scoreboard: load, strain, puff, variants
 ```
