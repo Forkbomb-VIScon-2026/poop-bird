@@ -369,9 +369,12 @@ Calibration has to work for every face, so detection changes are checked
 against a shared collection of labelled recordings from many people and
 devices. It lives on the team VM only and is deleted with it.
 
-**Recording.** `collect.html` (debug panel: **⏺ Record a dataset session**, or
-`/collect.html` on `npm run dev:debug`) takes a participant through about 3
-minutes:
+**Recording.** The recorder is a separate page of the deployed site:
+`https://24.hackathon.ethz.ch/collect.html?code=<COLLECTION_CODE>` works on
+any device with a camera (the whole site is behind the ETH login, so
+participants need an ETH or SWITCH edu-ID login). The game never links to
+it; the debug panel's **⏺ Record a dataset session** opens it. It takes a
+participant through about 3 minutes:
 
 1. Consent. The text is stored verbatim with every session. A collect link
    can carry the collection code: `/collect.html?code=<code>`.
@@ -394,10 +397,9 @@ differences from the previous frame, which compresses about 3× better).
 Device, camera, detection delegate, tuning config and the game's saved
 calibrations are stored with it. No video or images.
 
-For now the recorder is only built in debug mode; the production build
-ships just the game. The public site (`https://24.hackathon.ethz.ch`) is
-behind the ETH login, so the team reaches the VM over SSH instead. To record
-from a laptop into the team dataset:
+Scripts can't get past the ETH login, so the team reaches the VM over SSH
+instead. To record from a local dev server into the team dataset (for
+example to try a change to the recorder):
 
 ```sh
 npm run tunnel        # keep running: SSH tunnel to the VM (port 8788 → the VM's Caddy)

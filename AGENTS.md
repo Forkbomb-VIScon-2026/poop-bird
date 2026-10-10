@@ -47,8 +47,8 @@ npm install            # postinstall copies MediaPipe WASM into public/mediapipe
 npm run fetch-model    # one-time: downloads face_landmarker.task into public/mediapipe/
 npm run dev            # http://localhost:5173 (host: true; webcam needs localhost or HTTPS)
 npm run dev:debug      # same, with the debug panel, tuning overrides and window.poopBird
-npm run build          # typecheck && vite build → dist/ (production: no debug tooling, no collect.html)
-npm run build:debug    # build with debug tooling (and the dataset recorder, collect.html)
+npm run build          # typecheck && vite build → dist/ (production: no debug tooling; game + collect.html)
+npm run build:debug    # build with debug tooling
 npm test               # vitest run (src/**/*.test.ts, collector/**/*.test.ts)
 npx vitest run src/strain.test.ts      # single file
 npx vitest run -t "overstrain"         # tests matching a name
@@ -85,7 +85,7 @@ Conventions that span files:
 - In debug mode, `window.poopBird` exposes `game`, `config`, `tracker`, `renderer`, `calibration`, `puffCalibration` for console debugging. With the debug panel open, **G** brings the stage's waterfront next, **W** starts a wedding (`game.spawnWeddingNow()`) and **O** (or the "Start as pufferfish" button) starts a run that dives straight into the ocean (`startOceanRun()` → `game.diveNow()`). "Record a dataset session" (or `poopBird.openDatasetRecorder()`) pauses the game and opens `collect.html`. "Forget calibration" deletes both saved calibrations and reloads, for testing the first-time flow.
 
 Face dataset (README "Face dataset" has the full picture):
-- `collect.html` + `src/collect.ts` record consented, labelled sessions (game calibration + "relax again", strain script, puff script) and upload them to `/api/recordings`. Only built in debug mode (`vite.config.ts` `rolldownOptions.input`); in dev, `/api` is proxied to `npm run tunnel` (127.0.0.1:8788) or `COLLECTOR_URL`. The public site `https://24.hackathon.ethz.ch` is behind the ETH (VSETH) login, so scripts reach the VM over SSH (`viscon@24-direct.viscon-hackathon.ch`), never through the public URL. Bump `CONSENT_VERSION` in `collect.ts` when the consent text in `collect.html` changes.
+- `collect.html` + `src/collect.ts` record consented, labelled sessions (game calibration + "relax again", strain script, puff script) and upload them to `/api/recordings`. It is the second page of every build (`vite.config.ts` `rolldownOptions.input`), so it is live at `/collect.html`; the game never links to it. In dev, `/api` is proxied to `npm run tunnel` (127.0.0.1:8788) or `COLLECTOR_URL`. The public site `https://24.hackathon.ethz.ch` is behind the ETH (VSETH) login, so scripts reach the VM over SSH (`viscon@24-direct.viscon-hackathon.ch`), never through the public URL. Bump `CONSENT_VERSION` in `collect.ts` when the consent text in `collect.html` changes.
 - `src/session.ts` owns the scripts, the session format (schema 2: columns per frame, landmarks as Int16 deltas), validation, quality flags and index rows. The collector runs it in plain Node with types stripped, so it must have **no runtime imports and only erasable TypeScript** (no parameter properties, enums or namespaces); `tsconfig.node.json` (`erasableSyntaxOnly`) checks this for the collector, `scripts/**/*.ts` and `session.ts`.
 - `collector/server.ts` (own container, `collector/Dockerfile`, no npm install) stores sessions on the `poopbird-data` volume. `deploy.yml` starts it on the `poopbird` network next to the game and creates its `COLLECTION_CODE` / `DEV_TOKEN` once in `~/poopbird-collector.env` on the VM. Caddy proxies `/api/*` to `collector:8787`.
 - Recordings are personal data: never commit them (`data/`, `poopbird-face-*` are gitignored and dockerignored), and they live only on the VM and in devs' `data/` (deleted with `npm run data:purge` when the VM goes).

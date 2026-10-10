@@ -1,8 +1,9 @@
 import { execSync } from "node:child_process";
 import { defineConfig } from "vitest/config";
 
-/** The game's commit, stored with every face dataset session. */
+/** The game's commit, stored with every face dataset session (APP_COMMIT in Docker builds, which have no .git). */
 function commit(): string {
+  if (process.env.APP_COMMIT) return process.env.APP_COMMIT.slice(0, 7);
   try {
     return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
   } catch {
@@ -10,7 +11,7 @@ function commit(): string {
   }
 }
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   define: { __APP_COMMIT__: JSON.stringify(commit()) },
   server: {
     port: 5173,
@@ -25,9 +26,8 @@ export default defineConfig(({ mode }) => ({
   build: {
     target: "es2022",
     chunkSizeWarningLimit: 1500,
-    // The recorder is only built in debug mode for now; the production build
-    // ships just the game.
-    rolldownOptions: mode === "debug" ? { input: { main: "index.html", collect: "collect.html" } } : {},
+    // Two pages: the game, and the face dataset recorder at /collect.html.
+    rolldownOptions: { input: { main: "index.html", collect: "collect.html" } },
   },
   test: { include: ["src/**/*.test.ts", "collector/**/*.test.ts"] },
-}));
+});
