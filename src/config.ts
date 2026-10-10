@@ -122,7 +122,7 @@ export const CONFIG_SPEC = {
   kidParryMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Intercept points", hint: "× points for shooting a pebble down with a poop (× combo)" },
 
   // --- Wedding -------------------------------------------------------------
-  weddingChance: { value: 0.6, min: 0, max: 1, step: 0.05, group: "Wedding", label: "Chance", hint: "chance a city stage has a wedding (the run's first city stage always does)" },
+  weddingChance: { value: 0.25, min: 0, max: 1, step: 0.05, group: "Wedding", label: "Chance", hint: "chance a city stage has a wedding" },
   weddingSlot: { value: 2, min: 0, max: 10, step: 1, group: "Wedding", label: "Church slot", hint: "city obstacles before the church (it waits if a paparazzo or kid is busy)" },
   weddingKissLead: { value: 90, min: 0, max: 400, step: 5, group: "Wedding", label: "Kiss point", hint: "px ahead of the bird where the couple starts kissing (a poop takes a moment to fall)" },
   weddingKissTime: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Wedding", label: "Kiss length", hint: "s the kiss lasts (the jackpot window)" },

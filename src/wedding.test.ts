@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { config } from "./config";
 import { Game } from "./game";
 
 /** A game whose bird hovers mid-screen and can't die, so the world just scrolls by. */
@@ -19,8 +20,11 @@ function immortalGame(): { game: Game; step: (seconds: number, until?: () => boo
 }
 
 describe("wedding", () => {
-  it("happens in the run's first city stage", () => {
+  it("takes the church slot when the stage has one planned", () => {
+    const chance = config.weddingChance;
+    config.weddingChance = 1;
     const { game, step } = immortalGame();
+    config.weddingChance = chance;
     let seen = false;
     step(60, () => {
       seen ||= game.wedding !== null;
@@ -39,7 +43,7 @@ describe("wedding", () => {
     expect(wedding?.outcome).toBe("married");
     expect(game.weddingPhotos).toHaveLength(1);
     expect(game.wedding).toBeNull();
-    // With the wedding gone, the sidewalk is open again for more than cars.
+    // With the wedding over, the sidewalk is open again for more than cars.
     step(20, () => game.targets.some((t) => t.kind !== "car" && !t.wedding));
     expect(game.targets.some((t) => t.kind !== "car" && !t.wedding)).toBe(true);
   });

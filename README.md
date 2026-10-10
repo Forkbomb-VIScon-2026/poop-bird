@@ -113,10 +113,10 @@ there's no countdown.
   the pebble down with a falling poop ("INTERCEPTED!", ×4), or splat the kid
   while he's still armed ("DISARMED!", ×3) and he runs off crying. Later
   kids fire twice. Tunables are in the debug panel's "Slingshot kids" group.
-- **The wedding:** most city stages (always the run's first) have a church
-  instead of one building, with a wedding on the sidewalk in front: the
-  couple under a flower arch with their names on it, guests, a getaway car
-  and a photographer with an old plate camera. Bells ring and the organ plays
+- **The wedding:** now and then (`weddingChance`, about one city stage in
+  four) a church takes the place of one building, with a wedding on the
+  sidewalk in front: the couple under a flower arch with their names on it,
+  guests, a getaway car and a photographer with an old plate camera. Bells ring and the organ plays
   "Here comes the bride". As the couple comes up to the bird the
   photographer counts down in a heart over them, *3… 2… 1…*, and then they
   **KISS!** for about a second (a ring around the heart runs out). That's the

@@ -555,7 +555,7 @@ export class Game {
   private paparazziSeen = 0;
   private lastKidAt = -Infinity;
   /** This city stage gets a wedding that hasn't happened yet. */
-  private weddingPlanned = true;
+  private weddingPlanned = false;
   private weddingsSeen = 0;
 
   events: GameEvent[] = [];
@@ -618,7 +618,7 @@ export class Game {
     this.weddingPhotos = [];
     this.weddingsRuined = 0;
     this.bouquetsCaught = 0;
-    this.weddingPlanned = true;
+    this.weddingPlanned = Math.random() < config.weddingChance;
     this.weddingsSeen = 0;
     this.pendingTabloids = [];
     this.lastPaparazzoAt = -Infinity;
@@ -1439,7 +1439,7 @@ export class Game {
       if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
       else if (this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
       // Nobody wanders through the wedding; the road stays busy.
-      else this.spawnTarget(this.wedding ? "car" : undefined);
+      else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
   }
 
@@ -1452,8 +1452,7 @@ export class Game {
       this.distance - this.lastPaparazzoAt >= config.paparazziMinGap &&
       !this.targets.some((t) => t.pap?.state === "watching") &&
       !this.targets.some(kidArmed) &&
-      !this.wedding &&
-      !this.weddingNext
+      !this.weddingAhead
     );
   }
 
@@ -1580,8 +1579,7 @@ export class Game {
       this.distance - this.lastKidAt >= config.kidMinGap &&
       !this.targets.some(kidArmed) &&
       !this.targets.some((t) => t.pap?.state === "watching") &&
-      !this.wedding &&
-      !this.weddingNext
+      !this.weddingAhead
     );
   }
 
@@ -1854,9 +1852,13 @@ export class Game {
 
   // --- wedding -----------------------------------------------------------------
 
-  /** The church is up within the next obstacle slot or so: keep paparazzi and kids out of its way. */
-  private get weddingNext(): boolean {
-    return this.weddingPlanned && this.stage === "city" && this.stageObstacles >= Math.round(config.weddingSlot) - 1;
+  /**
+   * The wedding is still to come (the couple hasn't passed the bird yet):
+   * paparazzi, kids and pedestrians keep out of its way. Once it's over
+   * they're back, even while the church is still on screen.
+   */
+  private get weddingAhead(): boolean {
+    return this.wedding !== null && this.wedding.phase !== "after";
   }
 
   /** The church takes this stage's next obstacle slot once nothing else is busy on the sidewalk. */
