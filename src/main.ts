@@ -1344,14 +1344,14 @@ function handleGameEvents(): void {
         sound.jellyPop(e.combo);
         break;
       case "paparazzoBeep":
-        sound.droneCrash();
+        sound.cameraBeep();
         break;
       case "photo":
         sound.shutter();
         takePhoto(e.photoId);
         break;
       case "cameraSmashed":
-        sound.smash();
+        sound.droneCrash()
         break;
       case "slingshotDraw":
         sound.slingshotDraw(e.windup);
