@@ -204,6 +204,21 @@ export interface Pigeon {
   startle: number;
   /** Set once it's hit: it flies off, splattered (screen space). */
   flyer: { x: number; y: number; vx: number; vy: number } | null;
+  /** Set when a hit downs it instead: it was a surveillance drone all along. */
+  wreck: DroneWreck | null;
+}
+
+/** A downed pigeon drone: it tumbles off its wire, then lies broken on the street, sparking. */
+export interface DroneWreck {
+  /** Screen space; y is the street once it's landed. */
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  spin: number;
+  /** Seconds since it hit the street, or -1 while it's still falling. */
+  landed: number;
 }
 
 /**
@@ -428,6 +443,8 @@ export type GameEvent =
   | { type: "hit"; points: number; combo: number; kind: TargetKind | "pigeon" }
   | { type: "crash" }
   | { type: "zap" }
+  | { type: "droneDown" }
+  | { type: "droneCrashed" }
   | { type: "gameover" }
   | { type: "gateEntered"; to: Stage }
   | { type: "submerged" }
@@ -1644,7 +1661,7 @@ export class Game {
         taken.push(t);
         line.pigeons.push({
           wire: Math.floor(Math.random() * count), span: s, t,
-          facing: Math.random() < 0.5 ? 1 : -1, seed: Math.random() * 1000, startle: 0, flyer: null,
+          facing: Math.random() < 0.5 ? 1 : -1, seed: Math.random() * 1000, startle: 0, flyer: null, wreck: null,
         });
       }
     }
@@ -1657,6 +1674,7 @@ export class Game {
       l.x -= speed * dt;
       for (const p of l.pigeons) {
         p.startle = Math.max(0, p.startle - dt);
+        if (p.wreck) this.updateWreck(p.wreck, dt, speed);
         const f = p.flyer;
         if (!f) continue;
         // Flies off forward and up, flapping harder as it goes.
@@ -1668,18 +1686,78 @@ export class Game {
     this.powerLines = this.powerLines.filter((l) => l.x + l.span * (l.poles - 1) > -80);
   }
 
+  private updateWreck(w: DroneWreck, dt: number, speed: number): void {
+    if (w.landed < 0) {
+      w.vy += 900 * dt;
+      w.x += (w.vx - speed) * dt;
+      w.y += w.vy * dt;
+      w.rot += w.spin * dt;
+      // Trails smoke and sparks on the way down.
+      if (Math.random() < dt * 40) {
+        const spark = Math.random() < 0.5;
+        this.particles.push({
+          x: w.x + (Math.random() - 0.5) * 10, y: w.y - 14, vx: (Math.random() - 0.5) * 60, vy: spark ? -80 : -30,
+          life: 0.5, maxLife: 0.5, size: spark ? 1.5 : 3 + Math.random() * 3, color: spark ? "#fff3b0" : "#6c757d",
+          gravity: spark ? 400 : -60, world: true,
+        });
+      }
+      if (w.y < GROUND_Y - 2) return;
+      w.y = GROUND_Y - 2;
+      w.landed = 0;
+      this.crashDrone(w);
+      return;
+    }
+    w.x -= speed * dt;
+    w.landed += dt;
+    // The exposed wires keep shorting out.
+    if (Math.random() < dt * 4) {
+      for (let i = 0; i < 4; i++) {
+        const a = -Math.PI * (0.2 + Math.random() * 0.6);
+        this.particles.push({
+          x: w.x + 2, y: w.y - 14, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
+          life: 0.3, maxLife: 0.3, size: 1.2 + Math.random(), color: Math.random() < 0.5 ? "#fff3b0" : "#9bf6ff",
+          gravity: 600, world: true,
+        });
+      }
+    }
+  }
+
+  /** A falling drone hits the street: it breaks open in a shower of sparks and parts. */
+  private crashDrone(w: DroneWreck): void {
+    this.shake = Math.max(this.shake, 6);
+    for (let i = 0; i < 22; i++) {
+      const a = -Math.PI * Math.random();
+      const s = 80 + Math.random() * 220;
+      const part = i % 3 === 0;
+      this.particles.push({
+        x: w.x, y: w.y - 8, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 0.4 + Math.random() * 0.5, maxLife: 0.9, size: part ? 2 + Math.random() * 2 : 1.2 + Math.random() * 1.3,
+        color: part ? (Math.random() < 0.5 ? "#2d6a4f" : "#adb5bd") : Math.random() < 0.6 ? "#fff3b0" : "#9bf6ff",
+        gravity: 800, world: true,
+      });
+    }
+    this.floaters.push({ x: w.x, y: w.y - 60, text: "BIRDS AREN'T REAL!", color: "#9bf6ff", size: 22, life: 1.6, maxLife: 1.6 });
+    this.events.push({ type: "droneCrashed" });
+  }
+
   /** Returns true if the poop hit a pigeon. */
   private poopHitsPigeon(p: Poop): boolean {
     for (const l of this.powerLines) {
       for (const pg of l.pigeons) {
-        if (pg.flyer) continue;
+        if (pg.flyer || pg.wreck) continue;
         const pos = pigeonPos(l, pg);
         const dx = p.x - pos.x;
         const dy = p.y - (pos.y - PIGEON_R);
         const reach = p.r + PIGEON_R;
         if (dx * dx + dy * dy >= reach * reach) continue;
-        pg.flyer = { x: pos.x, y: pos.y, vx: 40 + Math.random() * 80, vy: -140 };
-        for (const other of l.pigeons) if (other !== pg && other.span === pg.span && !other.flyer) other.startle = 0.35;
+        if (Math.random() < config.droneChance) {
+          const spin = (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4);
+          pg.wreck = { x: pos.x, y: pos.y, vx: 20 + Math.random() * 40, vy: -120, rot: 0, spin, landed: -1 };
+          this.events.push({ type: "droneDown" });
+        } else {
+          pg.flyer = { x: pos.x, y: pos.y, vx: 40 + Math.random() * 80, vy: -140 };
+        }
+        for (const other of l.pigeons) if (other !== pg && other.span === pg.span && !other.flyer && !other.wreck) other.startle = 0.35;
         this.combo++;
         this.bestCombo = Math.max(this.bestCombo, this.combo);
         this.targetsHit++;
@@ -2283,7 +2361,7 @@ export class Game {
     // Sitting pigeons get knocked off their wire (no points for the kid).
     for (const l of this.powerLines) {
       for (const pg of l.pigeons) {
-        if (pg.flyer) continue;
+        if (pg.flyer || pg.wreck) continue;
         const pos = pigeonPos(l, pg);
         const reach = PEBBLE_R + PIGEON_R;
         if ((pos.x - p.x) ** 2 + (pos.y - PIGEON_R - p.y) ** 2 >= reach * reach) continue;

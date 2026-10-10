@@ -31,6 +31,7 @@ import {
   type Jelly,
   type Obstacle,
   type Pebble,
+  type DroneWreck,
   type Pigeon,
   type PowerLine,
   type Splat,
@@ -877,9 +878,17 @@ export class Renderer {
   private drawPigeon(l: PowerLine, p: Pigeon, time: number): void {
     const ctx = this.ctx;
     const f = p.flyer;
+    const w = p.wreck;
+    if (w && w.landed >= 0) {
+      if (w.x > -60 && w.x < this.width + 60) drawDroneWreck(ctx, w, p.seed, p.facing, time);
+      return;
+    }
     let x: number;
     let y: number;
-    if (f) {
+    if (w) {
+      x = w.x;
+      y = w.y;
+    } else if (f) {
       if (f.y < -40 || f.x < -40 || f.x > this.width + 40) return;
       x = f.x;
       y = f.y;
@@ -891,10 +900,16 @@ export class Renderer {
     ctx.translate(x, y);
     ctx.scale(PIGEON_SCALE * (f ? 1 : p.facing), PIGEON_SCALE);
     if (f) ctx.rotate(-0.35);
+    if (w) {
+      // Tumbling about its middle.
+      ctx.translate(0, -12);
+      ctx.rotate(w.rot);
+      ctx.translate(0, 12);
+    }
     ctx.lineWidth = 2;
     ctx.strokeStyle = OUTLINE;
 
-    if (!f) {
+    if (!f && !w) {
       // Feet gripping the wire
       ctx.strokeStyle = "#e07a5f";
       ctx.beginPath();
@@ -951,10 +966,26 @@ export class Renderer {
     ctx.lineTo(hx + 4, hy + 2);
     ctx.closePath();
     ctx.fill();
-    if (f) {
+    if (w) {
+      // Its cover's cracked: wires spill from the belly and the eye is a red LED.
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-6, -19);
+      ctx.lineTo(-3, -14);
+      ctx.lineTo(-6, -10);
+      ctx.lineTo(-2, -5);
+      ctx.stroke();
+      drawLooseWires(ctx, -3, -6, p.seed, time, 0.6);
+      drawSplat(ctx, 2, -14, 6, p.seed, 1);
+      drawLedEye(ctx, hx + 1.5, hy - 1.5, 1);
+    } else if (f) {
       drawX(ctx, hx + 1, hy - 1, 2.2);
       // Splattered
       drawSplat(ctx, -2, -16, 7, p.seed, 1);
+    } else if ((time * 0.6 + p.seed) % 7 < 0.12) {
+      // Now and then the eye glints red. Nobody notices.
+      drawLedEye(ctx, hx + 1.5, hy - 1.5, 0.7);
     } else {
       ctx.fillStyle = "#ff7b00";
       ctx.beginPath();
@@ -2755,6 +2786,198 @@ function drawParachutist(ctx: CanvasRenderingContext2D, t: Target, time: number)
   } else ctx.fill();
   ctx.restore();
   ctx.lineCap = "butt";
+}
+
+/** A drone's eye: a red LED with a glow. */
+function drawLedEye(ctx: CanvasRenderingContext2D, x: number, y: number, glow: number): void {
+  ctx.fillStyle = `rgba(255,45,45,${0.35 * glow})`;
+  ctx.beginPath();
+  ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ff2d2d";
+  ctx.beginPath();
+  ctx.arc(x, y, 1.9, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+const WIRE_COLORS = ["#e63946", "#ffd166", "#3a86ff", "#06d6a0"];
+
+/** Coloured wires curling out of a broken drone from (x, y), with bare copper ends that spark. */
+function drawLooseWires(ctx: CanvasRenderingContext2D, x: number, y: number, seed: number, time: number, sparks: number): void {
+  ctx.save();
+  ctx.lineCap = "round";
+  for (let i = 0; i < WIRE_COLORS.length; i++) {
+    const r = Math.sin(seed * 7.3 + i * 12.9) * 0.5 + 0.5;
+    const a = -Math.PI * (0.15 + 0.7 * (i + r * 0.8) / WIRE_COLORS.length);
+    const len = 9 + r * 8;
+    const ex = x + Math.cos(a) * len;
+    const ey = y + Math.sin(a) * len;
+    const wob = Math.sin(time * 3 + i) * 1.5;
+    ctx.strokeStyle = WIRE_COLORS[i];
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + Math.cos(a + 0.9) * len * 0.6, y + Math.sin(a + 0.9) * len * 0.6 + wob, ex, ey);
+    ctx.stroke();
+    // Bare copper tip
+    ctx.strokeStyle = "#e09f3e";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex + Math.cos(a) * 2.5, ey + Math.sin(a) * 2.5);
+    ctx.stroke();
+    if (Math.sin(time * 23 + seed + i * 2.1) > 1 - sparks * 0.25) {
+      // Spark: a little yellow burst
+      const sx = ex + Math.cos(a) * 3;
+      const sy = ey + Math.sin(a) * 3;
+      ctx.strokeStyle = "#fff3b0";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let k = 0; k < 4; k++) {
+        const b = (k / 4) * Math.PI + time * 9;
+        ctx.moveTo(sx - Math.cos(b) * 3, sy - Math.sin(b) * 3);
+        ctx.lineTo(sx + Math.cos(b) * 3, sy + Math.sin(b) * 3);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** Jagged break across a drone's body, top to bottom (pigeon space). */
+const DRONE_BREAK: [number, number][] = [[1, -23], [-2, -19], [2, -15], [-1, -11], [2, -7], [0, -2]];
+
+/** Clips to one side of the break: the tail half (-1) or the head half (1). */
+function clipDroneHalf(ctx: CanvasRenderingContext2D, side: 1 | -1): void {
+  ctx.beginPath();
+  ctx.moveTo(side * 40, -40);
+  for (const [bx, by] of DRONE_BREAK) ctx.lineTo(bx, by);
+  ctx.lineTo(0, 4);
+  ctx.lineTo(side * 40, 4);
+  ctx.closePath();
+  ctx.clip();
+}
+
+/** The open break: circuitry inside a metal shell. */
+function drawDroneInnards(ctx: CanvasRenderingContext2D, side: 1 | -1, seed: number): void {
+  ctx.fillStyle = "#343a40";
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 3.5, 7.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // A sliver of green circuit board with solder dots
+  ctx.fillStyle = "#2d6a4f";
+  ctx.fillRect(-1.5 + side, -17, 3, 9);
+  ctx.fillStyle = "#e9c46a";
+  for (let i = 0; i < 3; i++) ctx.fillRect(-0.5 + side, -15.5 + i * 3 + (seed % 1), 1, 1);
+  // The torn edge, metallic
+  ctx.strokeStyle = "#adb5bd";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  DRONE_BREAK.forEach(([bx, by], i) => (i ? ctx.lineTo(bx, by) : ctx.moveTo(bx, by)));
+  ctx.stroke();
+}
+
+/** A pigeon drone broken in two on the street: the halves apart, wires spilling out, its eye still blinking. */
+function drawDroneWreck(ctx: CanvasRenderingContext2D, w: DroneWreck, seed: number, facing: 1 | -1, time: number): void {
+  ctx.save();
+  ctx.translate(w.x, w.y);
+  // A bit bigger than a live pigeon, so the guts read at a glance.
+  ctx.scale(PIGEON_SCALE * 1.3 * facing, PIGEON_SCALE * 1.3);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = OUTLINE;
+  // Smoke curling up from the break
+  for (let i = 0; i < 3; i++) {
+    const k = (time * 0.6 + i / 3 + seed) % 1;
+    ctx.fillStyle = `rgba(108,117,125,${0.35 * (1 - k)})`;
+    ctx.beginPath();
+    ctx.arc(Math.sin(k * 5 + i) * 4, -10 - k * 34, 3 + k * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Tail half, on its belly, rocked back from the break
+  ctx.save();
+  ctx.translate(-5, 0);
+  ctx.rotate(-0.18);
+  ctx.save();
+  clipDroneHalf(ctx, -1);
+  ctx.fillStyle = "#5c6370";
+  ctx.beginPath();
+  ctx.moveTo(-8, -12);
+  ctx.lineTo(-19, -9);
+  ctx.lineTo(-17, -4);
+  ctx.lineTo(-6, -8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#9aa3ad";
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#7d8691";
+  ctx.beginPath();
+  ctx.ellipse(-5, -14, 8, 4.5, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  drawDroneInnards(ctx, -1, seed);
+  ctx.restore();
+  drawSplat(ctx, -6, -15, 5, seed, 1);
+  ctx.restore();
+
+  // Head half, nosed over forward onto its beak
+  ctx.save();
+  ctx.translate(6, 0);
+  ctx.rotate(0.45);
+  ctx.save();
+  clipDroneHalf(ctx, 1);
+  ctx.fillStyle = "#9aa3ad";
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  drawDroneInnards(ctx, 1, seed);
+  ctx.restore();
+  ctx.fillStyle = "#6a994e";
+  ctx.beginPath();
+  ctx.ellipse(7, -16, 4.5, 4, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8a92a0";
+  ctx.beginPath();
+  ctx.arc(10, -20, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#e9c46a";
+  ctx.beginPath();
+  ctx.moveTo(14, -21);
+  ctx.lineTo(19, -19);
+  ctx.lineTo(14, -18);
+  ctx.closePath();
+  ctx.fill();
+  // A bent antenna popped out of its head
+  ctx.strokeStyle = "#adb5bd";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(9, -25);
+  ctx.lineTo(7, -31);
+  ctx.lineTo(11, -35);
+  ctx.stroke();
+  ctx.fillStyle = "#e63946";
+  ctx.beginPath();
+  ctx.arc(11, -35, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  // Still recording.
+  if (Math.sin(time * 6 + seed) > -0.3) drawLedEye(ctx, 11.5, -21.5, 1);
+  else {
+    ctx.fillStyle = "#6a040f";
+    ctx.beginPath();
+    ctx.arc(11.5, -21.5, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Wires spilling across the gap between the halves
+  drawLooseWires(ctx, 0, -10, seed, time, 1);
+  ctx.restore();
 }
 
 function drawX(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
