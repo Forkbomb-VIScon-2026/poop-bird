@@ -126,7 +126,7 @@ export interface Rect {
 }
 
 /** "none": open water down to the sea floor (only under an anchor). */
-export type BottomKind = "billboard" | "building" | "tower" | "church" | "coral" | "rock" | "none";
+export type BottomKind = "billboard" | "building" | "tower" | "church" | "coral" | "rock" | "wreck" | "none";
 
 export interface Splat {
   dx: number;
@@ -624,6 +624,8 @@ const PERSON_COLORS = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#6c5ce7", "#fd79a8", "#
 const BUILDING_COLORS = ["#c8553d", "#588b8b", "#8e7dbe", "#d4a373", "#6d8a96", "#b56576"];
 const CORAL_COLORS = ["#ff7f6e", "#ff9f43", "#f368e0", "#ee5a6f", "#ffb86b"];
 const ROCK_COLORS = ["#6b7b8c", "#7d6e63", "#5f6f7a"];
+/** Waterlogged timber, greyed and greened by the years. */
+const WRECK_COLORS = ["#8a6440", "#7b5b3a", "#74604a"];
 const JELLY_HUES = [320, 285, 200, 340];
 
 export type GamePhase = "playing" | "dying" | "over";
@@ -1996,7 +1998,7 @@ export class Game {
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnShore();
       else if (ocean && this.anglerDue(before)) extra = this.spawnAngler();
-      else if (ocean) this.spawnOceanObstacle();
+      else if (ocean) extra = this.spawnOceanObstacle();
       else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();
       else if (balloon) extra = this.spawnBalloon();
@@ -2050,9 +2052,11 @@ export class Game {
   /**
    * Coral or a rock from the sea floor, or a boat whose anchor hangs down from
    * the surface: over coral or a rock (a gap between them), or over open water
-   * (dive under it).
+   * (dive under it). Now and then the sea floor holds an old shipwreck
+   * instead: a long, low hull with one broken mast. Returns the extra room a
+   * wreck's long hull needs before the next obstacle.
    */
-  private spawnOceanObstacle(): void {
+  private spawnOceanObstacle(): number {
     const gap = ramp(config.oceanGap, config.oceanGapMin, this.difficulty);
     // Not the last one: it can still be on screen when the fish leaps out, and
     // its boat would vanish from the harbour as the stage switches. Nor while a
@@ -2061,18 +2065,28 @@ export class Game {
     const last = this.stageObstacles >= Math.round(config.oceanObstacles) - 1;
     const anchor = !last && !this.angler && Math.random() < config.oceanAnchorChance;
     const open = anchor && Math.random() < config.oceanAnchorOpenChance;
+    const wreck = !open && Math.random() < config.oceanWreckChance;
     // The boat, the shortest chain and the anchor itself all sit above the gap.
-    const center = anchor
-      ? this.pickGapCenter(gap, ANCHOR_TOP_MIN, 10, config.oceanGapJump, open ? 0 : 40)
-      : this.pickGapCenter(gap, SURFACE_Y, 40, config.oceanGapJump);
-    const bottom: BottomKind = open ? "none" : pick(["coral", "coral", "rock"]);
-    const w = bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    let top = anchor ? ANCHOR_TOP_MIN : SURFACE_Y;
+    let margin = anchor ? 10 : 40;
+    let bottomMargin = open ? 0 : 40;
+    if (wreck) {
+      // The gap's bottom is the broken mast's tip: low, so the wreck is easy to clear.
+      top = Math.max(top + margin, GROUND_Y - WRECK_HULL_H - WRECK_MAST_MAX - gap);
+      margin = 0;
+      bottomMargin = WRECK_HULL_H + WRECK_MAST_MIN;
+    }
+    const center = this.pickGapCenter(gap, top, margin, config.oceanGapJump, bottomMargin);
+    const bottom: BottomKind = open ? "none" : wreck ? "wreck" : pick(["coral", "coral", "rock"]);
+    const w = bottom === "wreck" ? 210 + Math.random() * 50 : bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    const colors = bottom === "wreck" ? WRECK_COLORS : bottom === "rock" ? ROCK_COLORS : CORAL_COLORS;
     this.obstacles.push({
       x: this.width + 40, w, gapTop: center - gap / 2,
       gapBottom: open ? GROUND_Y : center + gap / 2,
-      bottom, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
+      bottom, color: pick(colors), seed: Math.random() * 1000,
       passed: false, splats: [], tabloid: null, anchor,
     });
+    return bottom === "wreck" ? w - 90 : 0;
   }
 
   /** The stage ends at the waterfront: the quay's edge (city) or the far quay (ocean) scrolls in. */
@@ -3433,6 +3447,24 @@ export function churchGeometry(o: Obstacle): { cx: number; towerTop: number; nav
   return { cx: o.x + o.w / 2, towerTop, naveTop: Math.max(towerTop + 40, GROUND_Y - 150) };
 }
 
+/** A shipwreck's hull: how high its deck stands above the sea floor. */
+export const WRECK_HULL_H = 62;
+/** Its broken mast's height above the deck (the mast's tip is the gap's bottom edge). */
+export const WRECK_MAST_MIN = 24;
+export const WRECK_MAST_MAX = 96;
+/** The hull's bow and stern curve in: this much of each end doesn't count for collisions. */
+const WRECK_END_INSET = 18;
+export const WRECK_MAST_W = 12;
+
+/**
+ * A shipwreck's layout: the deck height, which way the bow points (+1: right),
+ * and the mast's centre, set back from the middle toward the stern.
+ */
+export function wreckGeometry(o: Obstacle): { deck: number; facing: 1 | -1; mastX: number } {
+  const facing = Math.floor(o.seed * 7) % 2 === 0 ? 1 : -1;
+  return { deck: GROUND_Y - WRECK_HULL_H, facing, mastX: o.x + o.w / 2 - facing * o.w * 0.14 };
+}
+
 /** The couple stands this far left of the church. */
 const WEDDING_COUPLE_DX = 105;
 
@@ -3504,6 +3536,12 @@ function bottomRects(o: Obstacle): Rect[] {
     rects.push({ x: cx - 20, y: o.gapBottom + CHURCH_SPIRE_H / 2, w: 40, h: CHURCH_SPIRE_H / 2 });
     rects.push({ x: cx - CHURCH_TOWER_W / 2, y: towerTop, w: CHURCH_TOWER_W, h: GROUND_Y - towerTop });
     rects.push({ x: o.x, y: naveTop - 14, w: o.w, h: GROUND_Y - naveTop + 14 });
+    return rects;
+  }
+  if (o.bottom === "wreck") {
+    const { deck, mastX } = wreckGeometry(o);
+    rects.push({ x: o.x + WRECK_END_INSET, y: deck, w: o.w - WRECK_END_INSET * 2, h: GROUND_Y - deck });
+    rects.push({ x: mastX - WRECK_MAST_W / 2, y: o.gapBottom, w: WRECK_MAST_W, h: deck - o.gapBottom });
     return rects;
   }
   // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).
