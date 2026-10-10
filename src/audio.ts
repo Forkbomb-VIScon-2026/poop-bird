@@ -7,7 +7,67 @@ export class Sound {
   private organWave: PeriodicWave | null = null;
   private groan: { osc: OscillatorNode; osc2: OscillatorNode; lfo: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
   private burble: { src: AudioBufferSourceNode; blub: OscillatorNode; lfo: OscillatorNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
+  private screamBuffer: AudioBuffer | null = null;
+  private screamVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+  private screamLoading = false;
+  private screamStarted = 0;
   muted = false;
+
+  /** Load the recorded crescendo after the browser's first audio gesture. */
+  private loadScream(): void {
+    if (!this.ctx || this.screamLoading || this.screamBuffer) return;
+    this.screamLoading = true;
+    void fetch(`${import.meta.env.BASE_URL}sounds/strain-scream.mp3`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.arrayBuffer();
+      })
+      .then((data) => this.ctx?.decodeAudioData(data))
+      .then((buffer) => { if (buffer) this.screamBuffer = buffer; })
+      .catch((err: unknown) => console.warn("[audio] scream recording unavailable; using synth", err))
+      .finally(() => { this.screamLoading = false; });
+  }
+
+  private stopScream(fade = 0.08): void {
+    if (!this.ctx || !this.screamVoice) return;
+    const { source, gain } = this.screamVoice;
+    const t = this.ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setTargetAtTime(0, t, Math.max(0.005, fade / 3));
+    source.stop(t + fade + 0.02);
+    this.screamVoice = null;
+  }
+
+  /** A short strain only plays the start; sustained strain climbs into the scream. */
+  private setRecordedGroan(charge: number): boolean {
+    const ctx = this.ctx;
+    const buffer = this.screamBuffer;
+    if (!ctx || !this.master || !buffer) return false;
+    if (charge <= 0) {
+      this.stopScream();
+      return true;
+    }
+    if (!this.screamVoice) {
+      const source = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      source.buffer = buffer;
+      source.connect(gain).connect(this.master);
+      gain.gain.value = 0;
+      source.start();
+      source.onended = () => {
+        if (this.screamVoice?.source === source) this.screamVoice = null;
+      };
+      this.screamVoice = { source, gain };
+      this.screamStarted = ctx.currentTime;
+    }
+    const { source, gain } = this.screamVoice;
+    // Accelerate the recorded crescendo to roughly match the charge meter.
+    // Let the tail run at high charge, but never loop a finished scream.
+    source.playbackRate.setTargetAtTime(1.1 + charge * 1.5, ctx.currentTime, 0.08);
+    gain.gain.setTargetAtTime(0.1 + charge * 0.55, ctx.currentTime, 0.06);
+    return true;
+  }
+
 
   /** Must be called from a user gesture (browsers block autoplay). */
   unlock(): void {
@@ -19,6 +79,7 @@ export class Sound {
         this.master.gain.value = this.muted ? 0 : 0.6;
         this.master.connect(this.ctx.destination);
         this.noiseBuf = this.makeNoise(2);
+        this.loadScream();
       }
       if (this.ctx.state === "suspended") void this.ctx.resume();
     } catch (err) {
@@ -57,6 +118,18 @@ export class Sound {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
     const t = ctx.currentTime;
+    if (this.setRecordedGroan(charge)) {
+      // Fade out any existing synthetic groan when the recording is ready.
+      if (this.groan) {
+        const g = this.groan;
+        g.gain.gain.setTargetAtTime(0, t, 0.02);
+        g.osc.stop(t + 0.15);
+        g.osc2.stop(t + 0.15);
+        g.lfo.stop(t + 0.15);
+        this.groan = null;
+      }
+      return;
+    }
     if (charge <= 0) {
       if (this.groan) {
         const g = this.groan;
