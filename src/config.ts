@@ -114,7 +114,8 @@ export const CONFIG_SPEC = {
   },
 
   // --- Power lines ---------------------------------------------------------
-  powerLineChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Power lines", label: "Chance", hint: "chance a city obstacle is a power line instead of a building (from Progression → Power lines from city)" },
+  powerLineChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Power lines", label: "Chance", hint: "chance a city obstacle is a power line instead of a building" },
+  powerLineAudioRange: { value: 400, min: 100, max: 1000, step: 25, group: "Power lines", label: "Electrical hum range", hint: "px distance from bird to wire at which power-line hum starts" },
   powerLineSpan: { value: 340, min: 150, max: 700, step: 10, group: "Power lines", label: "Pole spacing", hint: "px between poles" },
   powerLineSag: { value: 36, min: 0, max: 120, step: 2, group: "Power lines", label: "Wire sag", hint: "px a wire hangs down mid-span (±30%)" },
   powerLineWireGap: { value: 130, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (start)", hint: "px between stacked wires, in the first city with power lines" },

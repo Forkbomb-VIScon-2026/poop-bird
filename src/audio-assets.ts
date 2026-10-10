@@ -12,6 +12,7 @@ export const SOUND_NAMES = [
   "poop_large",
   "accident",
   "zap",
+  "power_line",
   "balloon_pop",
   "chute_open",
   "basket_landed",

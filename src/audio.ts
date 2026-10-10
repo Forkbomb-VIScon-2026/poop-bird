@@ -11,6 +11,7 @@ export class Sound {
   private readonly buffers = new Map<SoundName, AudioBuffer>();
   private readonly active = new Map<SoundName, ActiveSound>();
   private readonly lastPlayed = new Map<SoundName, number>();
+  private powerLine: ActiveSound | null = null;
   muted = false;
 
   /** A real asset takes priority; otherwise use its named bell placeholder. */
@@ -111,6 +112,32 @@ export class Sound {
 
   setGroan(charge: number, _stressed: boolean): void { this.sustain("groan", charge); }
   setBurble(level: number): void { this.sustain("burble", level); }
+  /** Continuous electrical hum; proximity is normalized to 0..1. */
+  setPowerLineProximity(proximity: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const level = Math.max(0, Math.min(1, proximity));
+    if (level === 0) {
+      if (this.powerLine) {
+        const playing = this.powerLine;
+        playing.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.035);
+        playing.source.stop(ctx.currentTime + 0.25);
+        this.powerLine = null;
+      }
+      return;
+    }
+    if (!this.powerLine) {
+      const started = this.play("power_line", 0);
+      if (!started) return;
+      started.source.loop = true;
+      this.powerLine = started;
+      started.source.onended = () => {
+        if (this.powerLine === started) this.powerLine = null;
+      };
+    }
+    // Quadratic falloff leaves the hum quiet until the bird is near a wire.
+    this.powerLine.gain.gain.setTargetAtTime(level * level * 0.55, ctx.currentTime, 0.075);
+  }
   splash(): void { this.play("splash"); }
   spike(): void { this.play("spike"); }
   jellyPop(_combo: number): void { this.play("jelly_pop"); }
