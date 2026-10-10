@@ -6,8 +6,8 @@ FROM mirror.gcr.io/library/node:24-alpine
 WORKDIR /app
 # package.json only for "type": "module"
 COPY package.json ./
-COPY src/session.ts src/session.ts
-COPY collector/server.ts collector/server.ts
+COPY src/session.ts src/leaderboard.ts src/
+COPY collector/server.ts collector/http.ts collector/leaderboard.ts collector/
 # A named volume mounted here takes over this directory's owner on first use.
 RUN mkdir /data && chown node:node /data
 USER node

@@ -2,8 +2,9 @@
 # so put this behind HTTPS (a reverse proxy, or change the site address to a
 # domain and let Caddy get a certificate).
 :8080 {
-	# Face dataset uploads and downloads go to the collector container
-	# (collector/server.ts, reachable as "collector" on the shared network).
+	# Face dataset uploads and downloads, and the leaderboard, go to the
+	# collector container (collector/server.ts, reachable as "collector" on
+	# the shared network).
 	handle /api/* {
 		request_body {
 			max_size 40MB

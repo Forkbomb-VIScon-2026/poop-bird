@@ -67,19 +67,9 @@ export function saveSeenTutorials(seen: ReadonlySet<Tutorial>): void {
   else storageSet(TUTORIALS_KEY, JSON.stringify([...seen]));
 }
 
-// --- Best score & Hall of Fame ----------------------------------------------
+// --- Best score ------------------------------------------------------------------
 
 const BEST_KEY = "poopbird.best.v1";
-const HOF_KEY = "poopbird.halloffame.v1";
-export const HALL_OF_FAME_SIZE = 5;
-
-export interface HallOfFameEntry {
-  name: string;
-  score: number;
-  date: string; // ISO
-  targets: number;
-  snapshot?: string; // JPEG data URL, never leaves the device
-}
 
 export function loadBest(): number {
   const v = Number(storageGet(BEST_KEY));
@@ -90,42 +80,32 @@ export function saveBest(score: number): void {
   storageSet(BEST_KEY, String(Math.floor(score)));
 }
 
-export function loadHallOfFame(): HallOfFameEntry[] {
-  const raw = storageGet(HOF_KEY);
-  if (!raw) return [];
+// The old Hall of Fame (top 5 on this device, with face snapshots) gave way to
+// the online leaderboard. Its faces shouldn't linger unseen in storage.
+storageRemove("poopbird.halloffame.v1");
+
+// --- Leaderboard: runs this browser submitted ------------------------------------
+
+const LEADERBOARD_RUNS_KEY = "poopbird.leaderboardRuns.v1";
+
+/** Run id → its delete key, for the runs submitted from this browser (they get a remove button). */
+export function loadLeaderboardKeys(): Record<string, string> {
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (e): e is HallOfFameEntry =>
-          typeof e === "object" && e !== null && typeof e.score === "number" && typeof e.name === "string",
-      )
-      .sort((a, b) => b.score - a.score)
-      .slice(0, HALL_OF_FAME_SIZE);
+    const parsed: unknown = JSON.parse(storageGet(LEADERBOARD_RUNS_KEY) ?? "{}");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === "string"));
   } catch {
-    return [];
+    return {};
   }
 }
 
-export function qualifiesForHallOfFame(score: number, list = loadHallOfFame()): boolean {
-  if (score <= 0) return false;
-  return list.length < HALL_OF_FAME_SIZE || score > list[list.length - 1].score;
+export function saveLeaderboardKey(id: string, deleteKey: string): void {
+  storageSet(LEADERBOARD_RUNS_KEY, JSON.stringify({ ...loadLeaderboardKeys(), [id]: deleteKey }));
 }
 
-/**
- * Inserts the entry and returns the new list. If storage is full it retries
- * without snapshots; `saved` is false if nothing could be persisted.
- */
-export function addToHallOfFame(entry: HallOfFameEntry): { list: HallOfFameEntry[]; saved: boolean } {
-  const list = [...loadHallOfFame(), entry].sort((a, b) => b.score - a.score).slice(0, HALL_OF_FAME_SIZE);
-  if (storageSet(HOF_KEY, JSON.stringify(list))) return { list, saved: true };
-  // Probably quota: retry without images.
-  const slim = list.map(({ snapshot: _snapshot, ...rest }) => rest);
-  if (storageSet(HOF_KEY, JSON.stringify(slim))) return { list: slim, saved: true };
-  return { list, saved: false };
+export function forgetLeaderboardKey(id: string): void {
+  const keys = loadLeaderboardKeys();
+  delete keys[id];
+  storageSet(LEADERBOARD_RUNS_KEY, JSON.stringify(keys));
 }
 
-export function clearHallOfFame(): void {
-  storageRemove(HOF_KEY);
-}

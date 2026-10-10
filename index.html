@@ -96,8 +96,20 @@
           <div class="start-play">
             <button id="btn-face" class="btn primary big" data-default>😣 Play</button>
             <button id="btn-keyboard" class="btn icon" data-keys="K" aria-label="Play without the camera" title="Play without the camera"><svg class="kbd-only kbd-icon" viewBox="0 0 40 26" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="23" rx="4" fill="#fff" stroke="currentColor" stroke-width="3" /><g fill="currentColor"><rect x="7" y="7" width="4" height="4" rx="1" /><rect x="14" y="7" width="4" height="4" rx="1" /><rect x="21" y="7" width="4" height="4" rx="1" /><rect x="28" y="7" width="4" height="4" rx="1" /><rect x="11" y="15" width="18" height="4" rx="1" /></g></svg><span class="touch-only">👆</span></button>
+            <button id="btn-leaderboard" class="btn icon" data-keys="L" aria-label="Leaderboard" title="Leaderboard">🏆</button>
           </div>
           <label class="opt light" title="Show tips, like how to swim in the ocean"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here</label>
+        </div>
+      </section>
+
+      <!-- The online leaderboard (start screen's 🏆), over the demo. -->
+      <section id="screen-leaderboard" class="screen hidden">
+        <div class="card wide">
+          <h2>🏆 Leaderboard</h2>
+          <div id="lb-full" class="lb"></div>
+          <div class="buttons">
+            <button id="btn-lb-back" class="btn primary" data-default data-keys="Escape">Back</button>
+          </div>
         </div>
       </section>
 
@@ -235,22 +247,24 @@
             <div id="go-snapshot" class="go-snapshot hidden">
               <div class="go-snapshot-title">Your finest strain</div>
               <img id="go-snapshot-img" alt="Your strain face at peak strain" />
+              <div class="go-strain" title="How strained your face looked, 0–100: the leaderboard ranks faces by this">Strainedness <b id="go-strain">0</b></div>
               <button id="btn-download" class="btn small">⬇️ Download</button>
-              <div class="privacy small">Stays on this device.</div>
+              <div class="privacy small">Stays on this device unless you share it.</div>
             </div>
           </div>
-          <form id="go-hof-form" class="go-hof-form hidden">
-            <label>You made the Hall of Fame! Name:
-              <input id="go-name" maxlength="16" autocomplete="off" placeholder="Anonymous Pooper" />
-            </label>
-            <button type="submit" class="btn small primary">Save</button>
+          <!-- Opt-in: nothing is sent unless the player presses Submit, and the face only with the box ticked. -->
+          <form id="go-lb-form" class="go-lb-form hidden">
+            <input id="go-name" maxlength="16" autocomplete="off" placeholder="Your name" aria-label="Your name" />
+            <label id="go-lb-face-opt" class="opt"><input type="checkbox" id="go-lb-face" /> 📸 with my face</label>
+            <button id="btn-lb-submit" type="submit" class="btn small primary">🏆 Submit to the leaderboard</button>
           </form>
+          <p id="go-lb-status" class="go-lb-status hidden"></p>
           <div class="buttons">
             <button id="btn-again" class="btn primary" data-default data-keys="R">Play again</button>
             <button id="btn-go-calibrate" class="btn" data-shortcut="C">Recalibrate</button>
             <button id="btn-go-menu" class="btn" data-keys="Escape">Menu</button>
           </div>
-          <div id="go-hof" class="hof"></div>
+          <div id="go-lb" class="lb"></div>
         </div>
       </section>
 
