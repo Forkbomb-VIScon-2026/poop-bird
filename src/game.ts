@@ -6,6 +6,10 @@
 // ends each stage; flying through it starts a StageTransition (splash +
 // transform) during which the world is frozen. In the ocean the bird is a
 // pufferfish driven by `puffInput` instead of `straining`.
+//
+// In the city, some obstacle slots become power lines instead of buildings:
+// poles with sagging wires. Touching a wire zaps the bird; pigeons sitting on
+// the wires are targets.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -87,6 +91,36 @@ export interface Jelly {
   hue: number;
 }
 
+/**
+ * A run of wooden poles (city) with wires sagging between them. Poles stand
+ * `span` px apart; every wire hangs from all poles at the same height.
+ */
+export interface PowerLine {
+  /** Screen x of the first pole. */
+  x: number;
+  span: number;
+  poles: number;
+  /** Height of the pole tops (above the top wire). */
+  topY: number;
+  /** Top wire first: attach height at the poles, and the sag of each span. */
+  wires: { y: number; sags: number[] }[];
+  pigeons: Pigeon[];
+  seed: number;
+}
+
+export interface Pigeon {
+  wire: number;
+  span: number;
+  /** 0..1 along the span. */
+  t: number;
+  facing: 1 | -1;
+  seed: number;
+  /** Seconds of a startled hop (a neighbour got hit). */
+  startle: number;
+  /** Set once it's hit: it flies off, splattered (screen space). */
+  flyer: { x: number; y: number; vx: number; vy: number } | null;
+}
+
 export type TargetKind = "car" | "pedestrian" | "statue";
 
 export interface Target {
@@ -158,8 +192,9 @@ export type GameEvent =
   | { type: "release"; charge: number; sweet: boolean }
   | { type: "accident"; message: string }
   | { type: "splat"; big: boolean }
-  | { type: "hit"; points: number; combo: number; kind: TargetKind }
+  | { type: "hit"; points: number; combo: number; kind: TargetKind | "pigeon" }
   | { type: "crash" }
+  | { type: "zap" }
   | { type: "gameover" }
   | { type: "gateEntered"; to: Stage }
   | { type: "transformed" }
@@ -190,6 +225,15 @@ const POP_MESSAGES = [
   "Blub… blub…",
 ];
 
+const ZAP_MESSAGES = [
+  "ZZZAP!",
+  "Shocking!",
+  "Extra crispy",
+  "Fried chicken… almost",
+  "Watt were you thinking?",
+  "Current situation: bad",
+];
+
 const CAR_COLORS = ["#e84a5f", "#2a9df4", "#ffb400", "#5cc96b", "#9b5de5", "#f9844a"];
 const PERSON_COLORS = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#6c5ce7", "#fd79a8", "#00b894"];
 const BUILDING_COLORS = ["#c8553d", "#588b8b", "#8e7dbe", "#d4a373", "#6d8a96", "#b56576"];
@@ -198,6 +242,11 @@ const ROCK_COLORS = ["#6b7b8c", "#7d6e63", "#5f6f7a"];
 const JELLY_HUES = [320, 285, 200, 340];
 
 export type GamePhase = "playing" | "dying" | "over";
+
+/** Wire half-thickness for collisions (the bird's hit radius is added). */
+const WIRE_HIT = 2;
+/** Pigeon hit radius for poops. */
+export const PIGEON_R = 16;
 
 export class Game {
   width = 1000;
@@ -244,6 +293,7 @@ export class Game {
   stageTime = 0;
 
   obstacles: Obstacle[] = [];
+  powerLines: PowerLine[] = [];
   targets: Target[] = [];
   poops: Poop[] = [];
   particles: Particle[] = [];
@@ -261,6 +311,10 @@ export class Game {
   shake = 0;
   message: { text: string; life: number } | null = null;
   dyingTime = 0;
+  /** The run ended on a wire: the bird is drawn charred. */
+  zapped = false;
+  /** Seconds left of the electrocution flash (skeleton flicker). */
+  zapFlash = 0;
 
   /** Distance at which the next obstacle spawns. */
   private nextObstacleAt = 0;
@@ -301,6 +355,7 @@ export class Game {
     this.speed = 0;
     this.stageTime = 0;
     this.obstacles = [];
+    this.powerLines = [];
     this.targets = [];
     this.poops = [];
     this.particles = [];
@@ -317,6 +372,8 @@ export class Game {
     this.shake = 0;
     this.message = null;
     this.dyingTime = 0;
+    this.zapped = false;
+    this.zapFlash = 0;
     this.nextObstacleAt = config.firstObstacleDelay;
     this.targetSpawnAcc = 0.6; // a target shows up early
     this.jellySpawnAcc = 0;
@@ -427,6 +484,7 @@ export class Game {
       this.updateBird(dt);
     }
     this.updateObstacles(dt, speed);
+    this.updatePowerLines(dt, speed);
     this.updateTargets(dt, speed);
     this.updatePoops(dt, speed);
     this.updateJellies(dt, speed);
@@ -550,9 +608,18 @@ export class Game {
       if (this.phase === "playing") this.crash();
     }
     if (this.phase === "playing" && this.hitsObstacle()) this.crash();
+    if (this.phase === "playing" && this.touchesWire()) this.zap();
+    if (this.zapped && Math.random() < dt * 25) {
+      this.particles.push({
+        x: b.x + (Math.random() - 0.5) * 20, y: b.y - 10,
+        vx: (Math.random() - 0.5) * 30, vy: -40 - Math.random() * 40,
+        life: 0.9, maxLife: 0.9, size: 4 + Math.random() * 6, color: "rgba(90,90,90,0.6)",
+        gravity: -40, world: true,
+      });
+    }
   }
 
-  private crash(): void {
+  private crash(cause: "crash" | "zap" = "crash"): void {
     this.phase = "dying";
     this.dyingTime = 0;
     this.shake = 12;
@@ -571,7 +638,7 @@ export class Game {
         gravity: ocean ? -200 : 600, world: false,
       });
     }
-    this.events.push({ type: "crash" });
+    this.events.push({ type: cause });
   }
 
   private hitsObstacle(): boolean {
@@ -581,7 +648,44 @@ export class Game {
       if (o.x > x + 80 || o.x + o.w < x - 80) continue;
       for (const rect of obstacleRects(o)) if (circleRect(x, y, r, rect)) return true;
     }
+    for (const l of this.powerLines) {
+      for (let i = 0; i < l.poles; i++) if (circleRect(x, y, r, poleRect(l, i))) return true;
+    }
     return false;
+  }
+
+  private touchesWire(): boolean {
+    const { x, y } = this.bird;
+    const r = this.hitRadius;
+    for (const l of this.powerLines) {
+      for (let w = 0; w < l.wires.length; w++) {
+        const wire = wireAt(l, w, x);
+        if (!wire) continue;
+        // Distance to the wire, measured perpendicular to its slope.
+        const dist = Math.abs(y - wire.y) / Math.sqrt(1 + wire.slope * wire.slope);
+        if (dist < r + WIRE_HIT) return true;
+      }
+    }
+    return false;
+  }
+
+  private zap(): void {
+    this.crash("zap");
+    this.zapped = true;
+    this.zapFlash = 0.7;
+    this.shake = 16;
+    this.message = { text: pick(ZAP_MESSAGES), life: 2.2 };
+    const b = this.bird;
+    for (let i = 0; i < 36; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 150 + Math.random() * 350;
+      this.particles.push({
+        x: b.x, y: b.y,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 0.25 + Math.random() * 0.35, maxLife: 0.6, size: 2 + Math.random() * 3,
+        color: pick(["#fff", "#fff3b0", "#ffd60a", "#9bf6ff"]), gravity: 300, world: false,
+      });
+    }
   }
 
   // --- pufferfish ----------------------------------------------------------------
@@ -817,6 +921,7 @@ export class Game {
     this.stageObstacles = 0;
     this.gateSpawned = false;
     this.obstacles = [];
+    this.powerLines = [];
     this.targets = [];
     this.poops = [];
     this.decals = [];
@@ -862,6 +967,14 @@ export class Game {
     this.spawnGate();
   }
 
+  /** Debug: spawn a power line right now (city only). */
+  spawnPowerLineNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 150 || o.gate);
+    const length = this.spawnPowerLine();
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + length + config.obstacleSpacingMin);
+  }
+
   // --- obstacles ---------------------------------------------------------------
 
   private updateObstacles(dt: number, speed: number): void {
@@ -885,11 +998,14 @@ export class Game {
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
       const before = Math.round(ocean ? config.oceanObstacles : config.cityObstaclesBeforeGate);
+      // A power line takes up more room: the next obstacle waits until it's past.
+      let extra = 0;
       if (this.stageObstacles >= before) this.spawnGate();
       else if (ocean) this.spawnOceanObstacle();
+      else if (this.stageObstacles > 0 && Math.random() < config.powerLineChance) extra = this.spawnPowerLine();
       else this.spawnObstacle();
       this.stageObstacles++;
-      this.nextObstacleAt = this.distance + (ocean
+      this.nextObstacleAt = this.distance + extra + (ocean
         ? ramp(config.oceanSpacing, config.oceanSpacingMin, this.difficulty)
         : ramp(config.obstacleSpacing, config.obstacleSpacingMin, this.difficulty));
     }
@@ -949,6 +1065,93 @@ export class Game {
       color: ocean ? "#5f6f7a" : "#3d5a80", seed: Math.random() * 1000,
       passed: false, splats: [], gate: ocean ? "city" : "ocean",
     });
+  }
+
+  // --- power lines -------------------------------------------------------------
+
+  /** Spawns a power line just off-screen. Returns its length (first to last pole). */
+  private spawnPowerLine(): number {
+    const d = this.difficulty;
+    const poles = 3 + Math.floor(Math.random() * 3);
+    const span = config.powerLineSpan * (0.9 + Math.random() * 0.2);
+    const r = Math.random();
+    const count = d < 0.25 ? 1 : d < 0.6 ? (r < 0.4 ? 1 : 2) : r < 0.5 ? 2 : 3;
+    // Room to fly over the pole tops and under the lowest wire, even where it
+    // sags most: stacked wires squeeze closer together if they'd go too high.
+    const highestTop = 160;
+    const lowestMax = 370;
+    const gap = count > 1
+      ? Math.min(ramp(config.powerLineWireGap, config.powerLineWireGapMin, d), (lowestMax - highestTop) / (count - 1))
+      : 0;
+    const lowestMin = Math.max(250, highestTop + (count - 1) * gap);
+    const lowest = lowestMin + Math.random() * (lowestMax - lowestMin);
+    const wires = Array.from({ length: count }, (_, i) => ({
+      y: lowest - (count - 1 - i) * gap,
+      sags: Array.from({ length: poles - 1 }, () => config.powerLineSag * (0.7 + Math.random() * 0.6)),
+    }));
+    const line: PowerLine = {
+      x: this.width + 60, span, poles, topY: wires[0].y - 16, wires, pigeons: [], seed: Math.random() * 1000,
+    };
+    // Pigeons, spread out along the spans.
+    for (let s = 0; s < poles - 1; s++) {
+      const n = Math.floor(config.pigeonsPerSpan + Math.random());
+      const taken: number[] = [];
+      for (let k = 0; k < n; k++) {
+        const t = 0.15 + Math.random() * 0.7;
+        if (taken.some((u) => Math.abs(u - t) < 0.12)) continue;
+        taken.push(t);
+        line.pigeons.push({
+          wire: Math.floor(Math.random() * count), span: s, t,
+          facing: Math.random() < 0.5 ? 1 : -1, seed: Math.random() * 1000, startle: 0, flyer: null,
+        });
+      }
+    }
+    this.powerLines.push(line);
+    return span * (poles - 1);
+  }
+
+  private updatePowerLines(dt: number, speed: number): void {
+    for (const l of this.powerLines) {
+      l.x -= speed * dt;
+      for (const p of l.pigeons) {
+        p.startle = Math.max(0, p.startle - dt);
+        const f = p.flyer;
+        if (!f) continue;
+        // Flies off forward and up, flapping harder as it goes.
+        f.vy -= 120 * dt;
+        f.x += (f.vx - speed) * dt;
+        f.y += f.vy * dt;
+      }
+    }
+    this.powerLines = this.powerLines.filter((l) => l.x + l.span * (l.poles - 1) > -80);
+  }
+
+  /** Returns true if the poop hit a pigeon. */
+  private poopHitsPigeon(p: Poop): boolean {
+    for (const l of this.powerLines) {
+      for (const pg of l.pigeons) {
+        if (pg.flyer) continue;
+        const pos = pigeonPos(l, pg);
+        const dx = p.x - pos.x;
+        const dy = p.y - (pos.y - PIGEON_R);
+        const reach = p.r + PIGEON_R;
+        if (dx * dx + dy * dy >= reach * reach) continue;
+        pg.flyer = { x: pos.x, y: pos.y, vx: 40 + Math.random() * 80, vy: -140 };
+        for (const other of l.pigeons) if (other !== pg && other.span === pg.span && !other.flyer) other.startle = 0.35;
+        this.combo++;
+        this.bestCombo = Math.max(this.bestCombo, this.combo);
+        this.targetsHit++;
+        const points = Math.round(config.targetPoints * config.pigeonMultiplier * this.comboMultiplier * (p.big ? 2 : 1));
+        this.bonus += points;
+        const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
+        this.floaters.push({ x: pos.x, y: pos.y - 40, text: label, color: "#ffe14d", size: 26, life: 1.1, maxLife: 1.1 });
+        this.splatParticles(p.x, p.y, p.r, true);
+        this.events.push({ type: "hit", points, combo: this.combo, kind: "pigeon" });
+        this.events.push({ type: "splat", big: p.big });
+        return true;
+      }
+    }
+    return false;
   }
 
   // --- targets -----------------------------------------------------------------
@@ -1032,6 +1235,7 @@ export class Game {
 
   /** Returns true if the poop was consumed. */
   private poopHits(p: Poop): boolean {
+    if (this.poopHitsPigeon(p)) return true;
     // Targets
     for (const t of this.targets) {
       const rect = targetRect(t);
@@ -1116,6 +1320,7 @@ export class Game {
     this.screenSplats = this.screenSplats.filter((s) => s.life > 0);
 
     this.shake = Math.max(0, this.shake - dt * 40);
+    this.zapFlash = Math.max(0, this.zapFlash - dt);
     if (this.message) {
       this.message.life -= dt;
       if (this.message.life <= 0) this.message = null;
@@ -1133,6 +1338,33 @@ export function obstacleRects(o: Obstacle): Rect[] {
   // A gate's top hangs down to the gap.
   if (o.top) rects.push({ x: o.x - 6, y: 0, w: o.w + 12, h: o.gapTop });
   return rects;
+}
+
+export function poleX(l: PowerLine, i: number): number {
+  return l.x + i * l.span;
+}
+
+/** A pole's collision rectangle (also its drawn trunk). */
+export function poleRect(l: PowerLine, i: number): Rect {
+  return { x: poleX(l, i) - 6, y: l.topY, w: 12, h: GROUND_Y - l.topY };
+}
+
+/** Height and slope of wire `w` at screen x, or null outside the line. Spans sag as parabolas. */
+export function wireAt(l: PowerLine, w: number, x: number): { y: number; slope: number } | null {
+  const rel = x - l.x;
+  const last = l.poles - 1;
+  if (rel < 0 || rel > l.span * last) return null;
+  const s = Math.min(last - 1, Math.floor(rel / l.span));
+  const t = (rel - s * l.span) / l.span;
+  const wire = l.wires[w];
+  const sag = wire.sags[s];
+  return { y: wire.y + 4 * sag * t * (1 - t), slope: (4 * sag * (1 - 2 * t)) / l.span };
+}
+
+/** Where a sitting pigeon's feet touch its wire. */
+export function pigeonPos(l: PowerLine, p: Pigeon): { x: number; y: number } {
+  const wire = l.wires[p.wire];
+  return { x: l.x + (p.span + p.t) * l.span, y: wire.y + 4 * wire.sags[p.span] * p.t * (1 - p.t) };
 }
 
 export function targetRect(t: Target): Rect {

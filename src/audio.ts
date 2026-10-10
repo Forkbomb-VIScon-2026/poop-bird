@@ -335,6 +335,32 @@ export class Sound {
     this.noiseBurst(t + 0.25, 0.4, 1200, 0.2, "bandpass");
   }
 
+  /** Electric crackle and buzz for touching a power line. */
+  zap(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const dur = 0.6;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(110, t);
+    osc.frequency.setValueAtTime(95, t + dur * 0.5);
+    // Chopped on and off for the crackle.
+    g.gain.setValueAtTime(0.0001, t);
+    for (let i = 0; i < 14; i++) {
+      const st = t + (i * dur) / 14;
+      g.gain.setValueAtTime(i % 2 ? 0.05 : 0.3, st);
+    }
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(g).connect(this.master);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+    this.noiseBurst(t, 0.18, 5000, 0.35, "highpass");
+    this.noiseBurst(t + 0.2, 0.15, 3500, 0.25, "highpass");
+    this.noiseBurst(t + 0.38, 0.2, 2500, 0.2, "bandpass");
+  }
+
   splat(big = false): void {
     const ctx = this.ctx;
     if (!ctx) return;

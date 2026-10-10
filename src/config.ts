@@ -70,6 +70,15 @@ export const CONFIG_SPEC = {
   difficultyRamp: { value: 6000, min: 500, max: 30000, step: 100, group: "World", label: "Difficulty ramp", hint: "px of distance to reach max difficulty" },
   firstObstacleDelay: { value: 700, min: 0, max: 3000, step: 50, group: "World", label: "First obstacle after", hint: "px" },
 
+  // --- Power lines ---------------------------------------------------------
+  powerLineChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Power lines", label: "Chance", hint: "chance a city obstacle is a power line instead of a building" },
+  powerLineSpan: { value: 340, min: 150, max: 700, step: 10, group: "Power lines", label: "Pole spacing", hint: "px between poles" },
+  powerLineSag: { value: 36, min: 0, max: 120, step: 2, group: "Power lines", label: "Wire sag", hint: "px a wire hangs down mid-span (±30%)" },
+  powerLineWireGap: { value: 130, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (start)", hint: "px between stacked wires" },
+  powerLineWireGapMin: { value: 100, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (hardest)", hint: "px" },
+  pigeonsPerSpan: { value: 1.3, min: 0, max: 4, step: 0.1, group: "Power lines", label: "Pigeons per span", hint: "average pigeons sitting on the wires between two poles" },
+  pigeonMultiplier: { value: 2, min: 0, max: 10, step: 0.5, group: "Power lines", label: "Pigeon points", hint: "× points per hit (× combo)" },
+
   // --- Targets & score -----------------------------------------------------
   poopGravity: { value: 1000, min: 100, max: 3000, step: 50, group: "Targets", label: "Poop gravity", hint: "px/s² (separate from the bird so aiming stays the same)" },
   targetSpawnRate: { value: 0.55, min: 0, max: 3, step: 0.05, group: "Targets", label: "Spawn rate", hint: "targets per second" },
