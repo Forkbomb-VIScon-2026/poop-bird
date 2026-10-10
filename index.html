@@ -135,30 +135,6 @@
           </div>
           <div id="calib-result" class="hidden">
             <p id="calib-result-text"></p>
-            <p id="calib-slow" class="calib-slow hidden">🐢 Face tracking is slow on this device. Playing with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span> may work better.</p>
-            <div class="meter" title="Your live strain">
-              <div class="meter-end" id="meter-relaxed">
-                <svg class="face"><use href="#face-relaxed" /></svg>
-                <span>relaxed</span>
-              </div>
-              <div class="meter-track">
-                <!-- The bird perches on the bar's fill and strains along with the player (main.ts updateMeterBird). -->
-                <canvas id="calib-bird" class="meter-bird" aria-hidden="true"></canvas>
-                <div class="strain-bar big meter-bar">
-                  <div id="calib-strain-fill" class="strain-fill"></div>
-                  <div id="calib-strain-on" class="strain-mark on"></div>
-                  <div id="calib-strain-off" class="strain-mark off"></div>
-                </div>
-              </div>
-              <div class="meter-end" id="meter-strained">
-                <svg class="face"><use href="#face-strained" /></svg>
-                <span>strained</span>
-              </div>
-            </div>
-            <ul class="checks">
-              <li id="check-strain">Strain until the bar turns <b class="accent">red</b></li>
-              <li id="check-relax">Relax until it's <b class="green">green</b></li>
-            </ul>
             <div class="buttons">
               <button id="btn-calib-play" class="btn primary" data-default>Play!</button>
               <button id="btn-calib-retry" class="btn" data-default data-shortcut="C">Recalibrate</button>
@@ -171,13 +147,43 @@
         </div>
       </section>
 
-      <!-- Ready: the bird hovers until the first strain starts the run. -->
+      <!-- Ready: the bird sits on a street lamp to practise. Its first poop takes off and starts the run.
+           In face mode the webcam (#cam, moved into #perch-cam-slot) and a strain gauge sit beside the bird. -->
       <section id="screen-ready" class="screen hidden passthrough">
-        <div class="ready">
-          <svg id="ready-face" class="face ready-face"><use href="#face-strained" /></svg>
+        <div id="perch" class="perch">
+          <!-- One short instruction, with the face it asks for (face mode). -->
+          <div class="perch-text">
+            <div class="perch-line">
+              <svg id="perch-face" class="face perch-face"><use id="perch-face-use" href="#face-strained" /></svg>
+              <div class="ready-text" id="ready-text"></div>
+            </div>
+            <div class="ready-sub" id="ready-sub"></div>
+          </div>
+          <div id="perch-you" class="perch-you">
+            <div class="perch-arrow" id="perch-arrow" aria-hidden="true">
+              <svg viewBox="-4 -4 68 48">
+                <!-- Drawn twice: a thick ink outline, then the gold arrow on top. -->
+                <path d="M56 30 Q34 4 8 18 M4 20 L16 9 M4 20 L18 25" fill="none" stroke="#2b2d42" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M56 30 Q34 4 8 18 M4 20 L16 9 M4 20 L18 25" fill="none" stroke="#ffd166" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>that's you!</span>
+            </div>
+            <div id="perch-cam-slot" class="perch-cam-slot"></div>
+            <div class="gauge" title="How strained your face looks">
+              <svg class="face gauge-face strained"><use href="#face-strained" /></svg>
+              <div class="gauge-bar">
+                <div id="gauge-fill" class="gauge-fill"></div>
+                <div id="gauge-line" class="gauge-line"><span>💩</span></div>
+              </div>
+              <svg class="face gauge-face relaxed"><use href="#face-relaxed" /></svg>
+            </div>
+          </div>
           <kbd id="ready-key" class="ready-key hidden"><span class="kbd-only">Space</span><span class="touch-only">👆 Tap &amp; hold</span></kbd>
-          <div class="ready-text" id="ready-text">Strain to take off!</div>
-          <div class="ready-sub" id="ready-sub">then relax to poop 💩</div>
+          <div id="perch-help" class="perch-help">
+            <span id="perch-help-text" class="perch-help-text"></span>
+            <button id="btn-tune" class="btn small" data-shortcut="C">Tune to my face</button>
+          </div>
+          <p id="perch-slow" class="perch-slow hidden">🐢 Face tracking is slow here. <button id="btn-perch-keyboard" class="btn small ghost light">Play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span></button></p>
         </div>
       </section>
 
