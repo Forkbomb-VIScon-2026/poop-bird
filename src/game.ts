@@ -53,6 +53,10 @@ import {
 export const VIEW_H = 600;
 export const GROUND_Y = 520;
 export const BIRD_RADIUS = 22;
+/** × the target spawn rate in attract mode, so there's always someone to hit. */
+const DEMO_SPAWN_SCALE = 2.2;
+/** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
+const DEMO_MAX_RISE = 300;
 /** Collision radius is a bit smaller than the drawn bird, to feel fair. */
 const BIRD_HIT_RADIUS = 16;
 /** Ocean: the water surface (a soft ceiling). The sea floor is GROUND_Y. */
@@ -683,6 +687,12 @@ export class Game {
 
   events: GameEvent[] = [];
 
+  /**
+   * Start-screen attract mode: the bird flies itself over a city of plain
+   * targets (no buildings or specials) and every poop lands on someone.
+   */
+  demo = false;
+
   constructor(width: number) {
     this.resize(width);
     this.reset();
@@ -694,6 +704,7 @@ export class Game {
   }
 
   reset(): void {
+    this.demo = false;
     this.phase = "playing";
     this.time = 0;
     this.runTime = 0;
@@ -768,6 +779,7 @@ export class Game {
   }
 
   get scrollSpeed(): number {
+    if (this.demo) return config.scrollSpeed;
     return ramp(config.scrollSpeed, config.scrollSpeedMax, this.difficulty);
   }
 
@@ -833,6 +845,57 @@ export class Game {
   /** Fraction (0..1) of the overstrain time used up while at full charge. */
   get overstrainProgress(): number {
     return this.charge.charge >= 1 ? Math.min(1, this.charge.fullHold / Math.max(1e-3, config.overstrainTime)) : 0;
+  }
+
+  /** Resets into the start screen's attract mode (see `demo`). */
+  startDemo(): void {
+    this.reset();
+    this.demo = true;
+  }
+
+  /** One attract-mode step: the autopilot strains and lets go, and steers each poop onto a target. */
+  stepDemo(dt: number): void {
+    this.straining = this.autopilot();
+    this.step(dt);
+    // A long strain would send it to the top of the screen: hop, don't launch.
+    this.bird.vy = Math.max(this.bird.vy, -DEMO_MAX_RISE);
+    for (const p of this.poops) {
+      const aim = this.aim(p.x, p.y, p.vy, p.vx, 700);
+      if (aim) p.vx += (aim.vx - p.vx) * Math.min(1, dt * 10);
+    }
+    // Nobody listens on the start screen.
+    this.events = [];
+  }
+
+  /** Strain while sinking, let go over a target (or before the bird gets too low). */
+  private autopilot(): boolean {
+    const b = this.bird;
+    const c = this.charge.charge;
+    if (c > 0) {
+      const vy = 140 + c * 260 + Math.max(0, b.vy * 0.2); // as in release()
+      const onTarget = c >= 0.3 && this.aim(b.x - 4, b.y + BIRD_RADIUS * 0.8, vy, 0, 120) !== null;
+      return !onTarget && this.charge.fullHold < 0.85 && b.y < 390;
+    }
+    return b.y > 210 && b.vy > 0;
+  }
+
+  /**
+   * The target a poop at (x, y) falling at vy would hit with the least change
+   * to its screen vx, and the vx that gets it there; null if that change is
+   * more than `maxChange`.
+   */
+  private aim(x: number, y: number, vy: number, vx: number, maxChange: number): { target: Target; vx: number } | null {
+    const g = config.poopGravity;
+    let best: { target: Target; vx: number } | null = null;
+    for (const t of this.targets) {
+      const dy = t.y - t.h * 0.5 - y;
+      if (dy <= 0) continue;
+      const time = (-vy + Math.sqrt(vy * vy + 2 * g * dy)) / g;
+      const need = (t.x + (t.speed - this.speed) * time - x) / time;
+      if (Math.abs(need - vx) > maxChange) continue;
+      if (!best || Math.abs(need - vx) < Math.abs(best.vx - vx)) best = { target: t, vx: need };
+    }
+    return best;
   }
 
   /** Menus / countdown: the bird hovers in place and effects keep animating. */
@@ -1023,6 +1086,7 @@ export class Game {
   }
 
   private crash(cause: "crash" | "zap" = "crash"): void {
+    if (this.demo) return;
     this.phase = "dying";
     this.dyingTime = 0;
     this.shake = 12;
@@ -1539,7 +1603,7 @@ export class Game {
       if (!o.passed && o.x + o.w < this.bird.x - BIRD_RADIUS) o.passed = true;
     }
 
-    if (this.phase !== "playing") return;
+    if (this.phase !== "playing" || this.demo) return;
 
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
@@ -2019,10 +2083,11 @@ export class Game {
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
-    this.targetSpawnAcc += dt * config.targetSpawnRate;
+    this.targetSpawnAcc += dt * config.targetSpawnRate * (this.demo ? DEMO_SPAWN_SCALE : 1);
     if (this.targetSpawnAcc >= 1) {
       this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
-      if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
+      if (this.demo) this.spawnTarget();
+      else if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
       else if (this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
       // Nobody wanders through the wedding; the road stays busy.
       else this.spawnTarget(this.weddingAhead ? "car" : undefined);
