@@ -92,11 +92,32 @@ export const CONFIG_SPEC = {
   difficultyRamp: { value: 6000, min: 500, max: 30000, step: 100, group: "World", label: "Difficulty ramp", hint: "px of distance to reach max difficulty" },
   firstObstacleDelay: { value: 700, min: 0, max: 3000, step: 50, group: "World", label: "First obstacle after", hint: "px" },
 
+  // --- Progression ---------------------------------------------------------
+  // Distance drives speed and gaps (above); these step up with each new city
+  // stage instead (1 = the first city, 2 = the city after the first dive, …).
+  cityStagesToHardest: {
+    value: 4, min: 1, max: 10, step: 1, group: "Progression", label: "Hardest from city",
+    hint: "city stage at which tall buildings, wire gaps and kid timing reach their hardest",
+  },
+  tallBuildingChance: {
+    value: 0.08, min: 0, max: 1, step: 0.01, group: "Progression", label: "Tall buildings (start)",
+    hint: "chance a building's gap is in the top 40% of the sky (a tall building) in the first city",
+  },
+  tallBuildingChanceMax: { value: 0.5, min: 0, max: 1, step: 0.01, group: "Progression", label: "Tall buildings (hardest)", hint: "chance" },
+  powerLineFirstCity: {
+    value: 2, min: 1, max: 10, step: 1, group: "Progression", label: "Power lines from city",
+    hint: "first city stage with power lines; one wire there, up to two in the next, two or three after",
+  },
+  kidFirstCity: {
+    value: 2, min: 1, max: 10, step: 1, group: "Progression", label: "Kids from city",
+    hint: "first city stage with slingshot kids; each later city adds a shot (up to Max shots)",
+  },
+
   // --- Power lines ---------------------------------------------------------
-  powerLineChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Power lines", label: "Chance", hint: "chance a city obstacle is a power line instead of a building" },
+  powerLineChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Power lines", label: "Chance", hint: "chance a city obstacle is a power line instead of a building (from Progression → Power lines from city)" },
   powerLineSpan: { value: 340, min: 150, max: 700, step: 10, group: "Power lines", label: "Pole spacing", hint: "px between poles" },
   powerLineSag: { value: 36, min: 0, max: 120, step: 2, group: "Power lines", label: "Wire sag", hint: "px a wire hangs down mid-span (±30%)" },
-  powerLineWireGap: { value: 130, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (start)", hint: "px between stacked wires" },
+  powerLineWireGap: { value: 130, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (start)", hint: "px between stacked wires, in the first city with power lines" },
   powerLineWireGapMin: { value: 100, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (hardest)", hint: "px" },
   pigeonsPerSpan: { value: 1.3, min: 0, max: 4, step: 0.1, group: "Power lines", label: "Pigeons per span", hint: "average pigeons sitting on the wires between two poles" },
   droneChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Power lines", label: "Drone chance", hint: "chance a hit pigeon turns out to be a surveillance drone and crashes to the street" },
@@ -134,13 +155,13 @@ export const CONFIG_SPEC = {
   kidMinGap: { value: 1500, min: 0, max: 10000, step: 50, group: "Slingshot kids", label: "Min gap", hint: "px of distance between kids" },
   kidWalkSpeed: { value: 35, min: 0, max: 200, step: 5, group: "Slingshot kids", label: "Walk speed", hint: "px/s he trots toward the bird before taking aim" },
   kidRange: { value: 560, min: 150, max: 1200, step: 10, group: "Slingshot kids", label: "Aim range", hint: "px ahead of the bird where he plants his feet and aims" },
-  kidWindup: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Slingshot kids", label: "Wind-up (start)", hint: "s of pulling back (the warning) before the shot" },
+  kidWindup: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Slingshot kids", label: "Wind-up (start)", hint: "s of pulling back (the warning) before the shot, in the first city with kids" },
   kidWindupMin: { value: 0.65, min: 0.2, max: 3, step: 0.05, group: "Slingshot kids", label: "Wind-up (hardest)", hint: "s" },
-  kidFlightTime: { value: 0.85, min: 0.2, max: 2, step: 0.05, group: "Slingshot kids", label: "Flight time (start)", hint: "s a pebble takes to reach the bird (time to dodge)" },
+  kidFlightTime: { value: 0.85, min: 0.2, max: 2, step: 0.05, group: "Slingshot kids", label: "Flight time (start)", hint: "s a pebble takes to reach the bird (time to dodge), in the first city with kids" },
   kidFlightTimeMin: { value: 0.65, min: 0.2, max: 2, step: 0.05, group: "Slingshot kids", label: "Flight time (hardest)", hint: "s" },
   kidLead: { value: 0.3, min: 0, max: 1, step: 0.05, group: "Slingshot kids", label: "Lead", hint: "how much he aims ahead of the bird's vertical speed (0 = at the bird)" },
   kidPebbleGravity: { value: 700, min: 0, max: 2000, step: 50, group: "Slingshot kids", label: "Pebble gravity", hint: "px/s² (more = loftier arcs)" },
-  kidShotsMax: { value: 2, min: 1, max: 5, step: 1, group: "Slingshot kids", label: "Max shots", hint: "pebbles per kid at full difficulty (1 at the start)" },
+  kidShotsMax: { value: 2, min: 1, max: 5, step: 1, group: "Slingshot kids", label: "Max shots", hint: "pebbles per kid (1 in the first city with kids, one more each city after)" },
   kidBonkStun: { value: 0.6, min: 0, max: 3, step: 0.05, group: "Slingshot kids", label: "Bonk stun", hint: "s the bird tumbles without push after a hit" },
   kidKnockback: { value: 300, min: 0, max: 1000, step: 10, group: "Slingshot kids", label: "Knockback", hint: "px/s downward speed after a hit" },
   kidMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Disarm points", hint: "× points for splatting him while he can still shoot (× combo)" },

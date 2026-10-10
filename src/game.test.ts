@@ -63,6 +63,7 @@ describe("leaping out", () => {
       expect(game.phase).toBe("playing");
       expect(game.stage).toBe("city");
       expect(game.transition).toBeNull();
+      expect(game.cityStage).toBe(2);
       expect(game.overWater(game.bird.x)).toBe(false);
       expect(game.bird.y + BIRD_RADIUS).toBeLessThan(GROUND_Y - 100);
     });

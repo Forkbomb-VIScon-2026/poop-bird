@@ -1210,6 +1210,7 @@ function frame(now: number): void {
     stun: game.charge.stun,
     scrollSpeed: game.speed,
     difficulty: game.difficulty,
+    cityStage: game.cityStage,
     birdVy: game.bird.vy,
     stage: game.transition
       ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`

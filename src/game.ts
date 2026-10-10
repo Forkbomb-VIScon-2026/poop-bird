@@ -61,6 +61,8 @@ export const GROUND_Y = 520;
 export const BIRD_RADIUS = 22;
 /** × the target spawn rate in attract mode, so there's always someone to hit. */
 const DEMO_SPAWN_SCALE = 2.2;
+/** Top fraction of the gap-centre range that makes a tall building (see pickGapCenter). */
+const TALL_FRACTION = 0.4;
 /** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
 const DEMO_MAX_RISE = 300;
 /** Collision radius is a bit smaller than the drawn bird, to feel fair. */
@@ -694,6 +696,8 @@ export class Game {
   speed = 0;
   /** Seconds since the current stage began (gravity grace restarts after surfacing). */
   stageTime = 0;
+  /** Which city stage this is (1 = the first, 2 = after the first dive, …): new hazards come in with later ones. */
+  cityStage = 1;
 
   obstacles: Obstacle[] = [];
   powerLines: PowerLine[] = [];
@@ -801,6 +805,7 @@ export class Game {
     this.jelliesPopped = 0;
     this.speed = 0;
     this.stageTime = 0;
+    this.cityStage = 1;
     this.obstacles = [];
     this.powerLines = [];
     this.balloons = [];
@@ -858,6 +863,20 @@ export class Game {
 
   get difficulty(): number {
     return Math.min(1, this.distance / Math.max(1, config.difficultyRamp));
+  }
+
+  /**
+   * Per-stage difficulty of a hazard that first shows up in city stage
+   * `first`: 0 there, rising each city stage to 1 at `cityStagesToHardest`.
+   */
+  stageLevel(first = 1): number {
+    const hardest = Math.round(config.cityStagesToHardest);
+    if (hardest <= first) return this.cityStage >= first ? 1 : 0;
+    return Math.min(1, Math.max(0, (this.cityStage - first) / (hardest - first)));
+  }
+
+  private get powerLinesAllowed(): boolean {
+    return this.cityStage >= Math.round(config.powerLineFirstCity);
   }
 
   get scrollSpeed(): number {
@@ -1871,8 +1890,10 @@ export class Game {
     this.bouquet = null;
     this.doves = [];
     this.angler = null;
-    if (to === "city") this.weddingPlanned = Math.random() < config.weddingChance;
-    else this.anglerPlanned = Math.random() < config.anglerChance;
+    if (to === "city") {
+      this.cityStage++;
+      this.weddingPlanned = Math.random() < config.weddingChance;
+    } else this.anglerPlanned = Math.random() < config.anglerChance;
     this.message = null;
     this.lastGapCenter = 260;
     this.jellySpawnAcc = 0;
@@ -1969,8 +1990,9 @@ export class Game {
       // A pending front page always gets the next slot.
       const special = this.stageObstacles > 0 && this.pendingTabloids.length === 0;
       const roll = Math.random();
-      const powerLine = special && roll < config.powerLineChance;
-      const balloon = special && !powerLine && roll < config.powerLineChance + config.balloonChance;
+      const powerLineChance = this.powerLinesAllowed ? config.powerLineChance : 0;
+      const powerLine = special && roll < powerLineChance;
+      const balloon = special && !powerLine && roll < powerLineChance + config.balloonChance;
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnShore();
       else if (ocean && this.anglerDue(before)) extra = this.spawnAngler();
@@ -1986,11 +2008,19 @@ export class Game {
     }
   }
 
-  /** Picks a gap centre in [top + margin + gap/2, GROUND_Y − bottomMargin − gap/2], within maxJump of the last one. */
-  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number, bottomMargin = margin): number {
+  /**
+   * Picks a gap centre in [top + margin + gap/2, GROUND_Y − bottomMargin − gap/2], within maxJump of the last one.
+   * With `highChance`, the gap lands in the top TALL_FRACTION of that range (a tall building) only with that
+   * chance, and lower down otherwise; without it, anywhere.
+   */
+  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number, bottomMargin = margin, highChance?: number): number {
     const minCenter = top + margin + gap / 2;
     const maxCenter = GROUND_Y - bottomMargin - gap / 2;
-    let center = minCenter + Math.random() * Math.max(0, maxCenter - minCenter);
+    let u = Math.random();
+    if (highChance !== undefined) {
+      u = Math.random() < highChance ? u * TALL_FRACTION : TALL_FRACTION + u * (1 - TALL_FRACTION);
+    }
+    let center = minCenter + u * Math.max(0, maxCenter - minCenter);
     center = Math.max(this.lastGapCenter - maxJump, Math.min(this.lastGapCenter + maxJump, center));
     center = Math.max(minCenter, Math.min(maxCenter, center));
     this.lastGapCenter = center;
@@ -2003,7 +2033,9 @@ export class Game {
     // A published photo goes up on a roadside billboard, which needs the whole board below the gap.
     const tabloid = this.pendingTabloids.shift() ?? null;
     // Limit how far the gap jumps, so the next gap is always reachable.
-    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50);
+    // Tall buildings (a gap high up, a long climb) are rare in the first city and get more common.
+    const tallChance = ramp(config.tallBuildingChance, config.tallBuildingChanceMax, this.stageLevel());
+    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50, tallChance);
 
     const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "chimney", "tower"]);
     const w = bottom === "billboard" ? BILLBOARD_W : bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
@@ -2065,11 +2097,14 @@ export class Game {
 
   /** Spawns a power line just off-screen. Returns its length (first to last pole). */
   private spawnPowerLine(): number {
-    const d = this.difficulty;
+    const first = Math.round(config.powerLineFirstCity);
+    const d = this.stageLevel(first);
     const poles = 3 + Math.floor(Math.random() * 3);
     const span = config.powerLineSpan * (0.9 + Math.random() * 0.2);
     const r = Math.random();
-    const count = d < 0.25 ? 1 : d < 0.6 ? (r < 0.4 ? 1 : 2) : r < 0.5 ? 2 : 3;
+    // The wires stack up (and the top one climbs higher) city by city: one wire, then one or two, then two or three.
+    const later = this.cityStage - first;
+    const count = later <= 0 ? 1 : later === 1 ? (r < 0.4 ? 1 : 2) : r < 0.5 ? 2 : 3;
     // Room to fly over the pole tops and under the lowest wire, even where it
     // sags most: stacked wires squeeze closer together if they'd go too high.
     const highestTop = 160;
@@ -2597,6 +2632,7 @@ export class Game {
   private kidDue(): boolean {
     return (
       !this.gateSpawned &&
+      this.cityStage >= Math.round(config.kidFirstCity) &&
       this.distance >= config.kidMinDistance &&
       this.distance - this.lastKidAt >= config.kidMinGap &&
       !this.targets.some(kidArmed) &&
@@ -2607,13 +2643,14 @@ export class Game {
 
   private spawnKid(): void {
     this.lastKidAt = this.distance;
-    const d = this.difficulty;
+    // One shot in the first city with kids, one more in each city after.
+    const later = Math.max(0, this.cityStage - Math.round(config.kidFirstCity));
     this.targets.push({
       x: this.width + 40, y: GROUND_Y + 20, w: 34, h: 62, kind: "kid", speed: -config.kidWalkSpeed,
       color: pick(PERSON_COLORS), seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, chute: null,
       kid: {
         state: "walking", t: 0, pull: 0, windup: 1,
-        shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + Math.floor(d * config.kidShotsMax)),
+        shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + later),
         aimVx: 0, aimVy: 0, twang: 0,
       },
     });
@@ -2696,7 +2733,7 @@ export class Game {
   private startAim(t: Target): void {
     const k = t.kid!;
     this.setKidState(t, "aiming");
-    k.windup = ramp(config.kidWindup, config.kidWindupMin, this.difficulty);
+    k.windup = ramp(config.kidWindup, config.kidWindupMin, this.stageLevel(Math.round(config.kidFirstCity)));
     this.aimKid(t);
     this.events.push({ type: "slingshotDraw", windup: k.windup });
   }
@@ -2707,7 +2744,7 @@ export class Game {
    */
   private aimKid(t: Target): void {
     const k = t.kid!;
-    const T = Math.max(0.2, ramp(config.kidFlightTime, config.kidFlightTimeMin, this.difficulty));
+    const T = Math.max(0.2, ramp(config.kidFlightTime, config.kidFlightTimeMin, this.stageLevel(Math.round(config.kidFirstCity))));
     const s = slingshotPos(t);
     const b = this.bird;
     const ty = Math.max(BIRD_RADIUS, Math.min(GROUND_Y - 40, b.y + b.vy * T * config.kidLead));

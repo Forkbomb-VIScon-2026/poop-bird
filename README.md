@@ -117,10 +117,11 @@ there's no countdown.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
-- **Power lines:** some city obstacles are a run of poles with wires sagging
-  between them (`powerLineChance`). Touching a wire zaps the bird and ends the
-  run, and so does hitting a pole. Fly over, under, or (later, when the wires
-  stack up to three) between them. Pigeons sit on the wires and are targets
+- **Power lines:** from the second city on (after the first dive), some city
+  obstacles are a run of poles with wires sagging between them
+  (`powerLineChance`). Touching a wire zaps the bird and ends the run, and so
+  does hitting a pole. Fly over, under, or (in later cities, when the wires
+  stack up to three and the top one climbs higher) between them. Pigeons sit on the wires and are targets
   too (×2). Some of them (`droneChance`) are government surveillance drones:
   splat one and it drops off the wire and breaks open on the street, wires
   sparking.
@@ -130,7 +131,7 @@ there's no countdown.
   Miss, and you get a flash, a polaroid, and your photo on a roadside
   billboard as the next obstacle, always before the harbour (and on the
   game-over screen). The run's first paparazzo walks slower.
-- **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
+- **Slingshot kids:** from the second city on, a kid in a propeller beanie trots along the sidewalk,
   plants his feet and winds up his slingshot at you. A "!" pops over his head
   and a dotted arc reaches out toward the bird, ending in a crosshair. When
   the band is fully back he lets go, aimed at where you are (with a little
@@ -139,8 +140,9 @@ there's no countdown.
   Ways out: change height once he fires (a near miss pays a "CLOSE ONE!"
   bonus), put a building or pole between you (pebbles ping off them), shoot
   the pebble down with a falling poop ("INTERCEPTED!", ×4), or splat the kid
-  while he's still armed ("DISARMED!", ×3) and he runs off crying. Later
-  kids fire twice. Tunables are in the debug panel's "Slingshot kids" group.
+  while he's still armed ("DISARMED!", ×3) and he runs off crying. From the
+  third city on kids fire twice, and they wind up and shoot faster city by
+  city. Tunables are in the debug panel's "Slingshot kids" group.
 - **The wedding:** now and then (`weddingChance`, about one city stage in
   four) a church takes the place of one building, with a wedding on the
   sidewalk in front: the couple under a flower arch with their names on it,
@@ -181,7 +183,11 @@ there's no countdown.
 ### The ocean stage
 
 A run alternates city → ocean → city → … and difficulty keeps ramping with
-total distance.
+total distance (scroll speed, gaps, spacing). On top of that, each new city
+stage brings more: the first city has no power lines or slingshot kids and
+few tall buildings; power lines and kids come in with the second, double
+shots and stacked wires with the third, and tall buildings get more common
+city by city (the debug panel's "Progression" group).
 
 - **The harbour.** After `cityObstaclesBeforeGate` (6) city obstacles the street
   ends at a quay (bollard, ladder, stone wall) and the harbour opens up below.
