@@ -266,6 +266,7 @@ function updateStrainBars(): void {
   show($("cam-noface"), lost);
   if (state === "calibrated") {
     updateStrainCheck(value, active);
+    updateMeterBird(value, active);
     // Give the detector a moment to warm up before judging its speed.
     const slow = performance.now() - strainCheckSince > 3000 && tracker.detectionRate < config.slowDetectionRate;
     show($("calib-slow"), slow);
@@ -286,6 +287,19 @@ function updateStrainCheck(value: number, active: boolean): void {
   $("meter-strained").classList.toggle("lit", active);
   $("meter-relaxed").classList.toggle("lit", !active && value < config.strainOff);
   $("btn-calib-play").classList.toggle("pulse", strainCheck.strained && strainCheck.relaxed);
+}
+
+/** Until when the meter bird looks relieved, after the player lets go of a strain (performance.now() ms). */
+let meterBirdReliefUntil = 0;
+let meterBirdWasActive = false;
+
+/** The strain check's bird: rides the meter's fill and strains as hard as the player does. */
+function updateMeterBird(value: number, active: boolean): void {
+  const now = performance.now();
+  if (meterBirdWasActive && !active) meterBirdReliefUntil = now + 900;
+  meterBirdWasActive = active;
+  const relief = !active && now < meterBirdReliefUntil;
+  renderer.drawMeterBird($<HTMLCanvasElement>("calib-bird"), value, relief ? 0 : value, relief, now / 1000);
 }
 
 async function startFaceMode(forceCalibrate = false): Promise<void> {

@@ -803,9 +803,28 @@ svg.face.calib-face {
   border-width: 4px;
 }
 
-.meter-bar {
+.meter-track {
+  position: relative;
   flex: 1;
+  /* Room above the bar for the bird when the faces beside it are short. */
+  margin-top: var(--meter-bird-h);
+  --meter-bird-h: clamp(44px, 10vh, 84px);
+}
+
+.meter-bar {
   margin-top: 0;
+}
+
+/* Spans the track above the bar; the bird sits on the bar, over the fill's end. */
+.meter-bird {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - 6px);
+  width: 100%;
+  height: var(--meter-bird-h);
+  z-index: 1;
+  pointer-events: none;
 }
 
 .meter-end {
