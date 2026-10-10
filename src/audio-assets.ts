@@ -43,7 +43,6 @@ export const SOUND_NAMES = [
   "reel_click",
   "line_snap",
   "power_down",
-  "beep",
   "wedding_arrived",
   "wedding_beat"
 ] as const;

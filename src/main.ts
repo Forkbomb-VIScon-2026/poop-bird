@@ -1802,7 +1802,7 @@ function handleGameEvents(): void {
         break;
       case "anchorWarn":
         // aaron removed this we dont want no fucking beep
-        sound.beep();
+        // sound.beep();
         break;
       case "anchorRattle":
         sound.anchorRattle();
