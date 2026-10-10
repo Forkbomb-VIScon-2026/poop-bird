@@ -35,7 +35,7 @@ Other scripts:
 | `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
 | `npm run data:pull` / `data:purge` | Copy the face dataset from the team VM into `data/` / delete that copy (see [Face dataset](#face-dataset)) |
 | `npm run eval` | Score face detection against every recording in `data/` |
-| `npm run collector` | Run the dataset collector locally (needs `COLLECTION_CODE`, `DEV_TOKEN`, `DATA_DIR`) |
+| `npm run collector` | Run the dataset collector locally (needs `COLLECTION_CODE`, `DEV_TOKEN`, `DATA_DIR`; set `HOST=127.0.0.1`) |
 | `npm run copy-wasm` | Re-copy the WASM from `node_modules` (also runs before `dev`/`build`) |
 | `npm run fetch-model -- --force` | Re-download the model |
 

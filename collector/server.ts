@@ -251,12 +251,13 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { DATA_DIR = "/data", PORT = "8787", COLLECTION_CODE, DEV_TOKEN } = process.env;
+  // HOST: all interfaces by default (needed inside the container); use 127.0.0.1 when running it locally.
+  const { DATA_DIR = "/data", HOST = "0.0.0.0", PORT = "8787", COLLECTION_CODE, DEV_TOKEN } = process.env;
   if (!COLLECTION_CODE || !DEV_TOKEN) {
     console.error("[collector] Set COLLECTION_CODE and DEV_TOKEN.");
     process.exit(1);
   }
-  createCollector({ dataDir: DATA_DIR, collectionCode: COLLECTION_CODE, devToken: DEV_TOKEN }).listen(Number(PORT), () =>
-    console.log(`[collector] listening on :${PORT}, data in ${DATA_DIR}`),
+  createCollector({ dataDir: DATA_DIR, collectionCode: COLLECTION_CODE, devToken: DEV_TOKEN }).listen(Number(PORT), HOST, () =>
+    console.log(`[collector] listening on ${HOST}:${PORT}, data in ${DATA_DIR}`),
   );
 }
