@@ -181,7 +181,8 @@ total distance.
 - **Size is the tradeoff.** The fish, and its hitbox, grow with puff. Rising
   makes you bigger.
 - **Spike-out.** At ~85% puff the spines come out. Spiked, you pop jellyfish
-  for `targetPoints × 1.5 × combo`; unspiked, a jellyfish kills you. Stay
+  for `targetPoints × 1.5 × combo` (the spines reach ~1.6× further than the
+  sting hitbox, so popping is forgiving); unspiked, a jellyfish kills you. Stay
   spiked longer than ~1.5 s and you **pop**: a comic deflate, shake, and a
   stun during which you sink without control. The meter flashes "DEFLATE!" in
   the last ~0.3 s.
