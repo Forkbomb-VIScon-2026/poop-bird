@@ -121,6 +121,8 @@ export class Renderer {
   private bgOffset = 0;
   /** The paparazzi's photos of this run, by Game photo id. main.ts fills it on "photo" events. */
   readonly photos = new Map<number, Photo>();
+  /** What the bird is saying in the player's voice (main.ts sets it), shown in a bubble. Times in performance.now() ms. */
+  speech: { text: string; start: number; end: number } | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -267,6 +269,7 @@ export class Renderer {
       else this.drawChargeMeter(game);
     }
     this.drawFloaters(game);
+    if (!game.demo) this.drawSpeech(game);
     ctx.restore();
     this.drawScreenSplats(game);
     this.drawPolaroid(game);
@@ -1146,6 +1149,64 @@ export class Renderer {
       ctx.fillText(f.text, f.x, f.y);
     }
     ctx.globalAlpha = 1;
+  }
+
+  /** The bird's speech bubble, up and to the right of it, kept on screen. */
+  private drawSpeech(game: Game): void {
+    const sp = this.speech;
+    const now = performance.now();
+    if (!sp || now >= sp.end) return;
+    const ctx = this.ctx;
+    const t = (now - sp.start) / 1000;
+    const alpha = Math.min(1, t / 0.12, (sp.end - now) / 250);
+    const pop = t < 0.15 ? 0.7 + (t / 0.15) * 0.3 : 1;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.font = "800 17px 'Trebuchet MS', sans-serif";
+    // Wrap to about 22 characters a line.
+    const lines: string[] = [];
+    for (const word of sp.text.split(" ")) {
+      const last = lines.at(-1);
+      if (last !== undefined && (last + " " + word).length <= 22) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    const lineH = 20;
+    const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 24;
+    const h = lines.length * lineH + 14;
+    const b = game.bird;
+    // Visible area in stage coordinates.
+    const top = game.cameraY - game.stageOffset;
+    const x = Math.min(Math.max(b.x + 26, 8), this.width - w - 8);
+    const y = Math.min(Math.max(b.y - 52 - h, top + 8), top + VIEW_H - h - 8);
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.scale(pop, pop);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
+    // Tail towards the bird's head.
+    const tailX = Math.min(Math.max(b.x + 6, x + 14), x + w - 14);
+    ctx.fillStyle = "#fff";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    roundRect(ctx, x, y, w, h, 12);
+    ctx.fill();
+    ctx.stroke();
+    const below = y + h < b.y;
+    const baseY = below ? y + h : y;
+    const tipY = below ? Math.min(b.y - 18, baseY + 24) : Math.max(b.y + 18, baseY - 24);
+    ctx.beginPath();
+    ctx.moveTo(tailX - 8, baseY);
+    ctx.lineTo(b.x + 4, tipY);
+    ctx.lineTo(tailX + 8, baseY);
+    ctx.fill();
+    ctx.stroke();
+    // Cover the bubble's outline where the tail joins it.
+    ctx.fillRect(tailX - 6, baseY - (below ? 2 : -0.5), 12, 2.5);
+    ctx.fillStyle = OUTLINE;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    lines.forEach((l, i) => ctx.fillText(l, x + w / 2, y + 7 + lineH * (i + 0.5)));
+    ctx.restore();
   }
 
   private drawScreenSplats(game: Game): void {

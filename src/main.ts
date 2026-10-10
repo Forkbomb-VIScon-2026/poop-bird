@@ -12,6 +12,18 @@ import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./ke
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
+  VOICE_RATE,
+  VOICE_SCRIPT,
+  VoiceDirector,
+  VoiceRecorder,
+  fetchLines,
+  pickLines,
+  voiceAvailable,
+  voicedSeconds,
+  type VoiceCue,
+  type VoiceLine,
+} from "./voice";
+import {
   assessPuffCalibration,
   buildPuffCalibration,
   initialPuffState,
@@ -68,6 +80,7 @@ const screens = {
   start: $("screen-start"),
   loading: $("screen-loading"),
   calibrate: $("screen-calibrate"),
+  voice: $("screen-voice"),
   ready: $("screen-ready"),
   pause: $("screen-pause"),
   gameover: $("screen-gameover"),
@@ -100,7 +113,7 @@ function armButtonKeys(ms: number): void {
 // --- State ------------------------------------------------------------------------
 
 type AppState =
-  | "menu" | "loading" | "calibrating" | "calibrated" | "ready" | "playing" | "paused" | "gameover";
+  | "menu" | "loading" | "calibrating" | "calibrated" | "voice" | "ready" | "playing" | "paused" | "gameover";
 type Mode = "face" | "keyboard";
 
 let state: AppState = "menu";
@@ -355,7 +368,7 @@ function startKeyboardMode(): void {
   mode = "keyboard";
   tracker.stopCamera();
   show(cam, false);
-  startReady();
+  void offerVoice();
 }
 
 /** A face-mode startup finished after the player moved on: turn the camera back off. */
@@ -847,12 +860,197 @@ function hideToast(): void {
   show($("hud-toast"), false);
 }
 
+// --- Voice ---------------------------------------------------------------------------
+// Before the first run the player can read a line out loud; the voice server
+// (voice.ts) makes the bird's lines in their voice, and game events (say())
+// play them during the run.
+
+/** Whether the voice server can clone voices. Checked at boot, and again when the last check failed. */
+let voiceServer = voiceAvailable();
+/** The player recorded or skipped since the menu, so "Play again" doesn't ask again. */
+let voiceAsked = false;
+/** This player's lines, in generation order, and the ones that have arrived (decoded). */
+let voiceLines: VoiceLine[] = [];
+const voiceBuffers = new Map<string, AudioBuffer>();
+let voiceRequest: AbortController | null = null;
+const recorder = new VoiceRecorder();
+let recording = false;
+/** Seconds the charge has been nearly full (for the "Push!" line). */
+let strainHeldFor = 0;
+const voiceDirector = new VoiceDirector({
+  get gap() { return config.voiceGap; },
+  get cueCooldown() { return config.voiceCueCooldown; },
+});
+
+/** After the strain check (or the keyboard choice): the voice screen once per player, if the server is up. */
+async function offerVoice(): Promise<void> {
+  const token = flow;
+  const up = !voiceAsked && await Promise.race([voiceServer, wait(1500).then(() => false)]);
+  if (token !== flow) return;
+  if (!up) {
+    // Down or slow: play without it, and look again for the next player.
+    if (!voiceAsked) voiceServer = voiceAvailable();
+    return startReady();
+  }
+  state = "voice";
+  cam.classList.remove("large");
+  show(hud, false);
+  $("voice-script").textContent = VOICE_SCRIPT;
+  setVoiceUi("intro");
+  showScreen("voice");
+}
+
+function setVoiceUi(step: "intro" | "recording", error = ""): void {
+  const rec = step === "recording";
+  screens.voice.querySelector(".voice")!.classList.toggle("recording", rec);
+  const title = $("voice-title");
+  if (rec) title.innerHTML = '<span class="rec-dot"></span>Read it out loud!';
+  else title.textContent = "Give the bird your voice!";
+  $("voice-text").textContent = rec
+    ? "Loud and clear, like you mean it. Press Done when you're through."
+    : "Read this out loud, and the bird will talk like you while you play.";
+  show($("voice-meter"), rec);
+  show($("btn-voice-record"), !rec);
+  show($("btn-voice-done"), rec);
+  $<HTMLButtonElement>("btn-voice-done").disabled = true;
+  $("btn-voice-record").textContent = error ? "🎙️ Try again" : "🎙️ Record";
+  $("voice-error").textContent = error;
+  show($("voice-error"), error !== "");
+  decorate($("btn-voice-record"));
+  decorate($("btn-voice-done"));
+  decorate($("btn-voice-skip"));
+  armButtonKeys(300);
+}
+
+async function startVoiceRecording(): Promise<void> {
+  if (state !== "voice" || recording) return;
+  const token = flow;
+  sound.unlock();
+  recording = true;
+  try {
+    await recorder.start();
+  } catch (err) {
+    recording = false;
+    recorder.cancel();
+    if (token !== flow || state !== "voice") return;
+    console.warn("[voice] no microphone", err);
+    const name = (err as { name?: string }).name;
+    setVoiceUi("intro", name === "NotAllowedError"
+      ? "The microphone is blocked. Allow it in the browser, or skip."
+      : "No microphone found. Plug one in, or skip.");
+    return;
+  }
+  if (token !== flow || state !== "voice") {
+    recording = false;
+    recorder.cancel();
+    return;
+  }
+  setVoiceUi("recording");
+}
+
+async function finishVoiceRecording(): Promise<void> {
+  if (!recording) return;
+  const token = flow;
+  recording = false;
+  const samples = await recorder.stop();
+  if (token !== flow || state !== "voice") return;
+  if (voicedSeconds(samples, VOICE_RATE) < config.voiceRecordMin) {
+    setVoiceUi("intro", "I couldn't hear you well. Get closer to the mic and read it again, nice and loud!");
+    return;
+  }
+  voiceAsked = true;
+  requestVoiceLines(samples);
+  startReady();
+}
+
+function skipVoice(): void {
+  if (state !== "voice") return;
+  recording = false;
+  recorder.cancel();
+  voiceAsked = true;
+  startReady();
+}
+
+/** Sends the recording off; the lines arrive in the background while the player gets going. */
+function requestVoiceLines(samples: Float32Array): void {
+  voiceRequest?.abort();
+  voiceBuffers.clear();
+  voiceDirector.reset();
+  const lines = pickLines();
+  voiceLines = lines;
+  const request = new AbortController();
+  voiceRequest = request;
+  showToast("🦜 The bird is learning your voice…", 3500);
+  fetchLines(samples, lines, (id, wav) => {
+    void sound.decode(wav).then((buffer) => {
+      if (request.signal.aborted || !buffer) return;
+      voiceBuffers.set(id, buffer);
+      if (lines.find((l) => l.id === id)?.cue === "intro" && (state === "ready" || state === "playing")) say("intro");
+    });
+  }, request.signal).catch((err) => {
+    if (request.signal.aborted) return;
+    console.warn("[voice]", err);
+    if (voiceBuffers.size === 0) showToast("🦜 The bird couldn't learn your voice this time", 3000);
+  });
+}
+
+/** Back at the menu: the next player gets asked again, and this player's voice is gone. */
+function forgetVoice(): void {
+  voiceRequest?.abort();
+  voiceRequest = null;
+  recording = false;
+  recorder.cancel();
+  voiceBuffers.clear();
+  voiceLines = [];
+  voiceAsked = false;
+  voiceDirector.reset();
+  stopSpeaking();
+}
+
+/** The bird says a line for this moment, if it has one and isn't too chatty (VoiceDirector). */
+function say(cue: VoiceCue, opts: { urgent?: boolean; chance?: number } = {}): void {
+  if (sound.muted || voiceBuffers.size === 0) return;
+  const now = performance.now();
+  const available = voiceLines.filter((l) => voiceBuffers.has(l.id));
+  const line = voiceDirector.choose(cue, now / 1000, available, opts);
+  if (!line) return;
+  const buffer = voiceBuffers.get(line.id)!;
+  if (!sound.speak(buffer)) return;
+  voiceDirector.speaking(now / 1000, buffer.duration);
+  renderer.speech = { text: line.text, start: now, end: now + buffer.duration * 1000 + 700 };
+}
+
+function stopSpeaking(): void {
+  sound.stopSpeaking();
+  renderer.speech = null;
+}
+
+/** Debug (V): a random line the bird has. */
+function sayAnything(): void {
+  const cues = [...new Set(voiceLines.filter((l) => voiceBuffers.has(l.id)).map((l) => l.cue))];
+  if (cues.length) say(cues[Math.floor(Math.random() * cues.length)], { urgent: true });
+  else showToast(voiceLines.length ? "🦜 No lines yet" : "🦜 No voice recorded", 1500);
+}
+
+/** Per frame: the recording meter, and the "Push!" line on a long, nearly full charge. */
+function updateVoice(dt: number): void {
+  if (state === "voice" && recording) {
+    $("voice-level-fill").style.width = `${Math.min(100, recorder.level * 140)}%`;
+    $("voice-progress").style.width = `${Math.min(100, (recorder.seconds / config.voiceRecordMax) * 100)}%`;
+    $<HTMLButtonElement>("btn-voice-done").disabled = recorder.seconds < Math.min(4, config.voiceRecordMax);
+    if (recorder.seconds >= config.voiceRecordMax) void finishVoiceRecording();
+  }
+  const pushing = state === "playing" && game.phase === "playing" && game.stage === "city" && !game.stunned && game.charge.charge >= 0.9;
+  strainHeldFor = pushing ? strainHeldFor + dt : 0;
+  if (strainHeldFor >= config.voiceStrainHold) say("strain");
+}
+
 // --- Ready & run -----------------------------------------------------------------
 
 /** "Play anyway" after a failed calibration uses the rejected one for this session only. */
 function playAfterCalibration(): void {
   if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
-  if (calibration) startReady();
+  if (calibration) void offerVoice();
 }
 
 /**
@@ -921,6 +1119,7 @@ function updateReady(): void {
     state = "playing";
     showScreen(null);
     sound.beep(true);
+    say("takeoff");
   }
 }
 
@@ -940,6 +1139,7 @@ function togglePause(): void {
   if (state === "playing") {
     state = "paused";
     showScreen("pause");
+    stopSpeaking();
     sound.setGroan(-1, false);
     sound.setBurble(-1);
   } else if (state === "paused") {
@@ -953,6 +1153,7 @@ function goToMenu(): void {
   calibSamples = null;
   calibFrames = null;
   tracker.stopCamera();
+  forgetVoice();
   state = "menu";
   sound.setGroan(-1, false);
   sound.setBurble(-1);
@@ -977,6 +1178,8 @@ function onGameOver(): void {
     best = score;
     saveBest(best);
   }
+  if (newBest && score > 0) say("newBest", { urgent: true });
+  else say("crash", { urgent: true });
   $("go-title").textContent = game.trophy !== null
     ? pick(["Hooked!", "Reeled in!", "Gone fishing.", "Fish and chips!"])
     : pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
@@ -1198,6 +1401,7 @@ function frame(now: number): void {
   }
 
   renderer.draw(game, state === "playing" || game.demo ? dt : 0);
+  updateVoice(dt);
 
   const charging = state === "playing" && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);
@@ -1289,11 +1493,13 @@ function handleGameEvents(): void {
     switch (e.type) {
       case "release":
         sound.release(poopSize(e.charge), e.charge, e.sweet);
+        if (poopSize(e.charge) === "large") say("bigPoop", { chance: 0.6 });
         buzz(e.sweet ? [15, 40, 25] : Math.round(8 + 20 * e.charge));
         break;
       case "accident":
         sound.accident();
         buzz([60, 40, 120]);
+        say("accident", { urgent: true });
         break;
       case "splat":
         sound.splat(e.big);
@@ -1301,14 +1507,17 @@ function handleGameEvents(): void {
       case "hit":
         sound.hit(e.combo);
         buzz(12);
+        if (e.combo >= 3) say("hit", { chance: config.voiceHitChance });
         break;
       case "crash":
         sound.splat(true);
         buzz(200);
+        say("crash", { urgent: true });
         break;
       case "zap":
         sound.zap();
         buzz([30, 20, 30, 20, 120]);
+        say("crash", { urgent: true });
         break;
       case "droneDown":
         sound.powerDown();
@@ -1323,6 +1532,7 @@ function handleGameEvents(): void {
       case "gateEntered":
         if (e.to === "ocean") {
           sound.splash();
+          say("dive");
           // Keyboard players start at the hover point; in face mode the face decides.
           keyPuff = mode === "keyboard" ? config.oceanHoverPuff : 0;
         } else {
@@ -1345,6 +1555,7 @@ function handleGameEvents(): void {
       case "pop":
         sound.deflate();
         buzz(120);
+        say("pop");
         break;
       case "jellyPopped":
         sound.jellyPop(e.combo);
@@ -1355,6 +1566,7 @@ function handleGameEvents(): void {
       case "photo":
         sound.shutter();
         takePhoto(e.photoId);
+        say("photo");
         break;
       case "cameraSmashed":
         sound.smash();
@@ -1380,6 +1592,7 @@ function handleGameEvents(): void {
         break;
       case "weddingArrived":
         sound.weddingArrived();
+        say("wedding");
         break;
       case "weddingBeat":
         sound.weddingBeat(e.count);
@@ -1391,6 +1604,7 @@ function handleGameEvents(): void {
         break;
       case "weddingRuined":
         sound.weddingRuined();
+        say("weddingRuined", { urgent: true });
         break;
       case "weddingMarried":
         sound.weddingMarried();
@@ -1413,6 +1627,7 @@ function handleGameEvents(): void {
         break;
       case "balloonPop":
         sound.balloonPop();
+        say("balloon", { chance: 0.7 });
         sound.hit(e.combo);
         break;
       case "chuteOpen":
@@ -1527,6 +1742,10 @@ window.addEventListener("keydown", (e) => {
       // Debug shortcut: a fisherman rows in (ocean only).
       if (debug?.visible && state === "playing") game.spawnAnglerNow();
       break;
+    case "v":
+      // Debug shortcut: the bird says something (any cue it has a line for).
+      if (debug?.visible) sayAnything();
+      break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
       if (debug?.visible) startOceanRun();
@@ -1599,6 +1818,9 @@ on("btn-again", () => {
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
 on("btn-tutorial-ok", () => dismissTutorial?.());
+on("btn-voice-record", () => void startVoiceRecording());
+on("btn-voice-done", () => void finishVoiceRecording());
+on("btn-voice-skip", skipVoice);
 $<HTMLInputElement>("opt-tips").addEventListener("change", (e) => {
   setNewPlayer((e.target as HTMLInputElement).checked);
 });
@@ -1668,6 +1890,9 @@ if (DEBUG) {
       get puffCalibration() { return puffCalibration; },
       get lastPuffAttempt() { return lastPuffAttempt; },
       openDatasetRecorder,
+      /** The voice lines that have arrived, and say(cue) to try one. */
+      get voiceLines() { return voiceLines.filter((l) => voiceBuffers.has(l.id)); },
+      say,
     },
   });
 }

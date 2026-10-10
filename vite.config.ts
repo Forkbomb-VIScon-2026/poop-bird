@@ -19,7 +19,10 @@ export default defineConfig({
     // The face dataset recorder (collect.html) uploads to /api. In dev that goes
     // to the collector on the team VM through `npm run tunnel` (the public site
     // is behind the ETH login), or to COLLECTOR_URL (e.g. a local collector).
+    // The bird's voice (voice/server.py) goes to VOICE_URL, by default a local
+    // voice container (`docker compose up voice`, port 8790).
     proxy: {
+      "/api/voice": { target: process.env.VOICE_URL ?? "http://127.0.0.1:8790", changeOrigin: true },
       "/api": { target: process.env.COLLECTOR_URL ?? "http://127.0.0.1:8788", changeOrigin: true },
     },
   },

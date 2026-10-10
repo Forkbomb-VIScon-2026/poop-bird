@@ -202,6 +202,27 @@
         </div>
       </section>
 
+      <!-- Voice: the player reads a line, and the bird talks like them during the run (voice.ts). -->
+      <section id="screen-voice" class="screen hidden">
+        <div class="card voice">
+          <div class="calib-step">🎙️ Optional</div>
+          <h2 id="voice-title">Give the bird your voice!</h2>
+          <p id="voice-text">Read this out loud, and the bird will talk like you while you play.</p>
+          <blockquote id="voice-script" class="voice-script"></blockquote>
+          <div id="voice-meter" class="voice-meter hidden">
+            <div class="voice-level"><div id="voice-level-fill" class="voice-level-fill"></div></div>
+            <div class="progress"><div id="voice-progress" class="progress-fill"></div></div>
+          </div>
+          <p id="voice-error" class="error hidden"></p>
+          <div class="buttons">
+            <button id="btn-voice-record" class="btn primary" data-default>🎙️ Record</button>
+            <button id="btn-voice-done" class="btn primary hidden" data-default>✅ Done</button>
+            <button id="btn-voice-skip" class="btn" data-keys="Escape">Skip</button>
+          </div>
+          <p class="privacy small">🔒 The recording goes only to our game server, makes the bird's lines, and is deleted right away. Nothing is stored.</p>
+        </div>
+      </section>
+
       <!-- Ready: the bird hovers until the first strain starts the run. -->
       <section id="screen-ready" class="screen hidden passthrough">
         <div class="ready">

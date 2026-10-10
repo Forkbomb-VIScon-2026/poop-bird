@@ -7,6 +7,7 @@ services:
       - "8080:8080"
     depends_on:
       - collector
+      - voice
 
   # Face dataset collector. Local credentials only; on the VM, deploy.yml
   # generates real ones in ~/poopbird-collector.env.
@@ -22,5 +23,23 @@ services:
     volumes:
       - poopbird-data:/data
 
+  # The bird's voice (voice/server.py). Voice cloning needs a Hugging Face
+  # token with the terms of huggingface.co/kyutai/pocket-tts accepted:
+  #   HF_TOKEN=hf_... docker compose up --build
+  # For `npm run dev`, publish the port with an override, or run the image:
+  #   docker run -p 127.0.0.1:8790:8790 -e HF_TOKEN -v poopbird-voice-cache:/cache poop-bird-voice
+  voice:
+    build:
+      context: .
+      dockerfile: voice/Dockerfile
+    image: poop-bird-voice:latest
+    restart: unless-stopped
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - poopbird-voice-cache:/cache
+    cpus: 2
+
 volumes:
   poopbird-data:
+  poopbird-voice-cache:

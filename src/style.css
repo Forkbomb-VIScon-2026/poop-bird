@@ -1701,3 +1701,57 @@ body.debug-open #cam {
     margin-top: 8px;
   }
 }
+
+/* --- Voice ---------------------------------------------------------------- */
+
+.voice-script {
+  margin: 10px 0 12px;
+  padding: 12px 18px;
+  border: 3px dashed var(--ink);
+  border-radius: 14px;
+  background: #fff;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.voice.recording .voice-script {
+  border-style: solid;
+  border-color: var(--accent);
+}
+
+.voice-level {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.voice-level-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--green);
+  transition: width 60ms linear;
+}
+
+.voice-meter .progress {
+  margin: 8px 0 4px;
+}
+
+.voice h2 .rec-dot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-right: 0.3em;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 0.05em;
+  animation: rec-blink 1s steps(2, start) infinite;
+}
+
+@keyframes rec-blink {
+  to {
+    visibility: hidden;
+  }
+}

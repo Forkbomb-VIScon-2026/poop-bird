@@ -31,3 +31,5 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t poop-bird:ci .
       - run: docker build -f collector/Dockerfile -t poop-bird-collector:ci .
+      - run: docker build -f voice/Dockerfile -t poop-bird-voice:ci .
+      - run: docker run --rm -w /app/voice poop-bird-voice:ci python -m unittest -v

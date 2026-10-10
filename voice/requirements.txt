@@ -1,0 +1,4 @@
+# CPU-only PyTorch comes from the PyTorch index (see Dockerfile); the default
+# PyPI build would pull several GB of CUDA libraries.
+pocket-tts==3.3.0
+numpy

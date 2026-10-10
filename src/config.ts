@@ -228,6 +228,14 @@ export const CONFIG_SPEC = {
   oceanMinPuffChange: { value: 0.5, min: 0, max: 5, step: 0.05, group: "Ocean puff", label: "Min puff change", hint: "calibration quality: summed puff weights must exceed this (1 = one clearly separated feature)" },
   oceanFallbackMin: { value: 0.06, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: relaxed", hint: "max(mouthPress, cheekPuff) mapped to puff 0 without a calibration" },
   oceanFallbackMax: { value: 0.22, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: full puff", hint: "max(mouthPress, cheekPuff) mapped to puff 1 without a calibration" },
+
+  // --- Voice (the bird talks in the player's voice) --------------------------
+  voiceGap: { value: 3, min: 0, max: 20, step: 0.5, group: "Voice", label: "Quiet between lines", hint: "s after a line before the next may start" },
+  voiceCueCooldown: { value: 14, min: 0, max: 60, step: 1, group: "Voice", label: "Cue cooldown", hint: "s before the same moment gets another line" },
+  voiceHitChance: { value: 0.5, min: 0, max: 1, step: 0.05, group: "Voice", label: "Hit chance", hint: "chance a combo hit (×3 and up) gets a line" },
+  voiceStrainHold: { value: 1.2, min: 0.2, max: 5, step: 0.1, group: "Voice", label: "Strain line after", hint: "s of near-full charge before \"Push!\"" },
+  voiceRecordMax: { value: 12, min: 5, max: 25, step: 1, group: "Voice", label: "Recording max", hint: "s; stops by itself after this" },
+  voiceRecordMin: { value: 3, min: 1, max: 10, step: 0.5, group: "Voice", label: "Clear speech needed", hint: "s of the recording that must be clearly speech" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;

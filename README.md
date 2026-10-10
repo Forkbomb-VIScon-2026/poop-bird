@@ -7,7 +7,9 @@ Then dive into the harbour, where the bird becomes a pufferfish that you steer
 by **puffing your cheeks**.
 
 Everything runs in the browser: face tracking runs locally with MediaPipe, and
-no video, snapshot or score leaves the device.
+no video, snapshot or score leaves the device. If the player wants, the bird
+also talks in **their own voice**: they read a line out loud, and our own
+server (no third party) clones the voice for the run.
 
 ## Run it
 
@@ -52,7 +54,9 @@ docker compose up --build   # serves dist/ with Caddy on http://localhost:8080
 The image builds the game and serves it with Caddy on port 8080. For camera
 access on anything other than localhost, put it behind HTTPS. Compose also
 starts the face dataset collector (local credentials `local` /
-`local-dev-token`), which Caddy serves under `/api/`.
+`local-dev-token`), which Caddy serves under `/api/`, and the voice server
+under `/api/voice/` (see [The bird's voice](#the-birds-voice); pass
+`HF_TOKEN` for voice cloning).
 
 ## Controls
 
@@ -77,6 +81,7 @@ starts the face dataset collector (local credentials `local` /
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
+| **V** | With the debug panel open: the bird says one of its lines (after a voice recording) |
 
 ### On phones and tablets
 
@@ -548,6 +553,53 @@ by a hash of their code); score them with `npm run eval -- --holdout` only
 when a change is ready to merge. Older debug-recorder clips
 (`poopbird-face-*.json`) still work: put them in `data/local/`.
 
+## The bird's voice
+
+Before the first run (after the strain check, or after picking the keyboard)
+the player can give the bird their voice: they read a short text out loud
+(about 8 s), and during the run the bird says things in their voice, in a
+speech bubble: "Push! Push harder!" on a long strain, "Mommy!" on a crash,
+"No photos, please!" when the paparazzo gets them, and so on. It's optional
+(Skip), asked once per player (until the menu), and the screen only appears
+when the voice server is up.
+
+**How.** `src/voice.ts` records the mic (AudioWorklet, resampled to 24 kHz)
+and checks there's enough clear speech. It picks about 18 lines at random
+from `VOICE_LINES` (two for the frequent moments) and sends them with the
+recording to `voice/server.py`. That runs [Kyutai's Pocket
+TTS](https://github.com/kyutai-labs/pocket-tts) (100M parameters, MIT) on the
+VM's CPU, two cores: it clones the voice from the recording (~2 s) and speaks
+each line (~1.5 s each), streaming them back one by one (NDJSON) in the order
+the game needs them: the intro first (said on the ready screen), then
+takeoff, crash, strain and so on, so the bird can talk within seconds while
+the rest arrive during the first run. `VoiceDirector` turns game events into
+lines: one at a time, with a quiet gap after each (`voiceGap`), a cooldown per
+moment (`voiceCueCooldown`), never the same line twice in a row, and the crash
+cutting in. Sound effects duck while the bird speaks. The tunables are in the
+debug panel's "Voice" group.
+
+**Setup.** The voice-cloning weights are gated: accept the terms at
+<https://huggingface.co/kyutai/pocket-tts> and create a read token. On the VM
+it goes into `~/poopbird-voice.env` as `HF_TOKEN=hf_...` (the deploy creates
+the file empty and recreates the container when it changes). Without a token
+the server still runs but reports no cloning, and the game skips the voice
+screen. Locally: `HF_TOKEN=hf_... docker compose up --build`, or for `npm run
+dev` run the voice container on port 8790 (`VOICE_URL` overrides that):
+
+```sh
+docker build -f voice/Dockerfile -t poop-bird-voice .
+docker run --rm -p 127.0.0.1:8790:8790 -e HF_TOKEN -v poopbird-voice-cache:/cache poop-bird-voice
+```
+
+`VOICE_FALLBACK_VOICE=alba` makes it speak with a built-in voice instead of
+cloning, to test the flow without a token. The model downloads on first start
+(into the cache volume) and takes about a minute to load;
+`/api/voice/health` says when it's ready. Server tests:
+`docker run --rm -w /app/voice poop-bird-voice python -m unittest`.
+
+The deploy tags the voice image by the content of `voice/` and only builds
+and ships it when that changed, since it is big (PyTorch, ~1.8 GB).
+
 ## Privacy
 
 - Video frames go to MediaPipe running in the page (WASM/WebGL) and nowhere
@@ -561,6 +613,11 @@ when a change is ready to merge. Older debug-recorder clips
   the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
+- The voice recording (only if the player records one) goes to our voice
+  server on the team VM, and to no one else. It stays in memory for that one
+  request: it is never written to disk or logged, and the cloned voice is
+  dropped once the lines are made. The lines stay in the page until the
+  player goes back to the menu.
 - Playing never sends face data anywhere. Only the separate dataset recorder
   (`collect.html`) uploads, after explicit consent, and it records expression
   scores and face-mesh points, never video or images. See
@@ -578,7 +635,8 @@ src/
   face.ts       MediaPipe + webcam, detection loop
   game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
-  audio.ts      WebAudio synth sounds
+  audio.ts      WebAudio sounds, the voice channel (ducks the effects)
+  voice.ts      the bird's voice: lines, director, mic, server client  voice.test.ts
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, Hall of Fame
@@ -587,6 +645,9 @@ src/
   collect.ts    the dataset recorder page (collect.html)
 collector/
   server.ts     dataset upload/download server (Node, no deps)       server.test.ts
+  Dockerfile
+voice/
+  server.py     voice cloning + lines (Python, Pocket TTS, CPU)       test_server.py
   Dockerfile
 scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm

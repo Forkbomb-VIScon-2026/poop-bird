@@ -2,6 +2,17 @@
 # so put this behind HTTPS (a reverse proxy, or change the site address to a
 # domain and let Caddy get a certificate).
 :8080 {
+	# The bird's voice: lines in the player's voice (voice/server.py, the "voice"
+	# container). They stream back one by one, so don't buffer the response.
+	handle /api/voice/* {
+		request_body {
+			max_size 5MB
+		}
+		reverse_proxy voice:8790 {
+			flush_interval -1
+		}
+	}
+
 	# Face dataset uploads and downloads go to the collector container
 	# (collector/server.ts, reachable as "collector" on the shared network).
 	handle /api/* {

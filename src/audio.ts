@@ -8,6 +8,9 @@ type ActiveSound = { source: AudioBufferSourceNode; gain: GainNode };
 export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /** Sound effects, under the master; ducked while the bird speaks. */
+  private fx: GainNode | null = null;
+  private voice: AudioBufferSourceNode | null = null;
   private readonly buffers = new Map<SoundName, AudioBuffer>();
   private readonly active = new Map<SoundName, ActiveSound>();
   private readonly lastPlayed = new Map<SoundName, number>();
@@ -46,6 +49,8 @@ export class Sound {
         this.master = this.ctx.createGain();
         this.master.gain.value = this.muted ? 0 : 0.6;
         this.master.connect(this.ctx.destination);
+        this.fx = this.ctx.createGain();
+        this.fx.connect(this.master);
         for (const name of SOUND_NAMES) {
           void this.load(name);
         }
@@ -72,7 +77,7 @@ export class Sound {
   private play(name: SoundName, volume = 1, cooldown = 0): ActiveSound | null {
     const ctx = this.ctx;
     const buffer = this.buffers.get(name);
-    if (!ctx || !this.master || !buffer) return null;
+    if (!ctx || !this.fx || !buffer) return null;
     const now = ctx.currentTime;
     if (cooldown && now - (this.lastPlayed.get(name) ?? -Infinity) < cooldown) return null;
     this.lastPlayed.set(name, now);
@@ -80,9 +85,54 @@ export class Sound {
     const gain = ctx.createGain();
     source.buffer = buffer;
     gain.gain.value = volume;
-    source.connect(gain).connect(this.master);
+    source.connect(gain).connect(this.fx);
     source.start();
     return { source, gain };
+  }
+
+  /** Decodes a voice line with the game's audio context (null before unlock or on bad data). */
+  async decode(data: ArrayBuffer): Promise<AudioBuffer | null> {
+    if (!this.ctx) return null;
+    try {
+      return await this.ctx.decodeAudioData(data);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Plays a line in the player's voice over the effects, which duck while it
+   * speaks. A new line cuts off the one playing. Returns false without audio.
+   */
+  speak(buffer: AudioBuffer): boolean {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.fx) return false;
+    this.stopSpeaking();
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    source.buffer = buffer;
+    gain.gain.value = 1.5;
+    source.connect(gain).connect(this.master);
+    const now = ctx.currentTime;
+    this.fx.gain.setTargetAtTime(0.35, now, 0.05);
+    source.onended = () => {
+      if (this.voice !== source) return;
+      this.voice = null;
+      this.fx?.gain.setTargetAtTime(1, ctx.currentTime, 0.15);
+    };
+    source.start();
+    this.voice = source;
+    return true;
+  }
+
+  stopSpeaking(): void {
+    const playing = this.voice;
+    if (!playing) return;
+    this.voice = null;
+    try {
+      playing.stop();
+    } catch { /* never started */ }
+    if (this.ctx && this.fx) this.fx.gain.setTargetAtTime(1, this.ctx.currentTime, 0.15);
   }
 
   private sustain(name: SoundName, level: number): void {

@@ -38,11 +38,6 @@ jobs:
         with:
           ref: ${{ env.SHA }}
 
-      - name: Build images
-        run: |
-          docker build --build-arg APP_COMMIT="$SHA" -t "poop-bird:$SHA" .
-          docker build -f collector/Dockerfile -t "poop-bird-collector:$SHA" .
-
       - name: Set up SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -58,14 +53,32 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
 
+      - name: Build images
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          docker build --build-arg APP_COMMIT="$SHA" -t "poop-bird:$SHA" .
+          docker build -f collector/Dockerfile -t "poop-bird-collector:$SHA" .
+          # The voice image is big (PyTorch), so it is tagged by the content of
+          # voice/ and only built and shipped when the VM doesn't have it yet.
+          VOICE_TAG=$(git rev-parse HEAD:voice)
+          echo "VOICE_TAG=$VOICE_TAG" >> "$GITHUB_ENV"
+          if ssh "viscon@$DEPLOY_HOST" docker image inspect "poop-bird-voice:$VOICE_TAG" >/dev/null 2>&1; then
+            echo "VOICE_SHIP=" >> "$GITHUB_ENV"
+          else
+            docker build -f voice/Dockerfile -t "poop-bird-voice:$VOICE_TAG" .
+            echo "VOICE_SHIP=poop-bird-voice:$VOICE_TAG" >> "$GITHUB_ENV"
+          fi
+
       - name: Ship images and restart the containers
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          docker save "poop-bird:$SHA" "poop-bird-collector:$SHA" | gzip | ssh "viscon@$DEPLOY_HOST" 'gunzip | docker load'
-          ssh "viscon@$DEPLOY_HOST" bash -s -- "$SHA" <<'EOF'
+          docker save "poop-bird:$SHA" "poop-bird-collector:$SHA" $VOICE_SHIP | gzip | ssh "viscon@$DEPLOY_HOST" 'gunzip | docker load'
+          ssh "viscon@$DEPLOY_HOST" bash -s -- "$SHA" "$VOICE_TAG" <<'EOF'
             set -e
             SHA=$1
+            VOICE_TAG=$2
             # The game's Caddy reaches the collector as "collector" on this network.
             docker network inspect poopbird >/dev/null 2>&1 || docker network create poopbird
             # Collector credentials, generated once and kept on the VM only:
@@ -79,6 +92,22 @@ jobs:
             docker rm -f collector 2>/dev/null || true
             docker run -d --name collector --restart unless-stopped --network poopbird \
               --env-file "$ENV_FILE" -v poopbird-data:/data "poop-bird-collector:$SHA"
+            # The bird's voice. Voice cloning needs a Hugging Face token in
+            # ~/poopbird-voice.env (HF_TOKEN=hf_...), added by hand; without it the
+            # game plays without the voice. The container takes a minute to load
+            # its model, so it is only recreated when its image or that file changed.
+            VOICE_ENV=~/poopbird-voice.env
+            if [ ! -f "$VOICE_ENV" ]; then
+              ( umask 077; printf '# HF_TOKEN=hf_... (huggingface.co/kyutai/pocket-tts terms accepted)\n' > "$VOICE_ENV" )
+            fi
+            VOICE_ID="poop-bird-voice:$VOICE_TAG $(sha256sum < "$VOICE_ENV" | cut -c1-16)"
+            if [ "$(docker inspect -f '{{index .Config.Labels "deploy"}}' voice 2>/dev/null)" != "$VOICE_ID" ]; then
+              docker rm -f voice 2>/dev/null || true
+              # Two cores and capped memory, so it can't starve the game.
+              docker run -d --name voice --restart unless-stopped --network poopbird \
+                --env-file "$VOICE_ENV" -v poopbird-voice-cache:/cache \
+                --cpus 2 --memory 3g --label "deploy=$VOICE_ID" "poop-bird-voice:$VOICE_TAG"
+            fi
             docker rm -f poop-bird 2>/dev/null || true
             docker run -d --name poop-bird --restart unless-stopped --network poopbird \
               -p 8080:8080 "poop-bird:$SHA"
@@ -87,4 +116,6 @@ jobs:
               docker images "$image" --format '{{.Repository}}:{{.Tag}}' \
                 | grep -vx "$image:$SHA" | xargs -r docker rmi >/dev/null || true
             done
+            docker images poop-bird-voice --format '{{.Repository}}:{{.Tag}}' \
+              | grep -vx "poop-bird-voice:$VOICE_TAG" | xargs -r docker rmi >/dev/null || true
           EOF
