@@ -58,6 +58,8 @@ import {
 
 export const VIEW_H = 600;
 export const GROUND_Y = 520;
+/** Upward px/s the street gives the bird back during the calm city lesson. */
+const CALM_BOUNCE = 320;
 export const BIRD_RADIUS = 22;
 /** × the target spawn rate in attract mode, so there's always someone to hit. */
 const DEMO_SPAWN_SCALE = 3;
@@ -733,6 +735,13 @@ export class Game {
    * oceanFirstObstacleDelay after it's cleared.
    */
   calmWater = false;
+  /**
+   * Set by main.ts while a new player's first city lesson runs: the street
+   * scrolls on and cars and pedestrians come, but no obstacles, paparazzi or
+   * kids, and the street bounces the bird back up instead of ending the run.
+   * The first obstacle comes firstObstacleDelay after it's cleared.
+   */
+  calmCity = false;
   /** Was calmWater set last step (to start the floor grace when it's cleared). */
   private wasCalm = false;
   /** Seconds left in which the sea floor still doesn't kill, after calm water (oceanCalmFloorGrace). */
@@ -871,6 +880,7 @@ export class Game {
     this.stage = "city";
     this.transition = null;
     this.calmWater = false;
+    this.calmCity = false;
     this.wasCalm = false;
     this.floorGrace = 0;
     this.shore = null;
@@ -1313,7 +1323,8 @@ export class Game {
     if (b.y + BIRD_RADIUS >= floor) {
       b.y = floor - BIRD_RADIUS;
       if (b.vy > 0) b.vy = 0;
-      if (this.phase === "playing") this.crash();
+      if (this.phase === "playing" && this.calmCity) b.vy = -CALM_BOUNCE;
+      else if (this.phase === "playing") this.crash();
     }
     if (this.phase === "playing" && this.hitsObstacle()) this.crash();
     if (this.phase === "playing" && this.touchesWire()) this.zap();
@@ -2130,6 +2141,10 @@ export class Game {
       this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + config.oceanFirstObstacleDelay);
       return;
     }
+    if (this.calmCity && this.stage === "city") {
+      this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + config.firstObstacleDelay);
+      return;
+    }
 
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
@@ -2769,8 +2784,8 @@ export class Game {
     if (this.targetSpawnAcc >= 1) {
       this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
       if (this.demo) this.spawnTarget();
-      else if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
-      else if (this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
+      else if (!this.calmCity && this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
+      else if (!this.calmCity && this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
       // Nobody wanders through the wedding; the road stays busy.
       else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
@@ -2831,6 +2846,12 @@ export class Game {
       pap: { state: "watching", timer: 0, startX: x, tutorial, aim: -2.4, flash: 0, beep: 0 },
       kid: null, chute: null,
     });
+  }
+
+  /** A car drives on right now (the city lesson's first target). */
+  spawnCarNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
+    this.spawnTarget("car");
   }
 
   /** Debug: a paparazzo walks on right now. */

@@ -103,20 +103,40 @@ wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
 ## How it plays
 
 Calibration is optional. Every run starts on the **perch**: the bird sits in
-its nest on top of a street lamp, with the player's webcam and an upright
-strain gauge right beside it, and a big arrow from the webcam to the bird says
-"that's you!". Above them is a single instruction next to a sketch of the face
-it asks for. The gauge
-fills as the face strains; over its 💩 line, the bird charges. Face mode runs
-on a default calibration fitted to a quick read of the player's relaxed face.
+its nest on top of a street lamp, with the player's webcam beside it and a big
+arrow from the webcam to the bird saying "that's you!". Face mode runs on a
+default calibration fitted to a quick read of the player's relaxed face; while
+that runs ("Relax and look here"), only the bird and the webcam show. Then an
+upright strain gauge slides in beside the webcam: it fills as the face
+strains, and over its 💩 line the bird charges.
 
+**The coach.** Every tutorial step is one banner, the coach (`#coach`): a
+sketch of the face to make, one short line, sometimes a hint under it, and
+during the flight lesson a row of dots for where you are. Each step moves on
+once the player has done it (the line turns green for a moment), not on a
+timer. On the perch it sits beside the bird; in the city and the ocean, over
+the game near the top. The swim lesson and the puff calibration use it too.
+
+- **Flight lesson** (new players: the tutorial hasn't been seen on this
+  browser, or "I'm new here" is ticked), six steps:
+  1. "Squeeze your face" (Hold Space) until the bird starts filling up,
+  2. "Now relax": the poop hops the bird up, and the coach says "Pooping
+     pushes you up!",
+  3. "Squeeze longer to fly": a full bird takes off,
+  4. in a **calm city** (`Game.calmCity`: no obstacles, paparazzi or kids,
+     and the street bounces the bird back up instead of ending the run):
+     "Squeeze & relax to stay up" until three poops (or 20 s),
+  5. "Poop on the car! 🎯": a car drives on; until the first hit (or 12 s),
+  6. "Now dodge the buildings!": the lesson counts as seen, and the calm ends
+     once the bird is clear of the street (or after 8 s); the first obstacle
+     comes `firstObstacleDelay` later.
+  An accident (held too long) shows "Too long! Relax as soon as it's full".
+  The perch part and the city part are remembered separately (`perch`,
+  `city` in `TUTORIALS`).
 - **Takeoff takes a full poop.** "Squeeze till the bird is full": smaller
   poops just hop in the nest ("Squeeze longer to take off"), so a stray strain
   never starts the run. Once the bird is full, the line changes to "Relax to
   fly! 🚀", and letting go then starts the run. There's no countdown.
-- **New players** (the perch tutorial hasn't been seen on this browser, or
-  "I'm new here" is ticked) first get one guided practice poop: "Squeeze your
-  face" until the bird starts filling up, then "Now relax".
 - **Tuning** (the full two-phase calibration) is a small "Tune to my face"
   button (or **C**). It turns yellow and pulses with a question when the gauge
   doesn't follow the face: it never reaches the 💩 line when the player is
@@ -226,8 +246,8 @@ city by city (the debug panel's "Progression" group).
   lesson** (see below).
 - **Swim lesson** (face mode, first dive). The fish swims on in **calm
   water** (`Game.calmWater`: no obstacles or jellyfish, no spiking, the sea
-  floor doesn't kill) while banners walk you through it: relax, "PUCKER &
-  PUFF!", "LET IT OUT", once more. Each banner has a pictogram of the face to
+  floor doesn't kill) while the coach walks you through it: relax, "Pucker &
+  puff!", "Let it out", once more. Each step has a pictogram of the face to
   make (relaxed, or the pufferfish face: cheeks puffed, lips pursed); the
   steps follow each other without countdowns. The fish follows
   your measured puff meanwhile (pursed lips, as there's no puff calibration
