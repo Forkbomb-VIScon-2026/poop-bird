@@ -52,6 +52,51 @@
         <div class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
       </div>
 
+      <!-- Ocean tutorial: a new player's first dive (the world is frozen until "Got it").
+           [data-face] / [data-keys] parts show in face / keyboard mode only. -->
+      <div id="ocean-tutorial" class="tutorial hidden">
+        <div class="card tutorial-card">
+          <div class="calib-step">New player tips</div>
+          <h2>You're a pufferfish! 🐡</h2>
+          <ul class="tips">
+            <li>
+              <span class="tip-icon">⬆️</span>
+              <span><b data-face>Puff your cheeks</b><b data-keys>Hold <kbd>Space</kbd></b> to blow up and float up.</span>
+            </li>
+            <li>
+              <span class="tip-icon">⬇️</span>
+              <span><b data-face>Let the air out</b><b data-keys>Let go</b> to shrink and sink. A little puff keeps you level.</span>
+            </li>
+            <li>
+              <svg class="tip-meter" viewBox="0 0 28 60" aria-hidden="true">
+                <rect x="8" y="2" width="12" height="56" rx="5" fill="#fff" stroke="#2b2d42" stroke-width="3" />
+                <rect x="10" y="27" width="8" height="29" rx="3" fill="#ffca3a" />
+                <path d="M3 37 H25" stroke="#3a86ff" stroke-width="3" />
+                <path d="M3 11 H25" stroke="#ef476f" stroke-width="3" />
+              </svg>
+              <span>The meter by the fish shows your puff: the <b class="blue">blue line</b> hovers, the <b class="accent">red line</b> spikes you out.</span>
+            </li>
+            <li>
+              <span class="tip-icon">🪼</span>
+              <span><b>Spiked</b>, you pop jellyfish for points. <b>Not spiked</b>, a jellyfish stings you out.</span>
+            </li>
+            <li>
+              <span class="tip-icon">💥</span>
+              <span>Stay spiked too long and you <b>pop</b>, then sink for a moment.</span>
+            </li>
+            <li>
+              <span class="tip-icon">🪸</span>
+              <span>Dodge the coral and rocks, stay off the sea floor, and reach the far quay to fly again.</span>
+            </li>
+          </ul>
+          <p class="tutorial-try" data-keys>Try it now: hold <kbd>Space</kbd> and watch the fish.</p>
+          <p id="tutorial-next" class="tutorial-try" data-face>Next: one big puff, so the game learns your cheeks.</p>
+          <div class="buttons">
+            <button id="btn-tutorial-ok" class="btn primary">Got it! <small>(Enter)</small></button>
+          </div>
+        </div>
+      </div>
+
       <!-- Webcam preview (also used, enlarged, during calibration) -->
       <div id="cam" class="hidden">
         <div class="cam-video-wrap">
@@ -76,6 +121,7 @@
           <button id="btn-keyboard" class="btn small ghost light">or use the keyboard</button>
           <details class="more">
             <summary>⚙️ Options</summary>
+            <label class="opt"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here: show tips (like how to swim in the ocean)</label>
             <p class="keys"><kbd>Space</kbd> strain in keyboard mode (or puff underwater) · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>C</kbd> recalibrate · <kbd>N</kbd> track another face<span data-debug-only> · <kbd>D</kbd> debug</span></p>
           </details>
           <p class="privacy light">🔒 Your camera never leaves this device.</p>

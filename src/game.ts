@@ -92,7 +92,7 @@ export interface Shore {
  * under water (`swapped`) and inflates while the camera follows it down.
  * Breach: the fish shoots up, becomes the bird as it breaks the surface and
  * leaps up to a safe height, gliding until it's over the street. While
- * `Game.holdTransition` is set (puff calibration) the dive doesn't finish.
+ * `Game.holdTransition` is set (tutorial, puff calibration) the dive doesn't finish.
  */
 export interface StageTransition {
   to: Stage;
@@ -578,7 +578,7 @@ export class Game {
 
   stage: Stage = "city";
   transition: StageTransition | null = null;
-  /** Set by main.ts while the puff calibration runs: the dive doesn't finish, and the world holds still. */
+  /** Set by main.ts while the ocean tutorial or the puff calibration runs: the dive doesn't finish, and the world holds still. */
   holdTransition = false;
   /** The waterfront at the end (or just behind the start) of the stage. */
   shore: Shore | null = null;
