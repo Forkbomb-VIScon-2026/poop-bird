@@ -8,7 +8,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { Game } from "./game";
-import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
+import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
@@ -963,7 +963,9 @@ function onGameOver(): void {
     best = score;
     saveBest(best);
   }
-  $("go-title").textContent = pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
+  $("go-title").textContent = game.trophy !== null
+    ? pick(["Hooked!", "Reeled in!", "Gone fishing.", "Fish and chips!"])
+    : pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
   $("go-score").textContent = String(score);
   show($("go-newbest"), newBest);
   $("go-best").textContent = String(best);
@@ -990,6 +992,20 @@ function onGameOver(): void {
     }
   }
   $("go-balloons").textContent = String(game.balloonsPopped);
+  $("go-lines").textContent = String(game.anglersSnapped);
+
+  // Landed by the fisherman: his trophy photo.
+  show($("go-trophy"), game.trophy !== null);
+  if (game.trophy !== null) {
+    const tc = $<HTMLCanvasElement>("go-trophy-canvas");
+    const tctx = tc.getContext("2d");
+    if (tctx) {
+      tctx.setTransform(1, 0, 0, 1, 0, 0);
+      tctx.clearRect(0, 0, tc.width, tc.height);
+      tctx.scale(tc.width / 250, tc.width / 250);
+      drawTrophyPrint(tctx, 2, 2, 240, renderer.photos.get(game.trophy));
+    }
+  }
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -1218,6 +1234,8 @@ function takePhoto(photoId: number): void {
 
 /** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
 let weddingFace: Photo | null = null;
+/** The player's face when the fisherman's hook went in (face mode): it ends up on the fish in his trophy photo. */
+let anglerFace: Photo | null = null;
 
 function handleGameEvents(): void {
   for (const e of game.events) {
@@ -1355,6 +1373,36 @@ function handleGameEvents(): void {
       case "threaded":
         sound.hit(4);
         break;
+      case "anglerCast":
+        sound.anglerCast();
+        break;
+      case "anglerHooked":
+        sound.anglerHooked();
+        buzz([40, 30, 40]);
+        // The face mid-struggle ends up on the fish in his trophy photo.
+        anglerFace = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
+        break;
+      case "anglerReel":
+        sound.reelClick();
+        break;
+      case "anglerLanded": {
+        sound.splash();
+        buzz(200);
+        const photo = renderer.captureTrophy(game, anglerFace);
+        if (photo) renderer.photos.set(e.photoId, photo);
+        anglerFace = null;
+        break;
+      }
+      case "anglerPhoto":
+        sound.shutter();
+        break;
+      case "lineSnapped":
+        sound.lineSnap();
+        buzz(60);
+        break;
+      case "anglerSplash":
+        sound.splash();
+        break;
     }
   }
   game.events.length = 0;
@@ -1413,6 +1461,10 @@ window.addEventListener("keydown", (e) => {
     case "b":
       // Debug shortcut: a hot-air balloon floats in.
       if (debug?.visible && state === "playing") game.spawnBalloonNow();
+      break;
+    case "h":
+      // Debug shortcut: a fisherman rows in (ocean only).
+      if (debug?.visible && state === "playing") game.spawnAnglerNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.

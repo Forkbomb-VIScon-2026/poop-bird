@@ -36,6 +36,12 @@
 // basket drops, and the passengers bail out under parachutes, drifting down
 // as targets. The basket is solid: flying into it ends the run. Slipping
 // through the ropes between envelope and basket untouched pays a bonus.
+//
+// Now and then a fisherman rows across the ocean's surface and drops a hook
+// that he reels toward the fish's depth. Spiked, the fish snaps his line and he
+// falls overboard. Unspiked, it's hooked: the world holds still while he reels
+// it up, and puffing up to spikes before it reaches the surface breaks free.
+// Otherwise he lands it, and the run ends with his trophy photo.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -174,6 +180,44 @@ export interface Jelly {
   r: number;
   phase: number;
   hue: number;
+}
+
+/**
+ * The fisherman's state. Rowing: his boat comes in along the surface. Casting:
+ * a "!" and the bobber plops in. Fishing: the hook sinks and he reels it toward
+ * the fish's depth (he stops adjusting once it's close, so it can be dodged).
+ * Leaving: the hook went past and he reels in. Hooked: the fish is on the line
+ * and he's reeling it up. Landed: he got it (the run is over). Overboard: the
+ * line snapped and he fell in.
+ */
+export type AnglerState = "rowing" | "casting" | "fishing" | "leaving" | "hooked" | "landed" | "overboard";
+
+export interface Angler {
+  state: AnglerState;
+  /** Seconds in the current state. */
+  t: number;
+  /** Screen x of the boat's centre. His rod tip is ANGLER_TIP_DX ahead (left) of it. */
+  x: number;
+  /** The hook, in ocean y. */
+  hookX: number;
+  hookY: number;
+  hookVy: number;
+  /** The depth he's reeling the hook toward. */
+  target: number;
+  /** Closest the hook came to the fish (for the "close one" bonus). */
+  closest: number;
+  dodged: boolean;
+  /** Hooked: where the fish bit; it's reeled up from there. */
+  fromY: number;
+  /** 0..1 how far the hooked fish has been reeled in. */
+  reel: number;
+  /** The fish broke the line by spiking out while hooked (rather than spiked into the hook). */
+  escaped: boolean;
+  /** His bucket hat once he's fallen in, drifting on the surface (screen x). */
+  hatX: number;
+  /** Seconds until the next click of the reel's ratchet. */
+  click: number;
+  seed: number;
 }
 
 /**
@@ -459,7 +503,14 @@ export type GameEvent =
   | { type: "chuteOpen" }
   | { type: "basketLanded" }
   | { type: "burner" }
-  | { type: "threaded"; points: number };
+  | { type: "threaded"; points: number }
+  | { type: "anglerCast" }
+  | { type: "anglerHooked" }
+  | { type: "anglerReel" }
+  | { type: "anglerLanded"; photoId: number }
+  | { type: "anglerPhoto" }
+  | { type: "lineSnapped"; points: number; escaped: boolean }
+  | { type: "anglerSplash" };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -504,6 +555,9 @@ const BALLOON_COLORS: [string, string][] = [
   ["#ff7f50", "#2a9d8f"],
 ];
 const CHUTE_COLORS = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f78c6b"];
+
+const CAUGHT_MESSAGES = ["CATCH OF THE DAY!", "REELED IN!", "Fish and chips!", "Hook, line and sinker", "Dinner is served", "Should've puffed!"];
+const SNAPPED_TEXT = ["SNAPPED!", "LINE BROKEN!", "SNAP!"];
 
 const SNAP_MESSAGES = ["SNAP!", "SAY CHEESE!", "CAUGHT ON CAMERA!", "*CLICK*", "GOT YOU!"];
 
@@ -553,6 +607,14 @@ export const PIGEON_R = 16;
 export const PEBBLE_R = 5;
 /** A kid stops shooting once he's this close to (or behind) the bird. */
 const KID_MIN_AHEAD = 70;
+/** The fisherman's rod tip is this far ahead (left) of his boat's centre. */
+export const ANGLER_TIP_DX = 117;
+/** Hook radius for collisions. */
+export const HOOK_R = 7;
+/** Seconds after the line snaps that the fisherman hits the water. */
+export const ANGLER_FALL_TIME = 0.4;
+/** Extra room after the fisherman's slot before the next ocean obstacle. */
+const ANGLER_ROOM = 320;
 
 export class Game {
   width = 1000;
@@ -624,7 +686,7 @@ export class Game {
   /** 0..1 white camera flash over the whole screen. */
   flash = 0;
   /** The latest shot, popping up as a polaroid. */
-  polaroid: { photoId: number; life: number; maxLife: number; wedding?: WeddingPhoto } | null = null;
+  polaroid: { photoId: number; life: number; maxLife: number; wedding?: WeddingPhoto; trophy?: boolean } | null = null;
   /** Photos that went to print, in order. */
   frontPages: Tabloid[] = [];
   camerasSmashed = 0;
@@ -639,6 +701,10 @@ export class Game {
   weddingsRuined = 0;
   bouquetsCaught = 0;
   balloonsPopped = 0;
+  angler: Angler | null = null;
+  anglersSnapped = 0;
+  /** The run ended on the fisherman's line: the trophy photo's id. */
+  trophy: number | null = null;
   message: { text: string; life: number } | null = null;
   dyingTime = 0;
   /** The run ended on a wire: the bird is drawn charred. */
@@ -663,6 +729,8 @@ export class Game {
   /** This city stage gets a wedding that hasn't happened yet. */
   private weddingPlanned = false;
   private weddingsSeen = 0;
+  /** This ocean stage gets a fisherman who hasn't shown up yet. */
+  private anglerPlanned = false;
 
   events: GameEvent[] = [];
 
@@ -721,6 +789,10 @@ export class Game {
     this.pebblesShot = 0;
     this.bonks = 0;
     this.balloonsPopped = 0;
+    this.angler = null;
+    this.anglersSnapped = 0;
+    this.trophy = null;
+    this.anglerPlanned = false;
     this.lastKidAt = -Infinity;
     this.wedding = null;
     this.bouquet = null;
@@ -842,7 +914,9 @@ export class Game {
     }
     const alive = this.phase === "playing";
     const ocean = this.stage === "ocean";
-    const speed = alive ? this.scrollSpeed * (ocean ? config.oceanScrollScale : 1) : 0;
+    // The world holds still while the fisherman reels in a hooked fish.
+    const reeling = this.angler?.state === "hooked";
+    const speed = alive && !reeling ? this.scrollSpeed * (ocean ? config.oceanScrollScale : 1) : 0;
     this.speed = speed;
     if (alive) {
       this.distance += speed * dt;
@@ -866,11 +940,13 @@ export class Game {
     this.updateWedding(dt);
     this.updateBouquet(dt);
     this.updateJellies(dt, speed);
+    this.updateAngler(dt, speed);
     this.updateEffects(dt, speed);
 
     if (this.phase === "dying") {
       this.dyingTime += dt;
-      if (this.dyingTime > 1.3 && this.bird.y >= this.floorY() - this.bodyRadius - 1) {
+      const landed = this.angler?.state === "landed";
+      if (landed ? this.dyingTime > 2.6 : this.dyingTime > 1.3 && this.bird.y >= this.floorY() - this.bodyRadius - 1) {
         this.phase = "over";
         this.events.push({ type: "gameover" });
       }
@@ -1084,6 +1160,7 @@ export class Game {
       this.fish.flare = 0.35;
       this.bird.stretchV += 8;
       this.events.push({ type: "spike" });
+      if (this.angler?.state === "hooked") this.snapLine(this.angler, true);
     } else if (event.type === "pop") {
       this.popAccident();
     }
@@ -1123,6 +1200,12 @@ export class Game {
     const spiked = this.spike.spiked && !dying;
     f.spikes += ((spiked ? 1 : 0) - f.spikes) * Math.min(1, dt * (spiked ? 22 : 10));
     f.flare = Math.max(0, f.flare - dt);
+
+    const a = this.angler;
+    if (a && (a.state === "hooked" || a.state === "landed")) {
+      this.reelFish(a, dt);
+      return;
+    }
 
     const target = dying ? 260 : targetSwimVelocity(input, config);
     b.vy = applyWaterDrag(b.vy, target, dt, Math.max(0.02, config.oceanDragTime));
@@ -1192,7 +1275,7 @@ export class Game {
       j.y = j.baseY + Math.sin(this.time * 1.6 + j.phase) * 14;
     }
     this.jellies = this.jellies.filter((j) => j.x > -80);
-    if (this.stage !== "ocean" || this.phase !== "playing") return;
+    if (this.stage !== "ocean" || this.phase !== "playing" || this.angler?.state === "hooked") return;
 
     // Popping (spiked) or getting stung (not spiked).
     const r = this.hitRadius;
@@ -1220,6 +1303,7 @@ export class Game {
       const sx = this.width + 50;
       const clear =
         this.shore?.kind !== "exit" &&
+        !this.anglerBusy &&
         this.obstacles.every((o) => o.x > sx + 70 || o.x + o.w < sx - 70) &&
         (this.gateSpawned || this.nextObstacleAt - this.distance > 220);
       if (clear) {
@@ -1253,6 +1337,247 @@ export class Game {
     }
     j.r = 0; // removed by the caller
     this.events.push({ type: "jellyPopped", points, combo: this.combo });
+  }
+
+  // --- fisherman -------------------------------------------------------------------
+
+  /** True while the fisherman is a threat: no jellyfish crowd his hook. */
+  private get anglerBusy(): boolean {
+    const s = this.angler?.state;
+    return s === "rowing" || s === "casting" || s === "fishing" || s === "hooked";
+  }
+
+  private anglerDue(before: number): boolean {
+    return (
+      this.anglerPlanned &&
+      !this.angler &&
+      this.stageObstacles >= Math.round(config.anglerSlot) &&
+      this.stageObstacles < before - 1
+    );
+  }
+
+  /** His boat rows in from the right. Returns the extra room it needs before the next obstacle. */
+  private spawnAngler(): number {
+    this.anglerPlanned = false;
+    this.angler = {
+      state: "rowing", t: 0, x: this.width + ANGLER_TIP_DX + 60,
+      hookX: 0, hookY: SURFACE_Y, hookVy: 0, target: SURFACE_Y,
+      closest: Infinity, dodged: false, fromY: 0, reel: 0, escaped: false,
+      hatX: 0, click: 0, seed: Math.random() * 1000,
+    };
+    return ANGLER_ROOM;
+  }
+
+  /** Debug: a fisherman rows in right now (ocean only). */
+  spawnAnglerNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.angler) return;
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
+    this.jellies = this.jellies.filter((j) => j.x < this.width - 200);
+    this.spawnAngler();
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + ANGLER_ROOM + config.oceanSpacingMin);
+  }
+
+  private setAnglerState(a: Angler, state: AnglerState): void {
+    a.state = state;
+    a.t = 0;
+  }
+
+  private updateAngler(dt: number, speed: number): void {
+    const a = this.angler;
+    if (!a) return;
+    a.t += dt;
+    const b = this.bird;
+    // He rows against the scroll (but slower), so his line sweeps toward the fish.
+    const rowing = a.state === "rowing" || a.state === "casting" || a.state === "fishing" || a.state === "leaving";
+    a.x -= (speed - (rowing ? config.anglerRow : 0)) * dt;
+    const tipX = a.x - ANGLER_TIP_DX;
+    const playing = this.phase === "playing" && this.stage === "ocean" && !this.transition;
+    const r = this.hitRadius;
+
+    switch (a.state) {
+      case "rowing":
+        a.hookX = tipX;
+        if (!playing) break;
+        if (tipX - b.x < 160) this.setAnglerState(a, "leaving");
+        else if (tipX - b.x < config.anglerCastRange && tipX < this.width - 20) this.setAnglerState(a, "casting");
+        break;
+      case "casting":
+        a.hookX = tipX;
+        // The rod whips forward, then the bobber plops in and the hook starts to sink.
+        if (a.t >= 0.5) {
+          this.setAnglerState(a, "fishing");
+          a.hookY = SURFACE_Y;
+          a.hookVy = 0;
+          a.target = SURFACE_Y;
+          this.ripple(tipX, 5);
+          this.events.push({ type: "anglerCast" });
+        }
+        break;
+      case "fishing": {
+        a.hookX = tipX + Math.sin(this.time * 2 + a.seed) * 3;
+        // He follows the fish's depth (with a little lead) until the hook is close, then commits.
+        if (tipX - b.x > config.anglerCommit) {
+          a.target = Math.max(SURFACE_Y + 40, Math.min(GROUND_Y - 30, b.y + b.vy * config.anglerLead));
+        }
+        const reel = ramp(config.anglerReelSpeed, config.anglerReelSpeedMax, this.difficulty);
+        const want = Math.max(-reel, Math.min(reel * 1.6, (a.target - a.hookY) * 4));
+        a.hookVy += (want - a.hookVy) * Math.min(1, dt * 6);
+        a.hookY += a.hookVy * dt;
+        if (!playing) break;
+        const dist = Math.hypot(a.hookX - b.x, a.hookY - b.y);
+        // Spines reach further than the mouth, like popping jellyfish.
+        if (this.spike.spiked && dist < (r + HOOK_R) * config.oceanJellyPopReach) {
+          this.snapLine(a, false);
+          break;
+        }
+        if (!this.spike.spiked && dist < r + HOOK_R) {
+          this.hookFish(a);
+          break;
+        }
+        a.closest = Math.min(a.closest, dist);
+        if (a.hookX < b.x - r - 20) {
+          if (!a.dodged && a.closest < r + HOOK_R + 26) {
+            a.dodged = true;
+            this.bonus += Math.round(config.targetPoints * config.anglerCloseMultiplier);
+            this.floaters.push({ x: b.x, y: b.y - 46, text: "CLOSE ONE!", color: "#bde0fe", size: 20, life: 0.9, maxLife: 0.9 });
+          }
+          this.setAnglerState(a, "leaving");
+        }
+        break;
+      }
+      case "leaving":
+        // Reels the empty hook back in.
+        a.hookX = tipX;
+        a.hookY = Math.max(SURFACE_Y, a.hookY - 260 * dt);
+        break;
+      case "hooked": {
+        a.reel = Math.min(1, a.reel + dt / Math.max(0.3, config.anglerEscapeTime));
+        // The boat swings round over the fish.
+        a.x += (a.hookX + ANGLER_TIP_DX - a.x) * Math.min(1, dt * 4);
+        a.click -= dt;
+        if (a.click <= 0) {
+          a.click = 0.09 - a.reel * 0.04;
+          this.events.push({ type: "anglerReel" });
+        }
+        if (a.reel >= 1) this.landFish(a);
+        break;
+      }
+      case "landed":
+        a.x += (a.hookX + ANGLER_TIP_DX - a.x) * Math.min(1, dt * 4);
+        // The camera flash: he takes his trophy photo.
+        if (this.trophy !== null && a.t >= 0.8 && !this.polaroid) {
+          this.flash = 0.7;
+          this.polaroid = { photoId: this.trophy, life: 2.4, maxLife: 2.4, trophy: true };
+          this.events.push({ type: "anglerPhoto" });
+        }
+        break;
+      case "overboard": {
+        // The cut end of the line, hook and all, drifts down and away.
+        if (a.hookY < GROUND_Y + 40) {
+          a.hookVy = Math.min(70, a.hookVy + 120 * dt);
+          a.hookY += a.hookVy * dt;
+        }
+        a.hookX -= speed * dt;
+        a.hatX -= (speed - 14) * dt;
+        const fallen = a.t - dt < ANGLER_FALL_TIME && a.t >= ANGLER_FALL_TIME;
+        if (fallen) {
+          this.splash(a.x + 120, SURFACE_Y, -1, 26);
+          this.events.push({ type: "anglerSplash" });
+        }
+        break;
+      }
+    }
+    if (a.x < -220 && a.hatX < -80 && a.hookX < -40) this.angler = null;
+  }
+
+  /** Bubbles and spray where the bobber or something small hits the surface. */
+  private ripple(x: number, n: number): void {
+    for (let i = 0; i < n; i++) {
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 10, y: SURFACE_Y + 4,
+        vx: (Math.random() - 0.5) * 50, vy: 20 + Math.random() * 50,
+        life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 2 + Math.random() * 3,
+        color: "#e0fbfc", gravity: -160, world: true,
+      });
+    }
+  }
+
+  /** The fish bit an unspiked hook: the world holds still and he starts reeling. */
+  private hookFish(a: Angler): void {
+    this.setAnglerState(a, "hooked");
+    a.reel = 0;
+    a.click = 0;
+    a.fromY = this.bird.y;
+    this.combo = 0;
+    this.shake = 8;
+    this.bird.stretchV -= 8;
+    this.floaters.push({ x: this.bird.x, y: this.bird.y - 50, text: "HOOKED!", color: "#ff595e", size: 26, life: 0.9, maxLife: 0.9 });
+    this.events.push({ type: "anglerHooked" });
+  }
+
+  /**
+   * Hooked: the fish is reeled up from where it bit toward the surface, slowly
+   * at first, thrashing on the line. Landed: it's yanked out of the water.
+   * Puff still shows (and spiking out breaks free, see updateSpike).
+   */
+  private reelFish(a: Angler, dt: number): void {
+    const b = this.bird;
+    const r = this.bodyRadius;
+    if (a.state === "hooked") {
+      const k = a.reel * a.reel;
+      const y = a.fromY + (SURFACE_Y + r * 0.5 - a.fromY) * k;
+      b.vy = (y - b.y) / Math.max(1e-3, dt);
+      b.y = y;
+      b.rot = -0.5 + Math.sin(this.time * 24) * 0.25;
+      this.bubbleTrail(dt, 30);
+    } else {
+      const wasUnder = b.y > SURFACE_Y;
+      b.vy = Math.max(-900, b.vy - 2400 * dt);
+      b.y += b.vy * dt;
+      b.rot += (-1.3 - b.rot) * Math.min(1, dt * 6);
+      if (wasUnder && b.y <= SURFACE_Y) this.splash(b.x, SURFACE_Y, 1, 40);
+    }
+    a.hookX = b.x + r * 0.9;
+    a.hookY = b.y;
+    this.updateSpring(dt);
+  }
+
+  /** He got it: out of the water it goes, and the run is over. */
+  private landFish(a: Angler): void {
+    this.setAnglerState(a, "landed");
+    this.phase = "dying";
+    this.dyingTime = 0;
+    this.spike = initialSpikeState();
+    this.shake = 10;
+    this.bird.vy = -200;
+    this.message = { text: pick(CAUGHT_MESSAGES), life: 2.6 };
+    const photoId = this.nextPhotoId++;
+    this.trophy = photoId;
+    this.events.push({ type: "anglerLanded", photoId });
+  }
+
+  /**
+   * The line snaps: the fish spiked into the hook, or spiked out while hooked
+   * (`escaped`). He tumbles backwards out of his boat.
+   */
+  private snapLine(a: Angler, escaped: boolean): void {
+    this.setAnglerState(a, "overboard");
+    a.escaped = escaped;
+    a.hookVy = escaped ? 0 : -40;
+    a.hatX = a.x + 30;
+    this.anglersSnapped++;
+    this.combo++;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    this.targetsHit++;
+    const mult = escaped ? config.anglerEscapeMultiplier : config.anglerSnapMultiplier;
+    const points = Math.round(config.targetPoints * mult * this.comboMultiplier);
+    this.bonus += points;
+    const b = this.bird;
+    this.floaters.push({ x: b.x, y: b.y - 60, text: escaped ? "BROKE FREE!" : pick(SNAPPED_TEXT), color: "#ffd60a", size: 28, life: 1.2, maxLife: 1.2 });
+    const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
+    this.floaters.push({ x: b.x, y: b.y - 30, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
+    this.shake = Math.max(this.shake, 6);
+    this.events.push({ type: "lineSnapped", points, escaped });
   }
 
   // --- stage transitions -------------------------------------------------------------
@@ -1411,6 +1736,11 @@ export class Game {
     for (const p of this.poops) p.x -= dx;
     for (const d of this.doves) d.x -= dx;
     if (this.bouquet) this.bouquet.x -= dx;
+    if (this.angler) {
+      this.angler.x -= dx;
+      this.angler.hookX -= dx;
+      this.angler.hatX -= dx;
+    }
   }
 
   /**
@@ -1437,7 +1767,9 @@ export class Game {
     this.wedding = null;
     this.bouquet = null;
     this.doves = [];
+    this.angler = null;
     if (to === "city") this.weddingPlanned = Math.random() < config.weddingChance;
+    else this.anglerPlanned = Math.random() < config.anglerChance;
     this.message = null;
     this.lastGapCenter = 260;
     this.jellySpawnAcc = 0;
@@ -1538,6 +1870,7 @@ export class Game {
       const balloon = special && !powerLine && roll < config.powerLineChance + config.balloonChance;
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnShore();
+      else if (ocean && this.anglerDue(before)) extra = this.spawnAngler();
       else if (ocean) this.spawnOceanObstacle();
       else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();

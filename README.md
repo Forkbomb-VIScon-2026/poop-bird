@@ -72,6 +72,7 @@ starts the face dataset collector (local credentials `local` /
 | **K** | With the debug panel open: a slingshot kid walks on |
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
+| **H** | With the debug panel open: a fisherman rows in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration; close the ocean tutorial |
 
@@ -211,6 +212,26 @@ total distance.
   spiked longer than ~1.5 s and you **pop**: a comic deflate, shake, and a
   stun during which you sink without control. The meter flashes "DEFLATE!" in
   the last ~0.3 s.
+- **The fisherman:** some ocean stages (`anglerChance`) have a fisherman in
+  a rowing boat, sitting low in the water with his pipe, beard, yellow
+  oilskins and sou'wester. When he's close he casts (a "!" by the bobber) and
+  the hook sinks with a wriggling worm. He reels it up and down to follow the
+  fish's depth (with a little lead) until it's about `anglerCommit` px away,
+  then he's committed, and a change of depth dodges it ("CLOSE ONE!" if it was
+  near).
+  - Touch the hook **spiked** and the line **snaps** (×4): he tumbles backwards
+    out of his boat and splashes about bald next to it while his hat floats off.
+  - Touch it **unspiked** and you're **hooked**: the world holds still and he
+    reels you up toward the surface, with the reel ratcheting and a ring around
+    the fish running out ("PUFF UP!"). Puff up to spikes before it's empty and
+    the line snaps ("BROKE FREE!", ×5). The usual pop timer still runs, so
+    deflate again in time.
+  - Fail, and he yanks the fish out of the water. That ends the run with **his
+    trophy photo**: him in his boat, grinning, holding up the puffed-up fish.
+    In face mode the fish has the player's face, grabbed when the hook went in
+    (mid-struggle). It pops up in-game and goes on the game-over card ("Catch
+    of the day").
+  Tunables are in the debug panel's "Fisherman" group.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
 - **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
   wall comes up ahead. Once the last obstacle is behind you and the wall is

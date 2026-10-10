@@ -908,6 +908,73 @@ export class Sound {
     this.noiseBurst(t, 0.25, 4000, 0.2, "highpass");
   }
 
+  /** The bobber plops into the water. */
+  anglerCast(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(900, t);
+    o.frequency.exponentialRampToValueAtTime(220, t + 0.09);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.14);
+    this.blip(t + 0.1, 500, 0.06);
+  }
+
+  /** Hooked: the line zips taut, a low "uh-oh". */
+  anglerHooked(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    this.noiseSweep(t, 0.25, 6000, 1500, 0.25, "bandpass");
+    [392, 311].forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "square";
+      o.frequency.value = f;
+      const st = t + 0.08 + i * 0.16;
+      g.gain.setValueAtTime(0.0001, st);
+      g.gain.exponentialRampToValueAtTime(0.08, st + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, st + 0.15);
+      o.connect(g).connect(this.master!);
+      o.start(st);
+      o.stop(st + 0.16);
+    });
+  }
+
+  /** One click of the reel's ratchet. */
+  reelClick(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.noiseBurst(ctx.currentTime, 0.025, 3200, 0.18, "bandpass");
+  }
+
+  /** The line snaps: a high twang falling away. */
+  lineSnap(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(1400, t);
+    o.frequency.exponentialRampToValueAtTime(180, t + 0.3);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.37);
+    this.noiseBurst(t, 0.04, 5000, 0.3, "highpass");
+    this.chime(t + 0.12);
+  }
+
   private chime(t: number): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
