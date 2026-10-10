@@ -1421,7 +1421,7 @@ export class Renderer {
 
   /**
    * The paparazzo's timer: a ring with a camera that fills as he closes in,
-   * and on the run's first one a bouncing "SPLAT HIM!" arrow.
+   * and on the run's first one a bouncing arrow.
    */
   private drawPaparazzoTimer(t: Target, game: Game): void {
     const p = t.pap;
@@ -1480,13 +1480,6 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    ctx.font = "900 24px 'Trebuchet MS', sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = 6;
-    ctx.strokeText("💩 SPLAT HIM!", x, ay - 34);
-    ctx.fillStyle = "#ffd60a";
-    ctx.fillText("💩 SPLAT HIM!", x, ay - 34);
   }
 
   /** The fresh shot pops up as a polaroid in the top corner. */

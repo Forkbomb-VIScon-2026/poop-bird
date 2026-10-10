@@ -156,7 +156,7 @@ export interface Paparazzo {
   timer: number;
   /** Where he spawned, so the timer runs from there to the bird. */
   startX: number;
-  /** The run's first paparazzo walks slower and gets a "SPLAT HIM!" arrow. */
+  /** The run's first paparazzo walks slower and gets a bouncing arrow. */
   tutorial: boolean;
   /** Camera angle toward the bird (radians, screen space). */
   aim: number;
