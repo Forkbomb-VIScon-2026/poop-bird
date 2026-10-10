@@ -42,7 +42,8 @@ export function storageRemove(key: string): void {
 
 export const CALIBRATION_KEY = "poopbird.calibration.v1";
 // v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
-export const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v2";
+// v3: interactive calibration (puff/relax cycles; "relaxed" includes the face right after a puff).
+export const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v3";
 
 // --- Tutorials (new-player tips) -----------------------------------------------
 

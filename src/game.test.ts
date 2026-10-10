@@ -43,6 +43,66 @@ describe("harbour dive", () => {
   });
 });
 
+describe("calm water", () => {
+  /** A game that just dived into the ocean, in calm water. */
+  function calm(): Game {
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 6 && game.stage === "city"; i++) game.step(1 / 60);
+    game.calmWater = true;
+    for (let i = 0; i < 60 * 6 && game.transition; i++) game.step(1 / 60);
+    return game;
+  }
+
+  it("spawns nothing and lets the fish rest on the sea floor, while the world scrolls on", () => {
+    const game = calm();
+    const start = game.distance;
+    game.puffInput = 0; // deflated: sinks to the floor
+    for (let i = 0; i < 60 * 30; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    expect(game.distance).toBeGreaterThan(start + 500);
+    expect(game.obstacles).toHaveLength(0);
+    expect(game.jellies).toHaveLength(0);
+    expect(game.bird.y).toBeCloseTo(GROUND_Y - game.bodyRadius, 0);
+  });
+
+  it("can't spike or pop the fish", () => {
+    const game = calm();
+    game.puffInput = 1;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    expect(game.spike.spiked).toBe(false);
+    expect(game.phase).toBe("playing");
+  });
+
+  it("gives a fish on the sea floor a moment to swim off it once it ends", () => {
+    const game = calm();
+    game.puffInput = 0;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    expect(game.onSeaFloor).toBe(true);
+    game.calmWater = false;
+    for (let i = 0; i < 60 * 1; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    game.puffInput = 1;
+    for (let i = 0; i < 60 * 3; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    expect(game.onSeaFloor).toBe(false);
+    // Off the floor once, the floor kills again.
+    game.puffInput = 0;
+    for (let i = 0; i < 60 * 6 && game.phase === "playing"; i++) game.step(1 / 60);
+    expect(game.phase).not.toBe("playing");
+  });
+
+  it("brings the first obstacle a full delay after it ends", () => {
+    const game = calm();
+    game.puffInput = 0.4;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    game.calmWater = false;
+    const from = game.distance;
+    for (let i = 0; i < 60 * 30 && game.obstacles.length === 0; i++) game.step(1 / 60);
+    expect(game.obstacles.length).toBeGreaterThan(0);
+    expect(game.distance - from).toBeGreaterThan(400);
+  });
+});
+
 describe("leaping out", () => {
   /** Dives in, then brings the far quay up `ahead` px in front of the fish at depth `y`. */
   function leapFrom(ahead: number, y: number, puff: number): Game {

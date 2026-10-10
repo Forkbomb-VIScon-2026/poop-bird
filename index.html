@@ -27,6 +27,19 @@
         <path d="M34 72 Q42 68 50 72 T66 72" fill="none" stroke="#2b2d42" stroke-width="6" stroke-linecap="round" />
         <path d="M84 16 Q91 27 84 30 Q77 27 84 16 Z" fill="#8fd8ff" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round" />
       </symbol>
+      <!-- The pufferfish face: cheeks puffed out, lips pursed like a kiss. -->
+      <symbol id="face-puffed" viewBox="0 0 100 100">
+        <path d="M4 56 Q0 64 4 72 M96 56 Q100 64 96 72" fill="none" stroke="#2b2d42" stroke-width="3" stroke-linecap="round" />
+        <path d="M50 13 C74 13 86 28 87 42 C98 52 97 78 78 88 C67 95 33 95 22 88 C3 78 2 52 13 42 C14 28 26 13 50 13 Z" fill="#ffe2bd" stroke="#2b2d42" stroke-width="4" stroke-linejoin="round" />
+        <circle cx="23" cy="66" r="9" fill="#ff9e9e" opacity="0.75" />
+        <circle cx="77" cy="66" r="9" fill="#ff9e9e" opacity="0.75" />
+        <path d="M27 31 Q35 25 43 29 M57 29 Q65 25 73 31" fill="none" stroke="#2b2d42" stroke-width="4" stroke-linecap="round" />
+        <circle cx="37" cy="43" r="5.5" fill="#2b2d42" />
+        <circle cx="63" cy="43" r="5.5" fill="#2b2d42" />
+        <path d="M48 50 Q50 57 46 58" fill="none" stroke="#2b2d42" stroke-width="3" stroke-linecap="round" />
+        <path d="M50 66 C44 62 41 69 44 72 C41 75 44 82 50 78 C56 82 59 75 56 72 C59 69 56 62 50 66 Z" fill="#ef476f" stroke="#2b2d42" stroke-width="3" stroke-linejoin="round" />
+        <path d="M46 72 L54 72" stroke="#2b2d42" stroke-width="2.5" stroke-linecap="round" />
+      </symbol>
     </svg>
 
     <div id="app">
@@ -49,11 +62,15 @@
         <div id="hud-toast" class="hud-toast hidden"></div>
       </div>
 
-      <!-- In-game puff calibration (first dive in face mode; the world is frozen) -->
+      <!-- Swim lesson and puff calibration banners (first dive in face mode, in calm water) -->
       <div id="puff-calib" class="puff-calib hidden">
-        <h2>PUFF YOUR CHEEKS! 🐡</h2>
-        <p class="hint">Blow them up like a pufferfish and hold it.</p>
-        <div class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
+        <!-- Calibration only: the steps, the current one highlighted (puff steps in red). -->
+        <ol id="puff-calib-timeline" class="puff-timeline hidden"></ol>
+        <!-- The face for this step (or the next one, during a countdown). -->
+        <svg id="puff-calib-face" class="face puff-face hidden"><use id="puff-calib-face-use" href="#face-relaxed" /></svg>
+        <h2 id="puff-calib-title">PUFFERFISH FACE! 🐡</h2>
+        <p id="puff-calib-hint" class="hint">Puff your cheeks and purse your lips, like a kiss. Hold it.</p>
+        <div id="puff-calib-bar" class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
       </div>
 
       <!-- Ocean tutorial: a new player's first dive (the world is frozen until "Got it").
@@ -65,11 +82,15 @@
           <ul class="tips">
             <li>
               <span class="tip-icon">⬆️</span>
-              <span><b data-face>Puff your cheeks</b><b data-keys>Hold <kbd class="kbd-only">Space</kbd><span class="touch-only">the screen</span></b> to blow up and float up.</span>
+              <span><b data-face>Puff your cheeks and purse your lips</b><b data-keys>Hold <kbd class="kbd-only">Space</kbd><span class="touch-only">the screen</span></b> to blow up and float up.</span>
+            </li>
+            <li data-face>
+              <span class="tip-icon">😗</span>
+              <span><b>Lips pursed, like a kiss.</b> That's what the camera sees: puffed cheeks alone barely move the fish.</span>
             </li>
             <li>
               <span class="tip-icon">⬇️</span>
-              <span><b data-face>Let the air out</b><b data-keys>Let go</b> to shrink and sink. A little puff keeps you level.</span>
+              <span><b data-face>Let the air out and relax your lips</b><b data-keys>Let go</b> to shrink and sink. A little puff keeps you level.</span>
             </li>
             <li>
               <svg class="tip-meter" viewBox="0 0 28 60" aria-hidden="true">
@@ -94,7 +115,6 @@
             </li>
           </ul>
           <p class="tutorial-try" data-keys>Try it now: hold <kbd class="kbd-only">Space</kbd><span class="touch-only">the screen</span> and watch the fish.</p>
-          <p id="tutorial-next" class="tutorial-try" data-face>Next: one big puff, so the game learns your cheeks.</p>
           <div class="buttons">
             <button id="btn-tutorial-ok" class="btn primary" data-default="enter">Got it!</button>
           </div>
