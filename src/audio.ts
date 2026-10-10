@@ -362,6 +362,100 @@ export class Sound {
     this.noiseBurst(t + 0.38, 0.2, 2500, 0.2, "bandpass");
   }
 
+  /** A balloon pops: a sharp crack, the air rushing out, and the passengers screaming. */
+  balloonPop(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(t, 0.06, 4500, 0.6, "highpass");
+    this.noiseBurst(t, 0.12, 1300, 0.4, "bandpass");
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(130, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+    g.gain.setValueAtTime(0.4, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.2);
+    this.noiseSweep(t + 0.03, 0.8, 2600, 300, 0.2, "bandpass");
+    this.scream(t + 0.15, 640, 0.9);
+    this.scream(t + 0.32, 860, 0.8);
+  }
+
+  /** A falling "AAAAaaah": a nasal saw with vibrato, sliding down. */
+  private scream(t: number, freq: number, dur: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const o = ctx.createOscillator();
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.55, t + dur);
+    lfo.frequency.value = 7;
+    lfoGain.gain.value = freq * 0.04;
+    lfo.connect(lfoGain).connect(o.frequency);
+    filter.type = "bandpass";
+    filter.frequency.value = 1100;
+    filter.Q.value = 1.4;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.05);
+    g.gain.setValueAtTime(0.09, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(filter).connect(g).connect(this.master);
+    o.start(t);
+    lfo.start(t);
+    o.stop(t + dur + 0.02);
+    lfo.stop(t + dur + 0.02);
+  }
+
+  /** A parachute canopy snaps open: "fwump". */
+  chuteOpen(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(t, 0.16, 600, 0.3, "lowpass");
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(210, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.12);
+    g.gain.setValueAtTime(0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.15);
+  }
+
+  /** The empty basket hits the street: a thud and a wicker crunch. */
+  basketLanded(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(95, t);
+    o.frequency.exponentialRampToValueAtTime(38, t + 0.25);
+    g.gain.setValueAtTime(0.45, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.3);
+    for (let i = 0; i < 5; i++) this.noiseBurst(t + i * 0.025 + Math.random() * 0.02, 0.05, 1800 + Math.random() * 1500, 0.12, "bandpass");
+  }
+
+  /** The balloon's burner roars. */
+  burner(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.noiseSweep(ctx.currentTime, 0.6, 350, 800, 0.08, "lowpass");
+  }
+
   splat(big = false): void {
     const ctx = this.ctx;
     if (!ctx) return;

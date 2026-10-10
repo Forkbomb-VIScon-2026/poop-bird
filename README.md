@@ -65,6 +65,7 @@ access on anything other than localhost, put it behind HTTPS.
 | **L** | With the debug panel open: spawn a power line now |
 | **K** | With the debug panel open: a slingshot kid walks on |
 | **W** | With the debug panel open: a wedding right now |
+| **B** | With the debug panel open: a hot-air balloon floats in |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration |
 
@@ -139,6 +140,15 @@ there's no countdown.
     grabbed at "KISS!" (when they should be straining hardest). The game-over
     screen shows the run's last ruined wedding (or the last wedding).
   Tunables are in the debug panel's "Wedding" group.
+- **Hot-air balloons:** some city obstacles are a balloon drifting along with
+  the wind (`balloonChance`). Fly through the envelope (or poop on it) and it
+  pops (×4): fly through it yourself and the escaping hot air gives you a free
+  lift. The basket drops to the street and the passengers bail out, tumbling
+  until their parachutes open; while they drift down they're targets (×2),
+  and once they land they walk off as pedestrians. The basket is solid:
+  flying into it, hanging or falling, ends the run. Slip between the envelope
+  and the basket without touching either for a "THREADED IT!" bonus (×6).
+  Tunables are in the "Balloons" group.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage
@@ -326,6 +336,7 @@ build is always the plain one:
 - **L** spawns a power line right away (city only)
 - **K** sends a slingshot kid on right away (city only)
 - **W** starts a wedding right away (city only)
+- **B** floats a hot-air balloon in right away (city only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a

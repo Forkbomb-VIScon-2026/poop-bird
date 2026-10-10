@@ -847,6 +847,7 @@ function onGameOver(): void {
       drawWeddingPrint(wctx, 2, 2, 240, wedding, renderer.photos.get(wedding.photoId));
     }
   }
+  $("go-balloons").textContent = String(game.balloonsPopped);
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -1189,6 +1190,22 @@ function handleGameEvents(): void {
       case "bouquetHit":
         sound.bouquetHit();
         break;
+      case "balloonPop":
+        sound.balloonPop();
+        sound.hit(e.combo);
+        break;
+      case "chuteOpen":
+        sound.chuteOpen();
+        break;
+      case "basketLanded":
+        sound.basketLanded();
+        break;
+      case "burner":
+        sound.burner();
+        break;
+      case "threaded":
+        sound.hit(4);
+        break;
     }
   }
   game.events.length = 0;
@@ -1244,6 +1261,10 @@ window.addEventListener("keydown", (e) => {
     case "w":
       // Debug shortcut: a wedding right now.
       if (debug?.visible && state === "playing") game.spawnWeddingNow();
+      break;
+    case "b":
+      // Debug shortcut: a hot-air balloon floats in.
+      if (debug?.visible && state === "playing") game.spawnBalloonNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
