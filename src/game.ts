@@ -2601,7 +2601,8 @@ export class Game {
 
   private spawnTarget(only?: "car"): void {
     const r = Math.random();
-    const kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 0.85 ? "pedestrian" : "statue");
+    let kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
+    if (kind === "statue" && !this.statueFits(this.width + 80, 46)) kind = "pedestrian";
     // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
     const roadY = GROUND_Y + 68;
     let t: Target;
@@ -2625,6 +2626,32 @@ export class Game {
       };
     }
     this.targets.push(t);
+  }
+
+  /**
+   * Whether a statue at x (centre) with width w stands clear of everything else
+   * on the sidewalk: buildings, power-line poles, other statues and paparazzi,
+   * and the slot the next obstacle (or the church, or the quay) will scroll into.
+   */
+  private statueFits(x: number, w: number): boolean {
+    const margin = 24;
+    const left = x - w / 2 - margin;
+    const right = x + w / 2 + margin;
+    const clear = (l: number, r: number) => r < left || l > right;
+    for (const o of this.obstacles) {
+      const s = obstacleSpan(o);
+      if (!clear(s.left, s.right)) return false;
+    }
+    for (const l of this.powerLines) {
+      for (let i = 0; i < l.poles; i++) if (!clear(poleX(l, i) - 6, poleX(l, i) + 6)) return false;
+    }
+    for (const t of this.targets) {
+      if ((t.kind === "statue" || t.pap) && !clear(t.x - t.w / 2, t.x + t.w / 2)) return false;
+    }
+    // The next obstacle spawns at width + 40 once we've travelled up to
+    // nextObstacleAt; by then this statue will have scrolled that far left.
+    if (!this.demo && right > this.width + 40 + (this.nextObstacleAt - this.distance)) return false;
+    return true;
   }
 
   // --- slingshot kids ----------------------------------------------------------
