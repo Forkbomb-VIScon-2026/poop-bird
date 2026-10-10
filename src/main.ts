@@ -1687,6 +1687,9 @@ function handleGameEvents(): void {
       case "anchorRattle":
         sound.anchorRattle();
         break;
+      case "anchorSnapped":
+        sound.lineSnap();
+        break;
       case "anchorLanded":
         sound.anchorLanded();
         buzz(50);

@@ -155,9 +155,10 @@ export interface Obstacle {
 /**
  * A boat dropping its anchor. Hanging: like any anchor, until the fish comes
  * near. Warning: a "!" by the anchor, which rattles on its chain, and arrows
- * pointing down below it.
- * Falling: it drops onto the coral, the rock or the sea floor. Down: it rests
- * there with its chain slack, so the way through is above it now.
+ * pointing down below it. Falling: the chain rips just below the hull, and
+ * the anchor drops onto the coral, the rock or the sea floor, the torn-off
+ * chain falling with it and piling up on it. Down: it rests there, and only a
+ * stub of chain hangs from the boat, so the way through is above it now.
  */
 export type AnchorDropState = "hanging" | "warning" | "falling" | "down";
 
@@ -168,6 +169,8 @@ export interface AnchorDrop {
   /** Where the anchor's crown is now (`gapTop` while it hangs), and where it comes to rest. */
   y: number;
   to: number;
+  /** Once the chain has ripped: the top end of the piece still on the anchor (the rest is piled on it). */
+  chain: number;
 }
 
 /** A paparazzo's photo that made it to print. `photoId` keys the image main.ts captured. */
@@ -576,6 +579,7 @@ export type GameEvent =
   | { type: "lineSnapped"; points: number }
   | { type: "anchorWarn" }
   | { type: "anchorRattle" }
+  | { type: "anchorSnapped" }
   | { type: "anchorLanded" };
 
 const ACCIDENT_MESSAGES = [
@@ -2154,7 +2158,7 @@ export class Game {
       bottom, color: pick(colors), seed: Math.random() * 1000,
       passed: false, splats: [], tabloid: null, anchor,
       // Open water: it sinks a little way into the sand.
-      drop: drop ? { state: "hanging", t: 0, y: gapTop, to: open ? GROUND_Y + ANCHOR_SAND_DEPTH : gapBottom } : null,
+      drop: drop ? { state: "hanging", t: 0, y: gapTop, to: open ? GROUND_Y + ANCHOR_SAND_DEPTH : gapBottom, chain: ANCHOR_RIP_Y } : null,
     });
     return bottom === "wreck" ? w - 90 : 0;
   }
@@ -2199,12 +2203,21 @@ export class Game {
           d.state = "falling";
           d.t = 0;
           d.y = o.gapTop;
+          d.chain = ANCHOR_RIP_Y;
+          this.anchorSnapped(cx);
         }
       } else if (d.state === "falling") {
-        // It falls faster and faster, and stirs up bubbles on the way.
+        // The anchor and the chain torn off with it fall faster and faster, stirring up
+        // bubbles. The anchor lands first; the chain keeps falling and piles up on it,
+        // and it's all at rest after `fall` s.
+        const anchorDrop = d.to - o.gapTop;
+        const chainDrop = d.to - o.gapTop + anchorChainLength(o);
         const k = Math.min(1, d.t / Math.max(0.01, fall));
-        d.y = o.gapTop + (d.to - o.gapTop) * k * k;
-        if (Math.random() < dt * 30) {
+        const s = chainDrop * k * k;
+        const wasUp = d.y < d.to;
+        d.y = o.gapTop + Math.min(anchorDrop, s);
+        d.chain = Math.min(d.y - ANCHOR_H, ANCHOR_RIP_Y + s);
+        if (wasUp && Math.random() < dt * 30) {
           this.particles.push({
             x: cx + (Math.random() - 0.5) * ANCHOR_W, y: d.y - ANCHOR_H * Math.random(),
             vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 40,
@@ -2212,13 +2225,28 @@ export class Game {
             color: "#e0fbfc", gravity: -160, world: true,
           });
         }
+        if (wasUp && d.y >= d.to) this.anchorLanded(o, cx);
         if (k >= 1) {
           d.state = "down";
           d.t = 0;
-          this.anchorLanded(o, cx);
         }
       }
     }
+  }
+
+  /** The chain rips just below the hull: bits of rust and a burst of bubbles at the break. */
+  private anchorSnapped(cx: number): void {
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 60 + Math.random() * 160;
+      this.particles.push({
+        x: cx, y: ANCHOR_RIP_Y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 0.3 + Math.random() * 0.4, maxLife: 0.7, size: 2 + Math.random() * 3,
+        color: pick(["#56616d", "#aa5a28", "#e0fbfc"]), gravity: 120, world: true,
+      });
+    }
+    this.shake = Math.max(this.shake, 4);
+    this.events.push({ type: "anchorSnapped" });
   }
 
   /** The anchor hits the bottom: a cloud of sand (or bits of coral and grit) and a thud. */
@@ -3681,14 +3709,22 @@ export const ANCHOR_RATTLE_EVERY = 0.22;
 /** How far a dropped anchor's crown digs into the sand of the sea floor. */
 const ANCHOR_SAND_DEPTH = 6;
 
+/** Where a dropped anchor's chain rips: the stub left hanging from the hull ends here. */
+export const ANCHOR_RIP_Y = SURFACE_Y + BOAT_DRAFT + 12;
+
 /** Where an anchor's crown is: the gap's top edge, unless it's being dropped. */
 export function anchorCrown(o: Obstacle): number {
   return o.drop ? o.drop.y : o.gapTop;
 }
 
-/** A dropped anchor rests on the bottom with its chain slack, so the chain no longer blocks. */
-export function anchorSlack(o: Obstacle): boolean {
-  return o.drop?.state === "down";
+/** The chain has ripped: the anchor is falling or down, with the torn-off chain on it. */
+export function anchorRipped(o: Obstacle): boolean {
+  return o.drop?.state === "falling" || o.drop?.state === "down";
+}
+
+/** The length of chain torn off with a dropped anchor (from the rip to the anchor's ring). */
+export function anchorChainLength(o: Obstacle): number {
+  return o.gapTop - ANCHOR_H - ANCHOR_RIP_Y;
 }
 
 /** Horizontal extent of an obstacle, including an anchor's boat (which is wider than the column). */
@@ -3700,23 +3736,28 @@ export function obstacleSpan(o: Obstacle): { left: number; right: number } {
 
 /**
  * Collision rectangles for an anchor and its boat: hull, chain and shank,
- * stock, arms. A slack chain (the anchor dropped) leaves only the shank.
+ * stock, arms. Once a dropped anchor's chain has ripped, the stub on the hull
+ * and the piece still standing above the anchor count (the chain piled on it
+ * lies inside the anchor's own rectangles).
  */
 function anchorRects(o: Obstacle): Rect[] {
   const cx = o.x + o.w / 2;
   const hullBottom = SURFACE_Y + BOAT_DRAFT;
   const crown = anchorCrown(o);
   const top = crown - ANCHOR_H;
-  const shankTop = anchorSlack(o) ? top : hullBottom;
-  return [
+  const ripped = anchorRipped(o);
+  const chainTop = ripped && o.drop ? o.drop.chain : hullBottom;
+  const rects: Rect[] = [
     // The bow and the transom curve up toward the keel: only the hull's middle counts.
     { x: cx - BOAT_W / 2 + 20, y: SURFACE_Y - BOAT_FREEBOARD, w: BOAT_W - 32, h: BOAT_FREEBOARD + BOAT_DRAFT },
-    { x: cx - 5, y: shankTop, w: 10, h: crown - 12 - shankTop },
+    { x: cx - 5, y: chainTop, w: 10, h: crown - 12 - chainTop },
     { x: cx - 21, y: top + 15, w: 42, h: 9 },
     // The arms curve up to the flukes: a wide band above, the crown below.
     { x: cx - ANCHOR_W / 2, y: crown - 36, w: ANCHOR_W, h: 22 },
     { x: cx - 16, y: crown - 14, w: 32, h: 14 },
   ];
+  if (ripped) rects.push({ x: cx - 5, y: hullBottom, w: 10, h: ANCHOR_RIP_Y - hullBottom });
+  return rects;
 }
 
 /**

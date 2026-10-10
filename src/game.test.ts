@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { config, ramp } from "./config";
 import {
-  ANCHOR_H, ANCHOR_W, BIRD_RADIUS, BOAT_DRAFT, GROUND_Y, Game, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN,
+  ANCHOR_H, ANCHOR_RIP_Y, ANCHOR_W, BIRD_RADIUS, BOAT_DRAFT, GROUND_Y, Game, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN,
   obstacleRects, type Obstacle,
 } from "./game";
 
@@ -221,14 +221,35 @@ describe("dropping anchors", () => {
         expect(d.to).toBe(open ? GROUND_Y + 6 : o.gapBottom);
         // Hanging, it's like any anchor: the gap is below it.
         for (const r of obstacleRects(o)) expect(r.y + r.h <= o.gapTop + 1e-6 || r.y >= o.gapBottom - 1e-6).toBe(true);
-        // Down, the chain is slack and the way through is between the hull and the anchor.
-        Object.assign(d, { state: "down", y: d.to });
+        // Down, the chain has ripped: the way through is between the stub on the hull and the anchor.
         const above = d.to - ANCHOR_H;
-        expect(above - hullBottom).toBeGreaterThanOrEqual(gap);
-        for (const r of obstacleRects(o)) expect(r.y + r.h <= hullBottom + 1e-6 || r.y >= above - 1e-6).toBe(true);
+        Object.assign(d, { state: "down", y: d.to, chain: above });
+        expect(above - ANCHOR_RIP_Y).toBeGreaterThanOrEqual(gap);
+        const rects = obstacleRects(o);
+        for (const r of rects) expect(r.y + r.h <= ANCHOR_RIP_Y + 1e-6 || r.y >= above - 1e-6).toBe(true);
+        // The stub is still a hit.
+        expect(rects.some((r) => r.y <= hullBottom && r.y + r.h >= ANCHOR_RIP_Y - 1e-6 && r.w < 20)).toBe(true);
       }
     });
   }
+
+  it("rip the chain, which is still a hit as it falls with the anchor", () => {
+    const game = new Game(1000);
+    game["spawnOceanObstacle"](true);
+    const o = game.obstacles[0];
+    const d = o.drop!;
+    // Hanging, the chain runs from the hull to the anchor.
+    const chain = (rects: ReturnType<typeof obstacleRects>) => rects.filter((r) => r.w === 10);
+    expect(chain(obstacleRects(o))).toHaveLength(1);
+    expect(chain(obstacleRects(o))[0].y).toBe(SURFACE_Y + BOAT_DRAFT);
+    // Falling: the stub, and the torn-off piece from its top end down to the anchor.
+    Object.assign(d, { state: "falling", y: o.gapTop + 40, chain: ANCHOR_RIP_Y + 40 });
+    const pieces = chain(obstacleRects(o)).sort((a, b) => a.y - b.y);
+    expect(pieces).toHaveLength(2);
+    expect(pieces[0].y + pieces[0].h).toBe(ANCHOR_RIP_Y);
+    expect(pieces[1].y).toBe(ANCHOR_RIP_Y + 40);
+    expect(pieces[1].y + pieces[1].h).toBe(d.y - 12);
+  });
 
   /** In the ocean, alone with a boat far ahead that will drop its anchor (over open water); the fish hovers at `y`. */
   function towardDrop(y: number): { game: Game; o: Obstacle } {
@@ -239,7 +260,7 @@ describe("dropping anchors", () => {
     const w = 70;
     const o: Obstacle = {
       x: game.width - 160, w, gapTop: 260, gapBottom: GROUND_Y, bottom: "none", color: "#000", seed: 1,
-      passed: false, splats: [], tabloid: null, anchor: true, drop: { state: "hanging", t: 0, y: 260, to: GROUND_Y + 6 },
+      passed: false, splats: [], tabloid: null, anchor: true, drop: { state: "hanging", t: 0, y: 260, to: GROUND_Y + 6, chain: ANCHOR_RIP_Y },
     };
     game.obstacles = [o];
     Object.assign(game.bird, { y, vy: 0 });

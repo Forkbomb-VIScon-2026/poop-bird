@@ -247,16 +247,20 @@ city by city (the debug panel's "Progression" group).
   never over a wreck) drop their anchor as the fish comes near. First the
   warning (`oceanAnchorDropWarn`, 0.9 s): the anchor rattles and jerks on
   its chain with a clank, a red "!" swells beside it on each clank, and red
-  chevrons below it march downward. Then it falls (`oceanAnchorDropFall`,
-  0.45 s), gathering speed and trailing bubbles, and lands on the coral or
-  rock, or digs into the sand, with a thud and a puff of grit
-  `oceanAnchorDropLead` (0.5 s) before the fish gets there. The timing is
-  worked out from the fish's arrival at the current scroll speed; if the
+  chevrons below it march downward. Then the chain rips just below the hull
+  with a snap, leaving a short stub with a torn link on the boat, and the
+  anchor falls, gathering speed and trailing bubbles, with the torn-off chain
+  above it. It lands on the coral or rock, or digs into the sand, with a thud
+  and a puff of grit, and the chain piles up on it. All of that
+  (`oceanAnchorDropFall`, 0.45 s) is over `oceanAnchorDropLead` (0.5 s)
+  before the fish gets there. The chain is a hit wherever it is (the stub,
+  the falling piece), just like on a boat that keeps its anchor. The timing
+  is worked out from the fish's arrival at the current scroll speed; if the
   boat comes on screen late, the warning is shorter, and on screens too
   narrow for even half a second of it the boat keeps its anchor. Once the
-  anchor is down its chain hangs slack (no longer a hit), so the way through
-  is above the anchor now: the bottom of the old gap is closed, and a fish
-  that was diving under has to rise.
+  anchor is down, the way through is above it, between the stub and the
+  anchor: the bottom of the old gap is closed, and a fish that was diving
+  under has to rise.
 - **Size is the tradeoff.** The fish, and its hitbox, grow with puff. Rising
   makes you bigger.
 - **Spike-out.** At ~85% puff the spines come out. Spiked, you pop jellyfish

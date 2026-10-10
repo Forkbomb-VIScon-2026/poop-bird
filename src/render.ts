@@ -11,8 +11,10 @@ import {
   BOAT_DRAFT,
   BOAT_FREEBOARD,
   BOAT_W,
+  ANCHOR_RIP_Y,
+  anchorChainLength,
   anchorCrown,
-  anchorSlack,
+  anchorRipped,
   BILLBOARD_H,
   BILLBOARD_LEGS_INSET,
   BOUQUET_R,
@@ -2406,8 +2408,8 @@ export class Renderer {
    * red antifouling below, tinted by the water), a cabin and a mast above,
    * and the chain down to the anchor, whose crown is the gap's top edge. A
    * boat about to drop its anchor shows a "!" and arrows pointing down by the
-   * anchor, which rattles on its chain; once it's down, the chain hangs slack
-   * in a loose curve.
+   * anchor, which rattles on its chain; then the chain rips, leaving a torn
+   * stub on the hull, and the rest falls with the anchor and piles up on it.
    */
   private drawAnchoredBoat(o: Obstacle, time: number): void {
     const ctx = this.ctx;
@@ -2426,12 +2428,17 @@ export class Renderer {
     const iron = "#56616d";
 
     // Chain: links alternate face-on (a ring) and edge-on (a bar), down to the anchor's ring.
-    if (anchorSlack(o)) drawChain(ctx, slackChainPath(boatX, keel - 6, cx, top + 2, o.seed, time), iron);
-    else {
-      const links: ChainLink[] = [];
-      for (let y = keel - 6; y < top + 2; y += 10) links.push({ x: cx, y, a: 0 });
+    // Once it has ripped, a stub with a torn link hangs from the hull, and the rest falls with the anchor.
+    const ripped = drop !== null && anchorRipped(o);
+    const links: ChainLink[] = [];
+    if (ripped) {
+      for (let y = keel - 6; y < ANCHOR_RIP_Y - 8; y += 10) links.push({ x: boatX, y, a: 0 });
       drawChain(ctx, links, iron);
+      drawTornLink(ctx, boatX, ANCHOR_RIP_Y - 8, iron);
+      links.length = 0;
     }
+    for (let y = ripped ? drop.chain : keel - 6; y < top + 2; y += 10) links.push({ x: cx, y, a: 0 });
+    drawChain(ctx, links, iron);
 
     // Anchor: ring, shank, stock with ball ends, curved arms with flukes.
     ctx.beginPath();
@@ -2492,6 +2499,20 @@ export class Renderer {
     ctx.quadraticCurveTo(cx + weed * 42, crown - 8, cx + weed * 36, crown + 8);
     ctx.stroke();
     ctx.lineCap = "butt";
+
+    // The torn-off chain piles up on the anchor once it has landed: a jumble of links between the arms.
+    if (ripped) {
+      const piled = Math.min(9, Math.floor((anchorChainLength(o) - (top - drop.chain)) / 10));
+      const heap: ChainLink[] = [];
+      for (let i = 0; i < piled; i++) {
+        heap.push({
+          x: cx + (rnd(o.seed + 20 + i) - 0.5) * 34,
+          y: crown - 18 - rnd(o.seed + 40 + i) * 10 - i * 1.2,
+          a: (rnd(o.seed + 60 + i) - 0.5) * 3,
+        });
+      }
+      drawChain(ctx, heap, iron);
+    }
 
     // Mast with a pennant, and the cabin: above the water.
     const color = BOAT_COLORS[Math.floor(rnd(o.seed + 1) * BOAT_COLORS.length)];
@@ -4496,36 +4517,18 @@ function drawChain(ctx: CanvasRenderingContext2D, links: ChainLink[], iron: stri
   });
 }
 
-/**
- * A slack chain from the hull down to a dropped anchor's ring: an S-curve
- * that sways gently with the water, a link every 10 px along it.
- */
-function slackChainPath(x0: number, y0: number, x1: number, y1: number, seed: number, time: number): ChainLink[] {
-  const side = rnd(seed + 7) < 0.5 ? -1 : 1;
-  const sway = Math.sin(time * 1.3 + seed) * 8;
-  const h = y1 - y0;
-  const c1 = { x: x0 + side * (40 + sway), y: y0 + h * 0.35 };
-  const c2 = { x: x1 - side * (34 - sway), y: y0 + h * 0.7 };
-  const at = (t: number) => {
-    const u = 1 - t;
-    return {
-      x: u * u * u * x0 + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * x1,
-      y: u * u * u * y0 + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * y1,
-    };
-  };
-  const links: ChainLink[] = [];
-  let prev = at(0);
-  let since = 10;
-  for (let i = 1; i <= 120; i++) {
-    const p = at(i / 120);
-    since += Math.hypot(p.x - prev.x, p.y - prev.y);
-    if (since >= 10) {
-      since = 0;
-      links.push({ x: prev.x, y: prev.y, a: Math.atan2(p.y - prev.y, p.x - prev.x) - Math.PI / 2 });
-    }
-    prev = p;
-  }
-  return links;
+/** The last link of a ripped chain: a ring torn open at the bottom, its ends bent apart. */
+function drawTornLink(ctx: CanvasRenderingContext2D, x: number, y: number, iron: string): void {
+  ctx.beginPath();
+  ctx.ellipse(x, y + 6, 4.5, 7, 0, Math.PI / 2 + 0.75, Math.PI * 2.5 - 0.75);
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 4.5;
+  ctx.stroke();
+  ctx.strokeStyle = iron;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.lineCap = "butt";
 }
 
 // --- wedding -----------------------------------------------------------------
