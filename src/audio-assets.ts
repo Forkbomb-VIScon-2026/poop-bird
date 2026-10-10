@@ -38,6 +38,10 @@ export const SOUND_NAMES = [
   "wedding_married",
   "bouquet_thrown",
   "bouquet_caught",
-  "bouquet_hit"
+  "bouquet_hit",
+  "angler_cast",
+  "angler_hooked",
+  "reel_click",
+  "line_snap"
 ] as const;
 export type SoundName = (typeof SOUND_NAMES)[number];

@@ -187,6 +187,17 @@ export const CONFIG_SPEC = {
   oceanKeyInflateRate: { value: 1.1, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key inflate rate", hint: "puff/s while holding Space / pointer" },
   oceanKeyDeflateRate: { value: 0.9, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key deflate rate", hint: "puff/s after letting go" },
 
+  // --- Fisherman -----------------------------------------------------------
+  anglerChance: { value: 0.6, min: 0, max: 1, step: 0.05, group: "Fisherman", label: "Chance", hint: "chance an ocean stage has a fisherman" },
+  anglerSlot: { value: 3, min: 0, max: 20, step: 1, group: "Fisherman", label: "Slot", hint: "ocean obstacles before his boat comes" },
+  anglerRow: { value: 35, min: 0, max: 150, step: 5, group: "Fisherman", label: "Rowing speed", hint: "px/s he rows against the scroll (his hook comes at you slower)" },
+  anglerCastRange: { value: 640, min: 200, max: 1200, step: 10, group: "Fisherman", label: "Cast range", hint: "px ahead of the fish where he casts" },
+  anglerSinkSpeed: { value: 140, min: 20, max: 500, step: 5, group: "Fisherman", label: "Sink speed", hint: "px/s the hook sinks to the depth the fish was at when he cast" },
+  anglerJig: { value: 14, min: 0, max: 80, step: 1, group: "Fisherman", label: "Jig", hint: "px he jigs the hook up and down once it's down" },
+  anglerReelTime: { value: 1.2, min: 0.3, max: 4, step: 0.1, group: "Fisherman", label: "Reel-in time", hint: "s from the bite until he yanks the fish out" },
+  anglerSnapMultiplier: { value: 4, min: 0, max: 20, step: 0.5, group: "Fisherman", label: "Cut points", hint: "× points for cutting his line above the hook with your spikes (× combo)" },
+  anglerCloseMultiplier: { value: 1, min: 0, max: 10, step: 0.5, group: "Fisherman", label: "Close-one points", hint: "× points for dodging the hook by a whisker" },
+
   // --- Ocean puff detection ------------------------------------------------
   oceanCalibrationSeconds: { value: 3, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Puff calibration", hint: "s of the puff phase at the first dive (first calibrationSettle s ignored)" },
   oceanPuffMinSeparation: { value: 1.5, min: 0.2, max: 6, step: 0.1, group: "Ocean puff", label: "Min separation", hint: "a puff feature counts once its change exceeds this many noise units (full weight at 2×)" },
