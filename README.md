@@ -385,8 +385,12 @@ participant through about 3 minutes:
 4. The game's calibration (relax, strain, same prompts and timing) plus a
    "relax again" phase, then a strain script (pulses of random length, a light
    strain, a long hold, looking around, laughing) and a puff script (full and
-   half puff, pulses, puffing while looking around). Every step beeps: high
-   for strain or puff, low for relax.
+   half puff, pulses, puffing while looking around), then the same with the
+   **pufferfish face** (cheeks puffed *and* lips pursed). Every step beeps:
+   high for strain or puff, low for relax. The pufferfish face is a candidate
+   gesture for the ocean: plain puffs barely move what MediaPipe reports
+   (`cheekPuff` stays 0 and the geometry moves about as much as a relaxed face
+   drifts), while pursed lips light up `mouthPucker`.
 5. The upload, with a "Delete this session" button and a fallback to save the
    file when the upload fails. Then **Next person** starts over at consent
    with a fresh participant code (for one shared device at a collection
@@ -442,8 +446,11 @@ npm run data:purge  # delete the local copy (everyone, when the VM goes away)
 `npm run eval` fits each recording's calibration the way the game does and
 replays the rest. For strain it reports hits on strain steps, false strain
 while relaxed, looking around and laughing, releases in the middle of a
-strain, and press and release latency. For puff it reports the median puff
-level while relaxed, at half and at full puff, and false spikes. To try a
+strain, and press and release latency. For puff it scores the plain puff
+and the pufferfish face separately, each with a calibration fitted from its
+own first hold: the median puff level while relaxed, at half and at full
+puff, how often the fish sinks while relaxed and rises while puffing, and
+false spikes. To try a
 detection idea, add a variant to `scripts/eval/variants.ts`; the first entry
 is what the game does today. About 1 in 5 participants are held out (picked
 by a hash of their code); score them with `npm run eval -- --holdout` only
