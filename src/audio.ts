@@ -105,7 +105,7 @@ export class Sound {
     const gain = ctx.createGain();
 
     source.buffer = buffer;
-    gain.gain.value = volume;
+    gain.gain.value = Math.max(0, volume);
 
     source.connect(gain).connect(this.master);
     source.start(ctx.currentTime + Math.max(0, delay));
@@ -113,49 +113,65 @@ export class Sound {
     return { source, gain };
   }
 
-  private sustain(name: SoundName, level: number): void {
+
+  private sustain(
+    name: SoundName,
+    level: number,
+    volume = 1,
+    delay = 0,
+  ): void {
     const ctx = this.ctx;
     if (!ctx) return;
 
+    const now = ctx.currentTime;
     const playing = this.active.get(name);
 
     if (level <= 0) {
       if (playing) {
-        playing.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.025);
-        playing.source.stop(ctx.currentTime + 0.15);
+        playing.gain.gain.cancelScheduledValues(now);
+        playing.gain.gain.setTargetAtTime(0, now, 0.025);
+        playing.source.stop(now + 0.15);
         this.active.delete(name);
       }
       return;
     }
 
     if (!playing) {
-      const started = this.play(name, 0);
+      const started = this.play(name, 0, delay);
       if (!started) return;
 
       this.active.set(name, started);
+
       started.source.onended = () => {
-        if (this.active.get(name) === started) this.active.delete(name);
+        if (this.active.get(name) === started) {
+          this.active.delete(name);
+        }
       };
     }
 
-    this.active.get(name)?.gain.gain.setTargetAtTime(
-      Math.min(1, Math.max(0.08, level)),
-      ctx.currentTime,
+    const sound = this.active.get(name);
+    if (!sound) return;
+
+    const target = Math.min(1, Math.max(0.08, level)) * volume;
+
+    sound.gain.gain.setTargetAtTime(
+      target,
+      now,
       0.04,
     );
   }
 
+
   setGroan(charge: number, _stressed: boolean): void {
     const volume = 1;
     const delay = 0;
-    // Sustained sounds are controlled continuously; no startup delay.
-    this.sustain("groan", charge * volume);
+    this.sustain("groan", charge, volume, delay);
   }
 
   setBurble(level: number): void {
     const volume = 1;
     const delay = 0;
-    this.sustain("burble", level * volume);
+    this.sustain("burble", level, volume, delay);
   }
 
   /** Continuous electrical hum; proximity is normalized to 0..1. */
