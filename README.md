@@ -375,19 +375,56 @@ face dataset, so it survives deploys:
 
 | Request | |
 | --- | --- |
-| `GET /api/leaderboard?limit=10` | both boards |
-| `POST /api/leaderboard` | a run (JSON); answers its places and a delete key |
+| `GET /api/leaderboard?limit=10` | both boards (at most 100 each) |
+| `POST /api/leaderboard` | a run (`application/json` only); answers its places and a delete key |
 | `GET /api/leaderboard/<id>.jpg` | a shared face |
 | `DELETE /api/leaderboard/<id>` | with `X-Delete-Key`, or the dev token |
+| `GET /api/leaderboard/runs` | every stored run, both pools (dev token) |
 
-Each board keeps its top 100. A run on neither isn't stored, and one pushed
-off both is deleted, face and all. Submissions are limited to 300 an hour per
-address. Scores aren't verified: anyone who can open the game could post any
-number, so the team removes junk with the dev token:
+Each board keeps its top 500, far more than it lists. A run on neither isn't
+stored, and one pushed off both is deleted, face and all. Submissions are
+limited to 300 an hour per address (Caddy sets the address; a client can't
+fake it).
+
+### Moderation
+
+Scores and strainedness come from the player's browser, so anyone who can open
+the game could post any number, or any picture as their face. The team
+removes bad runs with `npm run leaderboard`, which uses the dev token over SSH
+(like `npm run data:pull`: it needs your SSH key on the VM). Nobody else can
+remove a run, except its submitter from their own browser.
 
 ```sh
-ssh viscon@24-direct.viscon-hackathon.ch 'curl -s -X DELETE -H "Authorization: Bearer $(grep ^DEV_TOKEN= poopbird-collector.env | cut -d= -f2)" localhost:8080/api/leaderboard/<id>'
+npm run leaderboard                                  # what the boards show, the newest runs, and their ids
+npm run leaderboard -- remove <id> [<id>…]           # delete runs (faces included)
+npm run leaderboard -- remove-name "Spam Bot"        # list every run under a name; add --yes to delete them
+npm run leaderboard -- remove-since "2026-10-11 14:30"   # the same for everything since then (a flood)
+npm run leaderboard -- list --all --debug            # every stored run, debug-build runs too
 ```
+
+Because the boards keep 500 runs and show at most 100, a flood of fake runs
+doesn't wipe the real ones: removing the fakes brings them back.
+
+### Hardening
+
+What players send ends up in other players' pages, so:
+
+- **Names** are text only (`textContent`, never HTML), at most 16 characters.
+  Control and invisible formatting characters (bidi overrides, zero-width) are
+  dropped, and stacks of combining marks capped at two, so a name can't
+  reorder or spill over the rows around it.
+- **Faces** must be JPEGs (start and end markers, a frame header) of at most
+  120 kB and 400 × 800 px; a small file declaring a huge image could stall
+  every viewer's browser. They're served as `image/jpeg` with `nosniff` and a
+  `Content-Security-Policy` of `default-src 'none'; sandbox`, so even a file
+  crafted to look like HTML runs nothing when opened directly. The page only
+  loads face URLs of the collector's own `/api/leaderboard/<id>.jpg` form.
+- **Submissions** must be `application/json`, which a form on another site
+  can't send, so other sites can't submit through a logged-in visitor's
+  browser. Ids are 16 hex digits, checked before they touch a file path.
+- **Not prevented:** made-up scores, strainedness and pictures (the server
+  can't check what happened in the browser), and offensive names. That's what
+  moderation is for.
 
 Debug builds (`npm run dev:debug`) submit their runs as debug runs and show
 only those, so testing never puts anything on the public boards. With `npm run
@@ -789,6 +826,8 @@ scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm
   fetch-model.mjs  downloads face_landmarker.task
   data.ts          data:pull / data:purge
+  leaderboard.ts   leaderboard moderation: list and remove runs
+  vm.ts            dev token + SSH tunnel to the collector (data.ts, leaderboard.ts)
   run-ts.mjs       runs a TS script through Vite (used by eval)
   eval/            detection scoreboard: load, strain, puff, variants
 ```

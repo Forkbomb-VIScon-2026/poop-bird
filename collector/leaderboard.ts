@@ -7,6 +7,7 @@
 //   POST   /api/leaderboard                       a run (JSON Submission)
 //   GET    /api/leaderboard/<id>.jpg              a run's shared face
 //   DELETE /api/leaderboard/<id>                  X-Delete-Key returned by the submission, or the dev token
+//   GET    /api/leaderboard/runs                  every stored run, both pools (dev token; npm run leaderboard)
 //
 // Data layout: <DATA_DIR>/leaderboard/<id>.json (the run, its pool and the
 // delete key's hash) plus <id>.jpg. Only runs on a board are kept: a run that
@@ -17,7 +18,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import {
-  BOARD_KEEP, BOARD_SHOW, MAX_FACE_BYTES, cleanName, rankBoards, validateSubmission,
+  BOARD_LIST_MAX, BOARD_SHOW, MAX_FACE_BYTES, MAX_FACE_HEIGHT, MAX_FACE_WIDTH, cleanName, rankBoards, validateSubmission,
   type LeaderboardEntry, type Submission, type SubmitResult,
 } from "../src/leaderboard.ts";
 import { HttpError, clientIp, rateLimiter, readBody, readdirSafe, safeEqual, send, sha256, writeAtomic } from "./http.ts";
@@ -88,11 +89,23 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
   }
 
   async function boards(res: ServerResponse, url: URL): Promise<void> {
-    const limit = Math.min(BOARD_KEEP, Math.max(1, Math.floor(Number(url.searchParams.get("limit"))) || BOARD_SHOW));
+    const limit = Math.min(BOARD_LIST_MAX, Math.max(1, Math.floor(Number(url.searchParams.get("limit"))) || BOARD_SHOW));
     send(res, 200, rankBoards(pool(await runs(), url.searchParams.get("debug") === "1"), limit));
   }
 
+  /** For moderation: every stored run in both pools, newest first, beyond what the boards list. */
+  async function allRuns(res: ServerResponse): Promise<void> {
+    const list = [...(await runs()).values()]
+      .map((s) => ({ ...s.entry, debug: s.debug }))
+      .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+    send(res, 200, list);
+  }
+
   async function submit(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // A cross-site form can't send this content type, so other sites can't submit through a visitor's browser.
+    if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
+      throw new HttpError(415, "Send the run as JSON (Content-Type: application/json).");
+    }
     if (!allow(clientIp(req))) throw new HttpError(429, "Too many submissions from here. Try again in an hour.");
     let body: unknown;
     try {
@@ -105,7 +118,13 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
     if (error) throw new HttpError(400, `Not a valid run: ${error}.`);
     const s = body as Submission;
     const jpeg = s.face ? Buffer.from(s.face.jpeg, "base64") : null;
-    if (jpeg && !isJpeg(jpeg)) throw new HttpError(400, "The face isn't a JPEG.");
+    if (jpeg) {
+      const size = jpegSize(jpeg);
+      if (!size) throw new HttpError(400, "The face isn't a JPEG.");
+      if (size.width > MAX_FACE_WIDTH || size.height > MAX_FACE_HEIGHT || !size.width || !size.height) {
+        throw new HttpError(400, `The face must be at most ${MAX_FACE_WIDTH}×${MAX_FACE_HEIGHT} pixels.`);
+      }
+    }
 
     const result = await serial(async (): Promise<SubmitResult> => {
       const all = await runs();
@@ -146,7 +165,13 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
     if (!(await runs()).get(id)?.entry.face) throw new HttpError(404, "No such face.");
     const jpeg = await readFile(file(id, "jpg")).catch(() => null);
     if (!jpeg) throw new HttpError(404, "No such face.");
-    res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff" });
+    res.writeHead(200, {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "public, max-age=3600",
+      // Uploaded bytes: never sniffed as anything else, and inert even when opened directly.
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+    });
     res.end(jpeg);
   }
 
@@ -174,6 +199,11 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
       throw new HttpError(405, "Method not allowed.");
     }
     if (parts.length !== 3) throw new HttpError(404, "Not found.");
+    if (target === "runs") {
+      if (req.method !== "GET") throw new HttpError(405, "Method not allowed.");
+      if (!opts.isDev(req)) throw new HttpError(401, "This needs the team's dev token.");
+      return allRuns(res);
+    }
     if (target.endsWith(".jpg") && ID_RE.test(target.slice(0, -4))) {
       if (req.method !== "GET") throw new HttpError(405, "Method not allowed.");
       return face(res, target.slice(0, -4));
@@ -184,8 +214,35 @@ export function createLeaderboard(opts: LeaderboardOptions): (req: IncomingMessa
   };
 }
 
-/** JPEG start and end markers, and no bigger than a face snapshot can be. */
-function isJpeg(b: Buffer): boolean {
-  return b.length >= 4 && b.length <= MAX_FACE_BYTES &&
-    b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff && b[b.length - 2] === 0xff && b[b.length - 1] === 0xd9;
+/**
+ * The pixel size a JPEG declares (its SOF segment), or null if it doesn't
+ * look like a JPEG: start and end markers, segments up to the image data,
+ * and no bigger than a face snapshot can be.
+ */
+export function jpegSize(b: Buffer): { width: number; height: number } | null {
+  if (b.length < 4 || b.length > MAX_FACE_BYTES) return null;
+  if (b[0] !== 0xff || b[1] !== 0xd8 || b[b.length - 2] !== 0xff || b[b.length - 1] !== 0xd9) return null;
+  let i = 2;
+  while (i + 4 <= b.length) {
+    if (b[i] !== 0xff) return null;
+    const marker = b[i + 1];
+    if (marker === 0xff) {
+      i++; // fill byte
+      continue;
+    }
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      i += 2; // no length
+      continue;
+    }
+    if (marker === 0xda || marker === 0xd9) return null; // image data (or the end) before any frame header
+    const length = b.readUInt16BE(i + 2);
+    if (length < 2 || i + 2 + length > b.length) return null;
+    // SOF0–SOF15, except DHT (c4), JPG (c8) and DAC (cc).
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      if (length < 7) return null;
+      return { height: b.readUInt16BE(i + 5), width: b.readUInt16BE(i + 7) };
+    }
+    i += 2 + length;
+  }
+  return null;
 }

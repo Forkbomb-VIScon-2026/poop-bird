@@ -6,7 +6,7 @@
 // never puts a run on the public boards.
 
 import { DEBUG } from "./env";
-import { BOARD_SHOW, strainPercent, type Boards, type LeaderboardEntry, type Submission, type SubmitResult } from "./leaderboard";
+import { BOARD_SHOW, FACE_URL_RE, strainPercent, type Boards, type LeaderboardEntry, type Submission, type SubmitResult } from "./leaderboard";
 import { forgetLeaderboardKey, loadLeaderboardKeys, saveLeaderboardKey } from "./storage";
 
 const API = "/api/leaderboard";
@@ -125,7 +125,8 @@ function board(
 }
 
 function thumb(e: LeaderboardEntry): HTMLElement {
-  if (e.face) {
+  // Only the collector's own face URLs: a bad entry can't point the page anywhere else.
+  if (e.face && FACE_URL_RE.test(e.face)) {
     const img = document.createElement("img");
     img.className = "thumb";
     img.src = e.face;
