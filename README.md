@@ -90,6 +90,13 @@ there's no countdown.
   run, and so does hitting a pole. Fly over, under, or (later, when the wires
   stack up to three) between them. Pigeons sit on the wires and are targets
   too (×2).
+- **Paparazzi:** now and then a paparazzo walks on with his camera raised.
+  The ring over his head fills as he closes in; when it's full (just past the
+  bird) he takes your picture. Splat him first to smash the camera (×3).
+  Miss, and you get a flash, a polaroid, and your photo on a roadside
+  billboard as the next obstacle, always before the harbour gate (and on the
+  game-over screen). The run's first paparazzo walks slower and has a
+  "SPLAT HIM!" arrow.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage
@@ -284,6 +291,8 @@ build is always the plain one:
   JPEG of your face at peak strain, kept in memory, shown on the game-over
   screen, and saved only if you add the run to the local Hall of Fame
   (`localStorage`, top 5).
+- The paparazzi's photos show your face in face mode, and the bird with the
+  keyboard. They stay in memory for the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
 
@@ -301,7 +310,7 @@ src/
   render.ts     canvas drawing
   audio.ts      WebAudio synth sounds
   debug.ts      debug / tuning panel
-  snapshot.ts   peak-strain face crop
+  snapshot.ts   face crops: peak-strain snapshot, paparazzi photos
   storage.ts    safe localStorage, best score, Hall of Fame
   main.ts       screens, input, loops, calibration flow
 scripts/

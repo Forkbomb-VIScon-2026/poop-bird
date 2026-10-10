@@ -9,8 +9,8 @@ import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
 import { Game } from "./game";
 import { FaceRecorder, type RecorderKind } from "./recorder";
-import { Renderer } from "./render";
-import { StrainSnapshot } from "./snapshot";
+import { Renderer, drawFrontPage } from "./render";
+import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   assessPuffCalibration,
   buildPuffCalibration,
@@ -650,6 +650,7 @@ function startReady(ocean = false): void {
   cam.classList.remove("large");
   show(cam, mode === "face");
   game.reset();
+  renderer.photos.clear();
   snapshot.reset();
   keyHeld = false;
   pointerHeld = false;
@@ -732,6 +733,22 @@ function onGameOver(): void {
   $("go-combo").textContent = game.bestCombo > 1 ? `x${game.bestCombo}` : String(game.bestCombo);
   $("go-distance").textContent = `${Math.round(game.distance / 50)} m`;
   $("go-accidents").textContent = String(game.accidents);
+  $("go-smashed").textContent = String(game.camerasSmashed);
+  $("go-scandals").textContent = String(game.frontPages.length);
+
+  // The last photo that got away makes tomorrow's paper.
+  const front = game.frontPages.at(-1) ?? null;
+  show($("go-frontpage"), front !== null);
+  if (front) {
+    const fp = $<HTMLCanvasElement>("go-frontpage-canvas");
+    const fctx = fp.getContext("2d");
+    if (fctx) {
+      fctx.setTransform(1, 0, 0, 1, 0, 0);
+      fctx.clearRect(0, 0, fp.width, fp.height);
+      fctx.scale(fp.width / 200, fp.height / 240);
+      drawFrontPage(fctx, 2, 2, 196, 236, front, renderer.photos);
+    }
+  }
 
   currentSnapshotUrl = mode === "face" ? snapshot.toDataURL() : null;
   show($("go-snapshot"), currentSnapshotUrl !== null);
@@ -934,6 +951,17 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
+/**
+ * The paparazzo's shot: the player's real face in face mode (like the
+ * finest-strain snapshot), otherwise the strained bird. Kept in memory for
+ * this run only.
+ */
+function takePhoto(photoId: number): void {
+  const face = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
+  const photo = face ?? renderer.captureBird(game);
+  if (photo) renderer.photos.set(photoId, photo);
+}
+
 function handleGameEvents(): void {
   for (const e of game.events) {
     switch (e.type) {
@@ -982,6 +1010,16 @@ function handleGameEvents(): void {
       case "jellyPopped":
         sound.jellyPop(e.combo);
         break;
+      case "paparazzoBeep":
+        sound.cameraBeep(e.timer);
+        break;
+      case "photo":
+        sound.shutter();
+        takePhoto(e.photoId);
+        break;
+      case "cameraSmashed":
+        sound.smash();
+        break;
     }
   }
   game.events.length = 0;
@@ -1025,6 +1063,10 @@ window.addEventListener("keydown", (e) => {
     case "l":
       // Debug shortcut: a power line right now.
       if (debug?.visible && state === "playing") game.spawnPowerLineNow();
+      break;
+    case "f":
+      // Debug shortcut: a paparazzo walks on.
+      if (debug?.visible && state === "playing") game.spawnPaparazzoNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.

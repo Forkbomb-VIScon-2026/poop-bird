@@ -5,6 +5,8 @@ import {
   BIRD_RADIUS,
   GROUND_Y,
   SURFACE_Y,
+  BILLBOARD_H,
+  BILLBOARD_LEGS_INSET,
   TRANSITION_HOLD_AT,
   TRANSITION_SWAP_AT,
   VIEW_H,
@@ -18,8 +20,12 @@ import {
   type Pigeon,
   type PowerLine,
   type Splat,
+  type Tabloid,
   type Target,
 } from "./game";
+
+/** A captured photo: a face crop from the webcam, or a crop of the game canvas around the bird. */
+export type Photo = HTMLCanvasElement;
 
 const OUTLINE = "#2b2d42";
 /** Pigeons are drawn at this scale (their hit radius is PIGEON_R in game.ts). */
@@ -77,11 +83,45 @@ export class Renderer {
   width = 1000;
   /** Background scroll offset, accumulates even between runs. */
   private bgOffset = 0;
+  /** The paparazzi's photos of this run, by Game photo id. main.ts fills it on "photo" events. */
+  readonly photos = new Map<number, Photo>();
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D not supported");
     this.ctx = ctx;
+  }
+
+  /** Keyboard-mode photo: a close-up of the bird, always caught mid-strain (that's the joke), without HUD. */
+  captureBird(game: Game): Photo | null {
+    const out = document.createElement("canvas");
+    out.width = 200;
+    out.height = 200;
+    const octx = out.getContext("2d");
+    if (!octx) return null;
+    const g = octx.createLinearGradient(0, 0, 0, 200);
+    g.addColorStop(0, "#5ec8f2");
+    g.addColorStop(1, "#bde8f7");
+    octx.fillStyle = g;
+    octx.fillRect(0, 0, 200, 200);
+    octx.fillStyle = "#8fb3c6";
+    for (let i = 0; i < 5; i++) octx.fillRect(i * 44 - 6, 120 + ((i * 37) % 40), 36, 100);
+    const zoom = 2.1;
+    octx.setTransform(zoom, 0, 0, zoom, 100 - game.bird.x * zoom, 105 - game.bird.y * zoom);
+    const main = this.ctx;
+    const charge = game.charge;
+    const relief = game.bird.relief;
+    this.ctx = octx;
+    game.charge = { ...charge, charge: Math.max(charge.charge, 0.9) };
+    game.bird.relief = 0;
+    try {
+      this.drawBird(game);
+    } finally {
+      this.ctx = main;
+      game.charge = charge;
+      game.bird.relief = relief;
+    }
+    return out;
   }
 
   /** Fits the canvas to its CSS size. Returns the logical width (height is always VIEW_H). */
@@ -115,6 +155,8 @@ export class Renderer {
     for (const o of game.obstacles) this.drawObstacle(o, game.time);
     for (const l of game.powerLines) this.drawPowerLine(l, game.time);
     for (const t of game.targets) if (t.kind === "car") this.drawTarget(t, game.time);
+    // Over the buildings, so a paparazzo's timer is never hidden.
+    for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
     for (const j of game.jellies) this.drawJelly(j, game.time, game.spike.spiked);
     this.drawPoops(game);
     // During a transition the splash covers the creature, and particles fly over the splash.
@@ -130,6 +172,11 @@ export class Renderer {
     }
     this.drawFloaters(game);
     this.drawScreenSplats(game);
+    this.drawPolaroid(game);
+    if (game.flash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, game.flash * 1.2)})`;
+      ctx.fillRect(-40, -40, this.width + 80, VIEW_H + 80);
+    }
     // Electrocution flash: the whole screen flickers.
     if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) {
       ctx.fillStyle = `rgba(220,245,255,${Math.min(0.55, game.zapFlash)})`;
@@ -239,7 +286,9 @@ export class Renderer {
     ctx.strokeStyle = OUTLINE;
 
     // Bottom part
-    if (o.bottom === "chimney") {
+    if (o.bottom === "billboard") {
+      this.drawBillboard(o, time);
+    } else if (o.bottom === "chimney") {
       ctx.fillStyle = "#a44a3f";
       roundRect(ctx, base.x, base.y, base.w, base.h + 4, 4);
       ctx.fill();
@@ -483,6 +532,83 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Roadside billboard: the front page on a framed board, on a steel frame with a catwalk and lamps. */
+  private drawBillboard(o: Obstacle, time: number): void {
+    const ctx = this.ctx;
+    const x = o.x;
+    const w = o.w;
+    const top = o.gapBottom;
+    const boardBottom = top + BILLBOARD_H;
+    const inset = w * BILLBOARD_LEGS_INSET;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = OUTLINE;
+
+    // Steel frame: two legs with cross bracing, filling the collision box below the board.
+    const legW = 12;
+    const lx = x + inset;
+    const rx = x + w - inset - legW;
+    ctx.strokeStyle = "#6c757d";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (let y = boardBottom; y < GROUND_Y - 4; y += 36) {
+      const y2 = Math.min(GROUND_Y, y + 36);
+      ctx.moveTo(lx + legW, y);
+      ctx.lineTo(rx, y2);
+      ctx.moveTo(rx, y);
+      ctx.lineTo(lx + legW, y2);
+      ctx.moveTo(lx + legW, y);
+      ctx.lineTo(rx, y);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.fillStyle = "#495057";
+    for (const legX of [lx, rx]) {
+      ctx.fillRect(legX, boardBottom, legW, GROUND_Y - boardBottom + 4);
+      ctx.strokeRect(legX, boardBottom, legW, GROUND_Y - boardBottom + 4);
+    }
+
+    // Catwalk under the board, with lamps shining up at it.
+    ctx.fillStyle = "#343a40";
+    ctx.fillRect(x + 6, boardBottom, w - 12, 7);
+    ctx.strokeRect(x + 6, boardBottom, w - 12, 7);
+    for (let i = 0; i < 3; i++) {
+      const cx = x + w * (0.2 + i * 0.3);
+      const glow = 0.18 + Math.sin(time * 3 + i + o.seed) * 0.03;
+      ctx.fillStyle = `rgba(255,240,170,${glow})`;
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, boardBottom - 2);
+      ctx.lineTo(cx - 34, top + 10);
+      ctx.lineTo(cx + 34, top + 10);
+      ctx.lineTo(cx + 5, boardBottom - 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Board frame and the ad.
+    ctx.fillStyle = "#2b2d42";
+    roundRect(ctx, x, top, w, BILLBOARD_H, 4);
+    ctx.fill();
+    drawBillboardAd(ctx, x + 7, top + 7, w - 14, BILLBOARD_H - 14, o.tabloid, this.photos);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    roundRect(ctx, x, top, w, BILLBOARD_H, 4);
+    ctx.stroke();
+    // Lamp heads on the catwalk (drawn over the board's bottom edge).
+    ctx.fillStyle = "#adb5bd";
+    for (let i = 0; i < 3; i++) {
+      const cx = x + w * (0.2 + i * 0.3);
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, boardBottom + 2);
+      ctx.lineTo(cx + 7, boardBottom + 2);
+      ctx.lineTo(cx + 4, boardBottom - 6);
+      ctx.lineTo(cx - 4, boardBottom - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
   // --- targets ----------------------------------------------------------------
 
   private drawTarget(t: Target, time: number): void {
@@ -494,6 +620,7 @@ export class Renderer {
     ctx.strokeStyle = OUTLINE;
     if (t.kind === "car") drawCar(ctx, t, time);
     else if (t.kind === "pedestrian") drawPedestrian(ctx, t, time);
+    else if (t.kind === "paparazzo") drawPaparazzo(ctx, t, time);
     else drawStatue(ctx, t);
     drawTargetSplats(ctx, t.splats);
     ctx.restore();
@@ -842,6 +969,115 @@ export class Renderer {
       ctx.fillStyle = sweet ? "#ffd700" : "#ff595e";
       ctx.fillText(label, x + w / 2, y - 12);
     }
+  }
+
+  // --- paparazzi ----------------------------------------------------------------
+
+  /**
+   * The paparazzo's timer: a ring with a camera that fills as he closes in,
+   * and on the run's first one a bouncing "SPLAT HIM!" arrow.
+   */
+  private drawPaparazzoTimer(t: Target, game: Game): void {
+    const p = t.pap;
+    if (!p || p.state !== "watching" || game.phase !== "playing") return;
+    const ctx = this.ctx;
+    const urgent = p.timer > 0.7;
+    const pulse = urgent ? 1 + Math.max(0, Math.sin(game.time * 18)) * 0.12 : 1;
+    const r = 19 * pulse;
+    const x = t.x;
+    const y = t.y - t.h - 30;
+
+    // Disc, then the remaining time as a shrinking wedge.
+    ctx.fillStyle = "#fff";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = urgent ? "#ff3b3b" : "#ff8fab";
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p.timer);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    // Camera icon
+    ctx.fillStyle = OUTLINE;
+    roundRect(ctx, x - 10, y - 6, 20, 14, 3);
+    ctx.fill();
+    ctx.fillRect(x - 4, y - 9, 8, 4);
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(x, y + 1, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = OUTLINE;
+    ctx.beginPath();
+    ctx.arc(x, y + 1, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (!p.tutorial) return;
+    const bob = Math.sin(game.time * 6) * 5;
+    const ay = y - r - 16 + bob;
+    ctx.fillStyle = "#ffd60a";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 9, ay - 14);
+    ctx.lineTo(x + 9, ay - 14);
+    ctx.lineTo(x + 9, ay - 4);
+    ctx.lineTo(x + 16, ay - 4);
+    ctx.lineTo(x, ay + 10);
+    ctx.lineTo(x - 16, ay - 4);
+    ctx.lineTo(x - 9, ay - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = "900 24px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 6;
+    ctx.strokeText("💩 SPLAT HIM!", x, ay - 34);
+    ctx.fillStyle = "#ffd60a";
+    ctx.fillText("💩 SPLAT HIM!", x, ay - 34);
+  }
+
+  /** The fresh shot pops up as a polaroid in the top corner. */
+  private drawPolaroid(game: Game): void {
+    const p = game.polaroid;
+    if (!p) return;
+    const ctx = this.ctx;
+    const age = 2.2 - p.life;
+    const pop = age < 0.18 ? 0.4 + (age / 0.18) * 0.75 : 1.15 - Math.min(0.15, (age - 0.18) * 1.2);
+    const alpha = Math.min(1, p.life / 0.35);
+    const w = 120;
+    const h = 142;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(this.width - 110, 120);
+    ctx.rotate(0.12 - age * 0.02);
+    ctx.scale(pop, pop);
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillRect(-w / 2 + 6, -h / 2 + 8, w, h);
+    ctx.fillStyle = "#fffdf7";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+    // The photo develops: it starts white and fades in.
+    drawPhoto(ctx, this.photos.get(p.photoId), -w / 2 + 8, -h / 2 + 8, w - 16, w - 16);
+    const develop = Math.max(0, 1 - age / 0.6);
+    if (develop > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${develop})`;
+      ctx.fillRect(-w / 2 + 8, -h / 2 + 8, w - 16, w - 16);
+    }
+    ctx.fillStyle = OUTLINE;
+    ctx.font = "italic 700 15px 'Comic Sans MS', 'Trebuchet MS', cursive";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("gotcha ;)", 0, h / 2 - 11);
+    ctx.restore();
   }
 
   // --- ocean ------------------------------------------------------------------
@@ -1898,4 +2134,344 @@ function shade(c: RGB, d: number): string {
 
 function rgb(c: RGB): string {
   return `rgb(${c.map((v) => Math.round(v)).join(",")})`;
+}
+
+// --- paparazzi --------------------------------------------------------------
+
+function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  const p = t.pap;
+  if (!p) return;
+  // Drawn a bit larger than a pedestrian so the camera reads at a glance.
+  const k = 1.2;
+  const h = t.h / k;
+  const snapped = p.state === "snapped";
+  const smashed = p.state === "smashed";
+  // Walking while he closes in (only the first one actually moves), a victory hop once he has the shot.
+  const walking = p.state === "watching" && t.speed !== 0;
+  const stride = walking ? Math.sin(time * 9 + t.seed) * 0.5 : 0;
+  const hop = snapped ? Math.abs(Math.sin(time * 10 + t.seed)) * 5 : 0;
+  ctx.save();
+  ctx.scale(k, k);
+  ctx.translate(0, -hop);
+  ctx.lineCap = "round";
+
+  // Legs
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = OUTLINE;
+  for (const s of [1, -1]) {
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.38);
+    ctx.lineTo(walking ? Math.sin(stride * s) * 10 : s * 6, 0);
+    ctx.stroke();
+  }
+  // Trench coat
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#c9a66b";
+  ctx.beginPath();
+  ctx.moveTo(-9, -h * 0.78);
+  ctx.lineTo(9, -h * 0.78);
+  ctx.lineTo(12, -h * 0.3);
+  ctx.lineTo(-12, -h * 0.3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.76);
+  ctx.lineTo(0, -h * 0.32);
+  ctx.moveTo(-11, -h * 0.5);
+  ctx.lineTo(11, -h * 0.5);
+  ctx.stroke();
+
+  // Head
+  const headY = -h * 0.88;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = OUTLINE;
+  ctx.fillStyle = "#f1c27d";
+  ctx.beginPath();
+  ctx.arc(0, headY, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Fedora with a PRESS card
+  ctx.fillStyle = "#3d405b";
+  ctx.fillRect(-12, headY - 6, 24, 4);
+  ctx.strokeRect(-12, headY - 6, 24, 4);
+  roundRect(ctx, -8, headY - 15, 16, 10, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(-5, headY - 13, 9, 5);
+  ctx.fillStyle = "#d62828";
+  ctx.font = "900 4px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("PRESS", -0.5, headY - 10.5);
+  // Shades, or a scowl once the camera's gone
+  ctx.fillStyle = OUTLINE;
+  if (smashed) {
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-6, headY - 2);
+    ctx.lineTo(-2, headY);
+    ctx.moveTo(6, headY - 2);
+    ctx.lineTo(2, headY);
+    ctx.moveTo(-3, headY + 5);
+    ctx.quadraticCurveTo(0, headY + 3, 3, headY + 5);
+    ctx.stroke();
+  } else {
+    ctx.fillRect(-7, headY - 2, 14, 4);
+    // Grin once he has the shot
+    if (snapped) {
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, headY + 3, 3.5, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+    }
+  }
+
+  // Camera: aimed at the bird while watching, held up in triumph after the shot, drooping when smashed.
+  const shoulderY = -h * 0.72;
+  const aim = smashed ? 1.3 : snapped ? -Math.PI / 2 - 0.3 : p.aim;
+  const camDist = snapped ? 14 : 8;
+  const camX = Math.cos(aim) * camDist;
+  const camY = shoulderY + Math.sin(aim) * camDist;
+  // Arms to the camera
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = OUTLINE;
+  ctx.beginPath();
+  ctx.moveTo(-4, shoulderY + 2);
+  ctx.lineTo(camX, camY);
+  ctx.moveTo(4, shoulderY + 2);
+  ctx.lineTo(camX, camY + 2);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(camX, camY);
+  ctx.rotate(aim);
+  if (Math.cos(aim) < 0) ctx.scale(1, -1); // keep the flash unit on top
+  ctx.lineWidth = 2.5;
+  // Body
+  ctx.fillStyle = "#2b2d42";
+  roundRect(ctx, -9, -7, 16, 13, 2);
+  ctx.fill();
+  ctx.stroke();
+  // Flash unit
+  ctx.fillStyle = "#adb5bd";
+  ctx.fillRect(-6, -13, 8, 6);
+  ctx.strokeRect(-6, -13, 8, 6);
+  // Long lens
+  ctx.fillStyle = "#495057";
+  ctx.fillRect(6, -5, 18, 10);
+  ctx.strokeRect(6, -5, 18, 10);
+  ctx.fillStyle = smashed ? "#6c757d" : "#8ecae6";
+  ctx.fillRect(23, -4, 3, 8);
+  if (smashed) {
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(10, -4);
+    ctx.lineTo(15, 1);
+    ctx.lineTo(12, 4);
+    ctx.moveTo(15, 1);
+    ctx.lineTo(21, -3);
+    ctx.stroke();
+  }
+  // Red light, blinking faster as the timer fills
+  if (p.state === "watching" && Math.sin(time * (8 + p.timer * 30)) > 0) {
+    ctx.fillStyle = "#ff3b3b";
+    ctx.beginPath();
+    ctx.arc(-4, -1, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Flash burst
+  if (p.flash > 0) {
+    const k = p.flash / 0.25;
+    ctx.fillStyle = `rgba(255,255,220,${k})`;
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const r = i % 2 ? 8 : 26 + (1 - k) * 20;
+      ctx.lineTo(-2 + Math.cos(a) * r, -10 + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.restore();
+  ctx.lineCap = "butt";
+}
+
+/** Draws `photo` cover-cropped into the rect, or a "no photo" placeholder. */
+function drawPhoto(ctx: CanvasRenderingContext2D, photo: Photo | undefined, x: number, y: number, w: number, h: number): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  if (photo && photo.width > 0 && photo.height > 0) {
+    const s = Math.max(w / photo.width, h / photo.height);
+    const dw = photo.width * s;
+    const dh = photo.height * s;
+    ctx.drawImage(photo, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  } else {
+    ctx.fillStyle = "#495057";
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "#adb5bd";
+    ctx.font = `900 ${Math.round(h * 0.5)}px 'Trebuchet MS', sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("?", x + w / 2, y + h / 2);
+  }
+  ctx.restore();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+}
+
+/** Breaks `text` into lines that fit `maxWidth` in the current font. */
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/**
+ * A tabloid front page with the photo and headline, laid out to fit w×h (for
+ * the game-over screen; the billboard uses drawBillboardAd).
+ */
+export function drawFrontPage(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  tabloid: Tabloid | null,
+  photos: ReadonlyMap<number, Photo>,
+): void {
+  const pad = w * 0.06;
+  ctx.save();
+  // Paper
+  ctx.fillStyle = "#f5f1e6";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeRect(x, y, w, h);
+  // Masthead
+  const mastH = h * 0.14;
+  ctx.fillStyle = "#d62828";
+  ctx.fillRect(x + 1.5, y + 1.5, w - 3, mastH);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  let size = mastH * 0.62;
+  ctx.font = `italic 900 ${size}px Georgia, 'Times New Roman', serif`;
+  const mast = "The Daily Dropping";
+  const mw = ctx.measureText(mast).width;
+  if (mw > w - pad * 2) {
+    size *= (w - pad * 2) / mw;
+    ctx.font = `italic 900 ${size}px Georgia, 'Times New Roman', serif`;
+  }
+  ctx.fillText(mast, x + w / 2, y + 1.5 + mastH / 2 + 1);
+
+  // Headline
+  const headline = tabloid?.headline ?? "EXCLUSIVE";
+  let hs = w * 0.13;
+  let lines: string[] = [];
+  for (; hs > 6; hs *= 0.9) {
+    ctx.font = `900 ${hs}px Impact, 'Arial Black', 'Trebuchet MS', sans-serif`;
+    lines = wrapText(ctx, headline, w - pad * 2);
+    if (lines.length <= 3 && lines.every((l) => ctx.measureText(l).width <= w - pad * 2)) break;
+  }
+  ctx.fillStyle = "#111";
+  const headTop = y + mastH + pad * 0.8;
+  lines.forEach((l, i) => ctx.fillText(l, x + w / 2, headTop + hs * (0.55 + i * 1.02)));
+
+  // Photo
+  const photoTop = headTop + hs * (lines.length * 1.02 + 0.2);
+  const footer = h * 0.12;
+  const photoH = Math.max(10, y + h - footer - photoTop);
+  drawPhoto(ctx, tabloid ? photos.get(tabloid.photoId) : undefined, x + pad, photoTop, w - pad * 2, photoH);
+  // EXCLUSIVE badge
+  ctx.save();
+  ctx.translate(x + w - pad - w * 0.12, photoTop + w * 0.1);
+  ctx.rotate(0.3);
+  drawStar(ctx, 0, 0, w * 0.15, "#ffd60a");
+  ctx.fillStyle = "#d62828";
+  ctx.font = `900 ${w * 0.045}px 'Trebuchet MS', sans-serif`;
+  ctx.fillText("EXCL!", 0, 1);
+  ctx.restore();
+  // Body text
+  ctx.fillStyle = "#adb5bd";
+  const lineH = footer / 3;
+  for (let i = 0; i < 2; i++) {
+    const ly = y + h - footer + lineH * (i + 0.8);
+    ctx.fillRect(x + pad, ly, (w - pad * 2) * (i ? 0.7 : 1), Math.max(1.5, lineH * 0.35));
+  }
+  ctx.restore();
+}
+
+/** The billboard's landscape layout: masthead across the top, the photo on the left, the headline beside it. */
+function drawBillboardAd(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  tabloid: Tabloid | null,
+  photos: ReadonlyMap<number, Photo>,
+): void {
+  const pad = 6;
+  ctx.save();
+  ctx.fillStyle = "#f5f1e6";
+  ctx.fillRect(x, y, w, h);
+  // Masthead
+  const mastH = h * 0.2;
+  ctx.fillStyle = "#d62828";
+  ctx.fillRect(x, y, w, mastH);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `italic 900 ${mastH * 0.66}px Georgia, 'Times New Roman', serif`;
+  ctx.fillText("The Daily Dropping", x + w / 2, y + mastH / 2 + 1, w - pad * 2);
+
+  // Photo on the left
+  const photoY = y + mastH + pad;
+  const photoH = y + h - pad - photoY;
+  const photoW = Math.min(photoH * 0.95, w * 0.45);
+  drawPhoto(ctx, tabloid ? photos.get(tabloid.photoId) : undefined, x + pad, photoY, photoW, photoH);
+
+  // Headline on the right, as big as fits in up to 4 lines
+  const tx = x + pad * 2 + photoW;
+  const tw = x + w - pad - tx;
+  const headline = tabloid?.headline ?? "EXCLUSIVE";
+  let hs = photoH * 0.34;
+  let lines: string[] = [];
+  for (; hs > 6; hs *= 0.92) {
+    ctx.font = `900 ${hs}px Impact, 'Arial Black', 'Trebuchet MS', sans-serif`;
+    lines = wrapText(ctx, headline, tw);
+    if (lines.length * hs * 1.05 <= photoH && lines.every((l) => ctx.measureText(l).width <= tw)) break;
+  }
+  ctx.fillStyle = "#111";
+  const textTop = photoY + (photoH - lines.length * hs * 1.05) / 2;
+  lines.forEach((l, i) => ctx.fillText(l, tx + tw / 2, textTop + hs * (0.55 + i * 1.05)));
+
+  // EXCLUSIVE badge on the photo's corner
+  ctx.save();
+  ctx.translate(x + pad + photoW - 4, photoY + 6);
+  ctx.rotate(0.3);
+  drawStar(ctx, 0, 0, 18, "#ffd60a");
+  ctx.fillStyle = "#d62828";
+  ctx.font = "900 7px 'Trebuchet MS', sans-serif";
+  ctx.fillText("EXCL!", 0, 1);
+  ctx.restore();
+  ctx.restore();
 }

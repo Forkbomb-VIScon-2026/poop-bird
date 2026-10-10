@@ -87,6 +87,14 @@ export const CONFIG_SPEC = {
   comboMax: { value: 5, min: 1, max: 20, step: 0.5, group: "Targets", label: "Combo max", hint: "multiplier cap" },
   distancePerPoint: { value: 10, min: 1, max: 100, step: 1, group: "Targets", label: "Distance per point", hint: "px of travel per score point" },
 
+  // --- Paparazzi -----------------------------------------------------------
+  paparazziChance: { value: 0.18, min: 0, max: 1, step: 0.01, group: "Paparazzi", label: "Spawn chance", hint: "chance that a target spawn is a paparazzo instead" },
+  paparazziMinDistance: { value: 1500, min: 0, max: 10000, step: 50, group: "Paparazzi", label: "First after", hint: "px of distance before the first paparazzo" },
+  paparazziMinGap: { value: 2200, min: 0, max: 10000, step: 50, group: "Paparazzi", label: "Min gap", hint: "px of distance between paparazzi" },
+  paparazziShotOffset: { value: 50, min: -200, max: 300, step: 5, group: "Paparazzi", label: "Shot point", hint: "px past the bird where his timer runs out and he takes the shot" },
+  paparazziTutorialWalk: { value: 60, min: 0, max: 200, step: 5, group: "Paparazzi", label: "First one walks", hint: "px/s the run's first paparazzo walks along (more time to react)" },
+  paparazziMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Paparazzi", label: "Points", hint: "× points for splatting him before the shot (× combo)" },
+
   // --- Ocean stage ---------------------------------------------------------
   cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before gate", hint: "then the harbour gate appears" },
   oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the exit gate appears" },
