@@ -8,8 +8,9 @@
  * - `data-shortcut="C"`: display only, for keys handled elsewhere.
  *
  * Each button gets a keycap badge on its corner (⏎ while it's the yellow
- * button, else its first extra key) and a tooltip with all its keys on hover
- * or keyboard focus. Touch devices hide both (CSS `.touch`).
+ * button, else its first extra key; none on ghost buttons) and a tooltip
+ * with all its keys on hover or keyboard focus. Touch devices hide both
+ * (CSS `.touch`).
  */
 
 const LABELS: Record<string, string> = { Enter: "⏎ Enter", Space: "Space", Escape: "Esc" };

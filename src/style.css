@@ -673,7 +673,7 @@ kbd {
 
 /* --- Key hints (keyhints.ts) ---------------------------------------------------
    Every button with keys wears a small keycap on its corner (⏎ on the yellow
-   button, its own key on the others) and shows them all in a tooltip on hover
+   button, its own key on the others, none on small ghost links) and shows them all in a tooltip on hover
    or keyboard focus. */
 
 .has-keys {
@@ -701,7 +701,7 @@ kbd {
 }
 
 .btn.primary:not(:disabled) > .key-badge.k-default,
-.btn:not(.primary):not(:disabled) > .key-badge.k-extra {
+.btn:not(.primary):not(.ghost):not(:disabled) > .key-badge.k-extra {
   display: block;
   animation: key-badge-in 0.35s cubic-bezier(0.3, 1.6, 0.6, 1) both;
 }
