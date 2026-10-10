@@ -192,6 +192,8 @@ export interface Pebble {
   rot: number;
   /** Closest it came to the bird so far (for the "close one" bonus). */
   closest: number;
+  /** Set once it has paid the "close one" bonus (at most once per pebble). */
+  dodged: boolean;
   /** The kid who shot it. */
   from: Target;
 }
@@ -1570,7 +1572,7 @@ export class Game {
   private fireKid(t: Target): void {
     const k = t.kid!;
     const s = slingshotPos(t);
-    this.pebbles.push({ x: s.x, y: s.y, vx: k.aimVx, vy: k.aimVy, rot: 0, closest: Infinity, from: t });
+    this.pebbles.push({ x: s.x, y: s.y, vx: k.aimVx, vy: k.aimVy, rot: 0, closest: Infinity, dodged: false, from: t });
     k.shots--;
     this.setKidState(t, "reloading");
     k.twang = 0.3;
@@ -1623,8 +1625,8 @@ export class Game {
       }
       p.closest = Math.min(p.closest, dist);
       // Dodged it by a whisker.
-      if (p.x < b.x - 30 && p.closest < this.hitRadius + PEBBLE_R + 28) {
-        p.closest = Infinity;
+      if (!p.dodged && p.x < b.x - 30 && p.closest < this.hitRadius + PEBBLE_R + 28) {
+        p.dodged = true;
         this.bonus += Math.round(config.targetPoints * 0.5);
         this.floaters.push({ x: b.x, y: b.y - 46, text: "CLOSE ONE!", color: "#bde0fe", size: 20, life: 0.9, maxLife: 0.9 });
       }
