@@ -10,7 +10,6 @@ export class Sound {
   private screamBuffer: AudioBuffer | null = null;
   private screamVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
   private screamLoading = false;
-  private screamStarted = 0;
   muted = false;
 
   /** Load the recorded crescendo after the browser's first audio gesture. */
@@ -58,12 +57,9 @@ export class Sound {
         if (this.screamVoice?.source === source) this.screamVoice = null;
       };
       this.screamVoice = { source, gain };
-      this.screamStarted = ctx.currentTime;
     }
-    const { source, gain } = this.screamVoice;
-    // Accelerate the recorded crescendo to roughly match the charge meter.
-    // Let the tail run at high charge, but never loop a finished scream.
-    source.playbackRate.setTargetAtTime(1.1 + charge * 1.5, ctx.currentTime, 0.08);
+    const { gain } = this.screamVoice;
+    // Keep the recording at its original speed and pitch; only adjust volume.
     gain.gain.setTargetAtTime(0.1 + charge * 0.55, ctx.currentTime, 0.06);
     return true;
   }
