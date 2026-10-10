@@ -1455,6 +1455,45 @@ body.debug-open #cam {
     margin: 4px 0;
   }
 
+  /* Ocean tutorial: on the right, clear of the fish, with the tips in two columns. */
+  .tutorial {
+    justify-content: flex-end;
+    padding-right: calc(16px + env(safe-area-inset-right));
+  }
+
+  .tutorial-card {
+    max-width: min(600px, 66vw);
+    margin-left: 0;
+    padding: 10px 14px 0;
+  }
+
+  .tips {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 14px;
+    font-size: 13px;
+  }
+
+  .tips li {
+    gap: 8px;
+    padding: 3px 0;
+  }
+
+  .tip-icon {
+    font-size: 20px;
+    width: 24px;
+  }
+
+  svg.tip-meter {
+    width: 24px;
+    height: 34px;
+  }
+
+  .tutorial-try {
+    font-size: 14px;
+    margin-top: 6px;
+  }
+
   /* Game over: title and buttons first, the stats side by side below. */
   .card.wide {
     display: flex;
