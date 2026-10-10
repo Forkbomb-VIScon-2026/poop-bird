@@ -49,7 +49,7 @@ export function captureFace(video: HTMLVideoElement, box: FaceBox | null): HTMLC
 }
 
 /** Draws the padded, mirrored face crop into `canvas` (resized to `width`). False if there's nothing to crop. */
-function cropFace(video: HTMLVideoElement, box: FaceBox, canvas: HTMLCanvasElement, width: number): boolean {
+export function cropFace(video: HTMLVideoElement, box: FaceBox, canvas: HTMLCanvasElement, width: number): boolean {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   if (!vw || !vh) return false;

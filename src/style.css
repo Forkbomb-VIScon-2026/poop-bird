@@ -1771,3 +1771,89 @@ body.debug-open #cam {
     margin-top: 8px;
   }
 }
+
+/* --- Settings menu (gear, top right) ------------------------------------------ */
+
+.screen.start .settings-gear {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: calc(14px + env(safe-area-inset-right));
+}
+
+.screen.settings {
+  z-index: 30;
+}
+
+.settings-card {
+  min-width: min(380px, 100%);
+  text-align: left;
+}
+
+.settings-card h2 {
+  text-align: center;
+}
+
+.settings-group {
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  padding: 10px 14px 12px;
+  margin: 12px 0 16px;
+}
+
+.settings-group legend {
+  font-weight: 900;
+  padding: 0 6px;
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-text small {
+  opacity: 0.75;
+}
+
+/* An on/off switch; green when RTX is on. */
+.switch {
+  appearance: none;
+  flex: none;
+  width: 54px;
+  height: 30px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: #d9d4c7;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--ink);
+  transition: transform 0.15s;
+}
+
+.switch:checked {
+  background: #76b900;
+  box-shadow: 0 0 10px rgba(118, 185, 0, 0.7);
+}
+
+.switch:checked::after {
+  transform: translateX(24px);
+}

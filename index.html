@@ -58,9 +58,30 @@
         <div class="hud-buttons">
           <button id="btn-hud-mute" class="hud-btn" aria-label="Mute" data-shortcut="M">🔊</button>
           <button id="btn-hud-pause" class="hud-btn" aria-label="Pause" data-shortcut="P">⏸</button>
+          <button id="btn-hud-settings" class="hud-btn" aria-label="Settings" title="Settings">⚙️</button>
         </div>
         <div id="hud-toast" class="hud-toast hidden"></div>
       </div>
+
+      <!-- Settings (the gear, top right). Before the screens, so Enter and Esc go to its Done button while it's open. -->
+      <section id="screen-settings" class="screen settings hidden" aria-label="Settings">
+        <div class="card settings-card">
+          <h2>⚙️ Settings</h2>
+          <fieldset class="settings-group">
+            <legend>Graphics</legend>
+            <label class="setting">
+              <span class="setting-text">
+                <b>RTX</b>
+                <small>Ray-traced realism: real photos instead of drawings.</small>
+              </span>
+              <input type="checkbox" id="opt-rtx" class="switch" />
+            </label>
+          </fieldset>
+          <div class="buttons">
+            <button id="btn-settings-done" class="btn primary" data-default data-keys="Escape">Done</button>
+          </div>
+        </div>
+      </section>
 
       <!-- Swim lesson and puff calibration banners (first dive in face mode, in calm water) -->
       <div id="puff-calib" class="puff-calib hidden">
@@ -90,6 +111,7 @@
 
       <!-- Start screen: no card, just the title over the city with the bird hovering. -->
       <section id="screen-start" class="screen start">
+        <button id="btn-settings" class="hud-btn settings-gear" aria-label="Settings" title="Settings">⚙️</button>
         <div class="start-hero">
           <h1 class="title">Poop <span class="accent">Bird</span></h1>
           <p class="tagline">Strain your face. Fly the bird. 💩</p>

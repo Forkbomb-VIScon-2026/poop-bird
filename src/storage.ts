@@ -81,6 +81,17 @@ export interface HallOfFameEntry {
   snapshot?: string; // JPEG data URL, never leaves the device
 }
 
+const GRAPHICS_KEY = "poopBird.graphics";
+
+/** The chosen graphics style: "rtx" (real photos) or "classic" (the default). */
+export function loadGraphics(): "classic" | "rtx" {
+  return storageGet(GRAPHICS_KEY) === "rtx" ? "rtx" : "classic";
+}
+
+export function saveGraphics(mode: "classic" | "rtx"): void {
+  storageSet(GRAPHICS_KEY, mode);
+}
+
 export function loadBest(): number {
   const v = Number(storageGet(BEST_KEY));
   return Number.isFinite(v) && v > 0 ? v : 0;
