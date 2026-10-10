@@ -1400,9 +1400,6 @@ function handleGameEvents(): void {
         sound.lineSnap();
         buzz(60);
         break;
-      case "anglerSplash":
-        sound.splash();
-        break;
     }
   }
   game.events.length = 0;

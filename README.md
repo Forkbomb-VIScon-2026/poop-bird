@@ -214,23 +214,20 @@ total distance.
   the last ~0.3 s.
 - **The fisherman:** some ocean stages (`anglerChance`) have a fisherman in
   a rowing boat, sitting low in the water with his pipe, beard, yellow
-  oilskins and sou'wester. When he's close he casts (a "!" by the bobber) and
-  the hook sinks with a wriggling worm. He reels it up and down to follow the
-  fish's depth (with a little lead) until it's about `anglerCommit` px away,
-  then he's committed, and a change of depth dodges it ("CLOSE ONE!" if it was
-  near).
-  - Touch the hook **spiked** and the line **snaps** (×4): he tumbles backwards
-    out of his boat and splashes about bald next to it while his hat floats off.
-  - Touch it **unspiked** and you're **hooked**: the world holds still and he
-    reels you up toward the surface, with the reel ratcheting and a ring around
-    the fish running out ("PUFF UP!"). Puff up to spikes before it's empty and
-    the line snaps ("BROKE FREE!", ×5). The usual pop timer still runs, so
-    deflate again in time.
-  - Fail, and he yanks the fish out of the water. That ends the run with **his
-    trophy photo**: him in his boat, grinning, holding up the puffed-up fish.
-    In face mode the fish has the player's face, grabbed when the hook went in
-    (mid-struggle). It pops up in-game and goes on the game-over card ("Catch
-    of the day").
+  oilskins and sou'wester. When he's close he casts (a "!" by the bobber), and
+  the hook, with a wriggling worm on it, sinks to the depth the fish is at
+  right then. After that it doesn't follow you: he only jigs it gently
+  (`anglerJig`). Change depth to get past it ("CLOSE ONE!" if it was near).
+  - **The hook always catches**, spiked or not. The world holds still while
+    he reels the fish up, the reel ratcheting, and yanks it out of the water.
+    That ends the run with **his trophy photo**: him in his boat, grinning,
+    holding up the puffed-up fish. In face mode the fish has the player's
+    face, grabbed when the hook went in. It pops up in-game and goes on the
+    game-over card ("Catch of the day").
+  - **The line above the hook can be cut**: cross it spiked (×4). He was
+    hauling on it, so he goes over backwards into his boat, boots in the air,
+    and his hat flies off into the water. A moment later he sits up again,
+    bald and shaking his fist. Unspiked, the fish just slips past the line.
   Tunables are in the debug panel's "Fisherman" group.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
 - **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's

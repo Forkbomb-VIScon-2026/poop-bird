@@ -189,13 +189,10 @@ export const CONFIG_SPEC = {
   anglerSlot: { value: 3, min: 0, max: 20, step: 1, group: "Fisherman", label: "Slot", hint: "ocean obstacles before his boat comes" },
   anglerRow: { value: 35, min: 0, max: 150, step: 5, group: "Fisherman", label: "Rowing speed", hint: "px/s he rows against the scroll (his hook comes at you slower)" },
   anglerCastRange: { value: 640, min: 200, max: 1200, step: 10, group: "Fisherman", label: "Cast range", hint: "px ahead of the fish where he casts" },
-  anglerReelSpeed: { value: 95, min: 20, max: 400, step: 5, group: "Fisherman", label: "Reel speed (start)", hint: "px/s he moves the hook up or down toward your depth" },
-  anglerReelSpeedMax: { value: 135, min: 20, max: 400, step: 5, group: "Fisherman", label: "Reel speed (hardest)", hint: "px/s" },
-  anglerLead: { value: 0.35, min: 0, max: 1.5, step: 0.05, group: "Fisherman", label: "Lead", hint: "s of the fish's vertical speed he aims ahead" },
-  anglerCommit: { value: 110, min: 0, max: 400, step: 5, group: "Fisherman", label: "Commit distance", hint: "px ahead of the fish where he stops following its depth (your window to dodge)" },
-  anglerEscapeTime: { value: 1.8, min: 0.4, max: 5, step: 0.1, group: "Fisherman", label: "Escape time", hint: "s a hooked fish has to spike out before it's landed" },
-  anglerSnapMultiplier: { value: 4, min: 0, max: 20, step: 0.5, group: "Fisherman", label: "Snap points", hint: "× points for snapping the line with your spikes (× combo)" },
-  anglerEscapeMultiplier: { value: 5, min: 0, max: 20, step: 0.5, group: "Fisherman", label: "Break-free points", hint: "× points for spiking out while hooked (× combo)" },
+  anglerSinkSpeed: { value: 140, min: 20, max: 500, step: 5, group: "Fisherman", label: "Sink speed", hint: "px/s the hook sinks to the depth the fish was at when he cast" },
+  anglerJig: { value: 14, min: 0, max: 80, step: 1, group: "Fisherman", label: "Jig", hint: "px he jigs the hook up and down once it's down" },
+  anglerReelTime: { value: 1.2, min: 0.3, max: 4, step: 0.1, group: "Fisherman", label: "Reel-in time", hint: "s from the bite until he yanks the fish out" },
+  anglerSnapMultiplier: { value: 4, min: 0, max: 20, step: 0.5, group: "Fisherman", label: "Cut points", hint: "× points for cutting his line above the hook with your spikes (× combo)" },
   anglerCloseMultiplier: { value: 1, min: 0, max: 10, step: 0.5, group: "Fisherman", label: "Close-one points", hint: "× points for dodging the hook by a whisker" },
 
   // --- Ocean puff detection ------------------------------------------------

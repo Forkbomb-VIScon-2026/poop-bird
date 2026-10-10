@@ -15,6 +15,7 @@ function fishing(ahead: number, dy: number, puff = 0.4): Game {
   game.spawnAnglerNow();
   const a = game.angler!;
   a.state = "fishing";
+  a.t = 10; // the hook is down already
   a.x = game.bird.x + ahead + ANGLER_TIP_DX;
   a.hookY = a.target = game.bird.y + dy;
   return game;
@@ -25,7 +26,7 @@ function stepFor(game: Game, seconds: number): void {
 }
 
 describe("the fisherman", () => {
-  it("hooks an unspiked fish, holds the world still, and lands it if it never spikes out", () => {
+  it("hooks the fish, holds the world still, and lands it", () => {
     const game = fishing(0, 0);
     game.step(1 / 120);
     expect(game.angler?.state).toBe("hooked");
@@ -38,33 +39,36 @@ describe("the fisherman", () => {
     expect(game.trophy).not.toBeNull();
   });
 
-  it("lets a hooked fish break free by puffing up to spikes", () => {
-    const game = fishing(0, 0);
+  it("hooks a spiked fish too: the hook always catches", () => {
+    const game = fishing(0, 0, 1);
+    expect(game.spike.spiked).toBe(true);
     game.step(1 / 120);
     expect(game.angler?.state).toBe("hooked");
-    game.puffInput = 1;
-    stepFor(game, 0.6);
-    expect(game.angler?.state).toBe("overboard");
-    expect(game.angler?.escaped).toBe(true);
-    expect(game.phase).toBe("playing");
-    expect(game.anglersSnapped).toBe(1);
-    expect(game.speed).toBeGreaterThan(0);
   });
 
-  it("gets his line snapped by a spiked fish", () => {
-    const game = fishing(0, 0, 1);
+  it("gets his line cut by a spiked fish passing above the hook", () => {
+    const game = fishing(0, 120, 1);
     expect(game.spike.spiked).toBe(true);
     const bonus = game.bonus;
     game.step(1 / 120);
-    expect(game.angler?.state).toBe("overboard");
-    expect(game.angler?.escaped).toBe(false);
+    expect(game.angler?.state).toBe("snapped");
+    expect(game.anglersSnapped).toBe(1);
     expect(game.bonus).toBeGreaterThan(bonus);
+    expect(game.phase).toBe("playing");
   });
 
-  it("can be dodged once he's committed to a depth", () => {
-    const game = fishing(60, 120);
-    stepFor(game, 2);
-    expect(game.angler?.state).toBe("leaving");
+  it("lets an unspiked fish slip past his line", () => {
+    const game = fishing(0, 120);
+    game.step(1 / 120);
+    expect(game.angler?.state).toBe("fishing");
     expect(game.phase).toBe("playing");
+  });
+
+  it("keeps the hook at the depth he cast it to", () => {
+    const game = fishing(300, 150);
+    const depth = game.angler!.target;
+    game.bird.y -= 120;
+    stepFor(game, 1);
+    expect(Math.abs(game.angler!.hookY - depth)).toBeLessThanOrEqual(15);
   });
 });

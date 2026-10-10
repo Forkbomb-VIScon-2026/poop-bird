@@ -37,11 +37,10 @@
 // as targets. The basket is solid: flying into it ends the run. Slipping
 // through the ropes between envelope and basket untouched pays a bonus.
 //
-// Now and then a fisherman rows across the ocean's surface and drops a hook
-// that he reels toward the fish's depth. Spiked, the fish snaps his line and he
-// falls overboard. Unspiked, it's hooked: the world holds still while he reels
-// it up, and puffing up to spikes before it reaches the surface breaks free.
-// Otherwise he lands it, and the run ends with his trophy photo.
+// Now and then a fisherman rows across the ocean's surface and casts his hook
+// down to the fish's depth. The hook always catches: he reels the fish in and
+// the run ends with his trophy photo. Crossing his line above the hook while
+// spiked cuts it, and he topples backwards into his boat.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -184,13 +183,13 @@ export interface Jelly {
 
 /**
  * The fisherman's state. Rowing: his boat comes in along the surface. Casting:
- * a "!" and the bobber plops in. Fishing: the hook sinks and he reels it toward
- * the fish's depth (he stops adjusting once it's close, so it can be dodged).
- * Leaving: the hook went past and he reels in. Hooked: the fish is on the line
- * and he's reeling it up. Landed: he got it (the run is over). Overboard: the
- * line snapped and he fell in.
+ * a "!" and the bobber plops in. Fishing: the hook sinks to the depth the fish
+ * was at when he cast, and he jigs it gently there. Leaving: the hook went
+ * past and he reels in. Hooked: the fish bit and he's reeling it up. Landed: he
+ * got it (the run is over). Snapped: spines cut his line; he tumbled
+ * backwards into his boat and his hat flew off.
  */
-export type AnglerState = "rowing" | "casting" | "fishing" | "leaving" | "hooked" | "landed" | "overboard";
+export type AnglerState = "rowing" | "casting" | "fishing" | "leaving" | "hooked" | "landed" | "snapped";
 
 export interface Angler {
   state: AnglerState;
@@ -202,7 +201,7 @@ export interface Angler {
   hookX: number;
   hookY: number;
   hookVy: number;
-  /** The depth he's reeling the hook toward. */
+  /** The depth he cast the hook to (the fish's depth when he cast). */
   target: number;
   /** Closest the hook came to the fish (for the "close one" bonus). */
   closest: number;
@@ -211,9 +210,7 @@ export interface Angler {
   fromY: number;
   /** 0..1 how far the hooked fish has been reeled in. */
   reel: number;
-  /** The fish broke the line by spiking out while hooked (rather than spiked into the hook). */
-  escaped: boolean;
-  /** His bucket hat once he's fallen in, drifting on the surface (screen x). */
+  /** His sou'wester once it's flown off into the water, drifting on the surface (screen x). */
   hatX: number;
   /** Seconds until the next click of the reel's ratchet. */
   click: number;
@@ -509,8 +506,7 @@ export type GameEvent =
   | { type: "anglerReel" }
   | { type: "anglerLanded"; photoId: number }
   | { type: "anglerPhoto" }
-  | { type: "lineSnapped"; points: number; escaped: boolean }
-  | { type: "anglerSplash" };
+  | { type: "lineSnapped"; points: number };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -557,7 +553,7 @@ const BALLOON_COLORS: [string, string][] = [
 const CHUTE_COLORS = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f78c6b"];
 
 const CAUGHT_MESSAGES = ["CATCH OF THE DAY!", "REELED IN!", "Fish and chips!", "Hook, line and sinker", "Dinner is served", "Should've puffed!"];
-const SNAPPED_TEXT = ["SNAPPED!", "LINE BROKEN!", "SNAP!"];
+const SNAPPED_TEXT = ["LINE CUT!", "SNAPPED!", "SNIP!"];
 
 const SNAP_MESSAGES = ["SNAP!", "SAY CHEESE!", "CAUGHT ON CAMERA!", "*CLICK*", "GOT YOU!"];
 
@@ -611,8 +607,10 @@ const KID_MIN_AHEAD = 70;
 export const ANGLER_TIP_DX = 117;
 /** Hook radius for collisions. */
 export const HOOK_R = 7;
-/** Seconds after the line snaps that the fisherman hits the water. */
-export const ANGLER_FALL_TIME = 0.4;
+/** Seconds the fisherman lies on his back in the boat after the line snaps, before he sits up again. */
+export const ANGLER_TOPPLE_TIME = 1.4;
+/** How far behind (right of) the boat's centre his hat lands in the water. */
+export const ANGLER_HAT_DX = 110;
 /** Extra room after the fisherman's slot before the next ocean obstacle. */
 const ANGLER_ROOM = 320;
 
@@ -924,7 +922,7 @@ export class Game {
     }
 
     if (ocean) {
-      if (alive) this.updateSpike(dt);
+      if (alive && !reeling) this.updateSpike(dt);
       this.updateFish(dt);
     } else {
       if (alive) this.updateCharge(dt);
@@ -1160,7 +1158,6 @@ export class Game {
       this.fish.flare = 0.35;
       this.bird.stretchV += 8;
       this.events.push({ type: "spike" });
-      if (this.angler?.state === "hooked") this.snapLine(this.angler, true);
     } else if (event.type === "pop") {
       this.popAccident();
     }
@@ -1362,7 +1359,7 @@ export class Game {
     this.angler = {
       state: "rowing", t: 0, x: this.width + ANGLER_TIP_DX + 60,
       hookX: 0, hookY: SURFACE_Y, hookVy: 0, target: SURFACE_Y,
-      closest: Infinity, dodged: false, fromY: 0, reel: 0, escaped: false,
+      closest: Infinity, dodged: false, fromY: 0, reel: 0,
       hatX: 0, click: 0, seed: Math.random() * 1000,
     };
     return ANGLER_ROOM;
@@ -1403,35 +1400,32 @@ export class Game {
         break;
       case "casting":
         a.hookX = tipX;
-        // The rod whips forward, then the bobber plops in and the hook starts to sink.
+        // The rod whips forward, then the bobber plops in and the hook sinks to where the fish is now.
         if (a.t >= 0.5) {
           this.setAnglerState(a, "fishing");
           a.hookY = SURFACE_Y;
           a.hookVy = 0;
-          a.target = SURFACE_Y;
+          a.target = Math.max(SURFACE_Y + 60, Math.min(GROUND_Y - 40, b.y));
           this.ripple(tipX, 5);
           this.events.push({ type: "anglerCast" });
         }
         break;
       case "fishing": {
         a.hookX = tipX + Math.sin(this.time * 2 + a.seed) * 3;
-        // He follows the fish's depth (with a little lead) until the hook is close, then commits.
-        if (tipX - b.x > config.anglerCommit) {
-          a.target = Math.max(SURFACE_Y + 40, Math.min(GROUND_Y - 30, b.y + b.vy * config.anglerLead));
-        }
-        const reel = ramp(config.anglerReelSpeed, config.anglerReelSpeedMax, this.difficulty);
-        const want = Math.max(-reel, Math.min(reel * 1.6, (a.target - a.hookY) * 4));
-        a.hookVy += (want - a.hookVy) * Math.min(1, dt * 6);
-        a.hookY += a.hookVy * dt;
+        // Sinks to his depth, then he jigs it gently up and down there.
+        const jig = a.target + Math.sin(a.t * 1.6 + a.seed) * config.anglerJig;
+        a.hookY = Math.min(SURFACE_Y + config.anglerSinkSpeed * a.t, jig);
         if (!playing) break;
         const dist = Math.hypot(a.hookX - b.x, a.hookY - b.y);
-        // Spines reach further than the mouth, like popping jellyfish.
-        if (this.spike.spiked && dist < (r + HOOK_R) * config.oceanJellyPopReach) {
-          this.snapLine(a, false);
+        // The hook always catches, spikes or not.
+        if (dist < r + HOOK_R) {
+          this.hookFish(a);
           break;
         }
-        if (!this.spike.spiked && dist < r + HOOK_R) {
-          this.hookFish(a);
+        // Spines cut the line above it.
+        const reach = r * config.oceanJellyPopReach * 0.8;
+        if (this.spike.spiked && Math.abs(a.hookX - b.x) < reach && b.y < a.hookY - 14 && b.y + reach > SURFACE_Y) {
+          this.snapLine(a);
           break;
         }
         a.closest = Math.min(a.closest, dist);
@@ -1451,7 +1445,7 @@ export class Game {
         a.hookY = Math.max(SURFACE_Y, a.hookY - 260 * dt);
         break;
       case "hooked": {
-        a.reel = Math.min(1, a.reel + dt / Math.max(0.3, config.anglerEscapeTime));
+        a.reel = Math.min(1, a.reel + dt / Math.max(0.3, config.anglerReelTime));
         // The boat swings round over the fish.
         a.x += (a.hookX + ANGLER_TIP_DX - a.x) * Math.min(1, dt * 4);
         a.click -= dt;
@@ -1471,7 +1465,7 @@ export class Game {
           this.events.push({ type: "anglerPhoto" });
         }
         break;
-      case "overboard": {
+      case "snapped": {
         // The cut end of the line, hook and all, drifts down and away.
         if (a.hookY < GROUND_Y + 40) {
           a.hookVy = Math.min(70, a.hookVy + 120 * dt);
@@ -1479,15 +1473,11 @@ export class Game {
         }
         a.hookX -= speed * dt;
         a.hatX -= (speed - 14) * dt;
-        const fallen = a.t - dt < ANGLER_FALL_TIME && a.t >= ANGLER_FALL_TIME;
-        if (fallen) {
-          this.splash(a.x + 120, SURFACE_Y, -1, 26);
-          this.events.push({ type: "anglerSplash" });
-        }
+        if (a.t - dt < 0.5 && a.t >= 0.5) this.ripple(a.hatX + ANGLER_HAT_DX, 6);
         break;
       }
     }
-    if (a.x < -220 && a.hatX < -80 && a.hookX < -40) this.angler = null;
+    if (a.x < -220 && a.hatX + ANGLER_HAT_DX < -60 && a.hookX < -40) this.angler = null;
   }
 
   /** Bubbles and spray where the bobber or something small hits the surface. */
@@ -1502,7 +1492,7 @@ export class Game {
     }
   }
 
-  /** The fish bit an unspiked hook: the world holds still and he starts reeling. */
+  /** The fish touched the hook: the world holds still and he reels it in. */
   private hookFish(a: Angler): void {
     this.setAnglerState(a, "hooked");
     a.reel = 0;
@@ -1518,7 +1508,6 @@ export class Game {
   /**
    * Hooked: the fish is reeled up from where it bit toward the surface, slowly
    * at first, thrashing on the line. Landed: it's yanked out of the water.
-   * Puff still shows (and spiking out breaks free, see updateSpike).
    */
   private reelFish(a: Angler, dt: number): void {
     const b = this.bird;
@@ -1557,27 +1546,25 @@ export class Game {
   }
 
   /**
-   * The line snaps: the fish spiked into the hook, or spiked out while hooked
-   * (`escaped`). He tumbles backwards out of his boat.
+   * Spines cut the line. He was hauling on it, so he topples backwards into
+   * his boat, and his hat flies off into the water.
    */
-  private snapLine(a: Angler, escaped: boolean): void {
-    this.setAnglerState(a, "overboard");
-    a.escaped = escaped;
-    a.hookVy = escaped ? 0 : -40;
-    a.hatX = a.x + 30;
+  private snapLine(a: Angler): void {
+    this.setAnglerState(a, "snapped");
+    a.hookVy = -40;
+    a.hatX = a.x;
     this.anglersSnapped++;
     this.combo++;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
     this.targetsHit++;
-    const mult = escaped ? config.anglerEscapeMultiplier : config.anglerSnapMultiplier;
-    const points = Math.round(config.targetPoints * mult * this.comboMultiplier);
+    const points = Math.round(config.targetPoints * config.anglerSnapMultiplier * this.comboMultiplier);
     this.bonus += points;
     const b = this.bird;
-    this.floaters.push({ x: b.x, y: b.y - 60, text: escaped ? "BROKE FREE!" : pick(SNAPPED_TEXT), color: "#ffd60a", size: 28, life: 1.2, maxLife: 1.2 });
+    this.floaters.push({ x: b.x, y: b.y - 60, text: pick(SNAPPED_TEXT), color: "#ffd60a", size: 28, life: 1.2, maxLife: 1.2 });
     const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
     this.floaters.push({ x: b.x, y: b.y - 30, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
     this.shake = Math.max(this.shake, 6);
-    this.events.push({ type: "lineSnapped", points, escaped });
+    this.events.push({ type: "lineSnapped", points });
   }
 
   // --- stage transitions -------------------------------------------------------------

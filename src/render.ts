@@ -27,7 +27,8 @@ import {
   poleRect,
   poleX,
   slingshotPos,
-  ANGLER_FALL_TIME,
+  ANGLER_HAT_DX,
+  ANGLER_TOPPLE_TIME,
   ANGLER_TIP_DX,
   type Angler,
   type Balloon,
@@ -1790,9 +1791,11 @@ export class Renderer {
     // The boat rides low: its waterline centre sits under the surface, so he fits in view above it.
     const oy = SURFACE_Y + ANGLER_DRAFT + Math.sin(time * 2.2 + a.seed) * 1.5;
     const tip = this.anglerTip(a, oy);
-    const overboard = a.state === "overboard";
-    const fallen = overboard && a.t >= ANGLER_FALL_TIME;
+    const snapped = a.state === "snapped";
     const reeling = a.state === "hooked" || a.state === "landed";
+    // Snapped: he goes over backwards into the boat, lies there kicking, then sits up again, furious.
+    const topple = snapped ? toppleAmount(a.t) : 0;
+    const hatOff = snapped;
 
     // The line.
     ctx.strokeStyle = "rgba(255,255,255,0.85)";
@@ -1800,14 +1803,16 @@ export class Renderer {
     const hookDown = a.hookY > SURFACE_Y + 1;
     if (reeling) {
       line(ctx, tip.x, tip.y, a.hookX, a.hookY);
-    } else if (overboard) {
-      // The snapped end curls from the rod tip; the cut-off end floats away with the hook.
-      ctx.beginPath();
-      ctx.moveTo(tip.x, tip.y);
-      ctx.quadraticCurveTo(tip.x - 8, tip.y + 10, tip.x + 2 + Math.sin(time * 6) * 3, tip.y + 16);
-      ctx.stroke();
+    } else if (snapped) {
+      // The cut-off end floats away with the bobber and the hook; once he's up, a stub dangles from his rod.
+      if (topple === 0) {
+        ctx.beginPath();
+        ctx.moveTo(tip.x, tip.y);
+        ctx.quadraticCurveTo(tip.x - 6, tip.y + 8, tip.x + 2 + Math.sin(time * 6) * 3, tip.y + 14);
+        ctx.stroke();
+      }
       if (a.hookY < SURFACE_Y + 400) {
-        line(ctx, a.hookX + 3, SURFACE_Y + 2, a.hookX, a.hookY);
+        line(ctx, a.hookX + 3, SURFACE_Y + 2, a.hookX, a.hookY - 12);
         drawBobber(ctx, a.hookX + 3, SURFACE_Y + Math.sin(time * 3) * 1.5);
       }
     } else if (a.state === "casting") {
@@ -1822,38 +1827,39 @@ export class Renderer {
       const bx = (tip.x + a.hookX) / 2;
       const by = SURFACE_Y + Math.sin(time * 3 + a.seed) * 1.5;
       line(ctx, tip.x, tip.y, bx, by);
-      line(ctx, bx, by, a.hookX, a.hookY - 10);
+      line(ctx, bx, by, a.hookX, a.hookY - 12);
       drawBobber(ctx, bx, by);
     }
 
     ctx.save();
     ctx.translate(a.x, oy);
     ctx.scale(ANGLER_SCALE, ANGLER_SCALE);
-    if (!overboard) {
+    const tx = (tip.x - a.x) / ANGLER_SCALE;
+    const ty = (tip.y - oy) / ANGLER_SCALE;
+    if (snapped) {
+      const mood = topple > 0.05 ? "shock" : "angry";
+      drawFisherman(ctx, tx, ty, 0, topple * 1.45, time, mood, !hatOff);
+    } else {
       const lean = reeling ? 0.22 + Math.sin(time * 22) * 0.05 + (a.state === "landed" ? 0.12 : 0) : 0;
-      const tx = (tip.x - a.x) / ANGLER_SCALE;
-      const ty = (tip.y - oy) / ANGLER_SCALE;
       drawFisherman(ctx, tx, ty, reeling ? 1 : 0, lean, time, a.state === "landed" ? "proud" : reeling ? "strain" : "calm");
-    } else if (!fallen) {
-      // Over he goes, backwards, feet first out of the boat.
-      const k = a.t / ANGLER_FALL_TIME;
-      ctx.save();
-      ctx.translate(18 + k * (ANGLER_SWIM_DX / ANGLER_SCALE - 18), -4 - Math.sin(k * Math.PI) * 18 + k * 2);
-      ctx.rotate(k * 2.2);
-      ctx.translate(-18, 4);
-      drawFisherman(ctx, null, 0, 0, 0, time, "shock");
-      ctx.restore();
     }
     drawBoatHull(ctx, a.seed, (SURFACE_Y - oy) / ANGLER_SCALE);
+    // Lying on his back in the boat: his boots kick up over the gunwale.
+    if (topple > 0.6) drawBoots(ctx, time, (topple - 0.6) / 0.4);
     ctx.restore();
 
-    if (fallen) {
-      drawSwimmingFisherman(ctx, a.x + ANGLER_SWIM_DX + Math.sin(time * 1.3) * 3, SURFACE_Y, time);
-      drawFloatingHat(ctx, a.hatX + ANGLER_SWIM_DX, SURFACE_Y, time);
+    // His hat flies off in an arc and lands in the water behind the boat.
+    if (hatOff) {
+      const k = Math.min(1, a.t / 0.5);
+      const hx0 = a.x + 21;
+      const hy0 = oy - 44;
+      const hx1 = a.hatX + ANGLER_HAT_DX;
+      if (k < 1) drawFloatingHat(ctx, hx0 + (hx1 - hx0) * k, hy0 + (SURFACE_Y - hy0) * k - Math.sin(k * Math.PI) * 50, time, k * 7);
+      else drawFloatingHat(ctx, hx1, SURFACE_Y, time);
     }
 
     // The hook, with its worm until something bites.
-    if (!reeling && hookDown) drawHook(ctx, a.hookX, a.hookY, !overboard, time);
+    if (!reeling && hookDown) drawHook(ctx, a.hookX, a.hookY, !snapped, time);
 
     // The warning: he's casting.
     if (a.state === "casting" || (a.state === "fishing" && a.t < 0.6)) {
@@ -1861,28 +1867,10 @@ export class Renderer {
     }
   }
 
-  /** On the line: the hook in the fish's mouth, the escape ring running out, and what to do. */
+  /** On the line: the hook stays in the fish's mouth while he reels it in. */
   private drawHookedCue(a: Angler, game: Game): void {
     if (a.state !== "hooked" && a.state !== "landed") return;
-    const ctx = this.ctx;
-    drawHook(ctx, a.hookX, a.hookY, false, game.time);
-    if (a.state !== "hooked") return;
-    const b = game.bird;
-    const r = game.bodyRadius + 18;
-    const left = 1 - a.reel;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 9;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
-    ctx.stroke();
-    ctx.strokeStyle = left < 0.35 ? "#ff3b3b" : "#ffd60a";
-    ctx.lineWidth = 5;
-    ctx.stroke();
-    ctx.lineCap = "butt";
-    const pulse = 1 + Math.max(0, Math.sin(game.time * 14)) * 0.15;
-    const above = b.y - r - 22;
-    outlinedText(ctx, "PUFF UP!", b.x, above < SURFACE_Y + 30 ? b.y + r + 28 : above, 26 * pulse, "#ffd60a");
+    drawHook(this.ctx, a.hookX, a.hookY, false, game.time);
   }
 
   /**
@@ -4896,8 +4884,6 @@ export function drawWeddingPrint(
 
 /** The boat and the fisherman are drawn this much bigger than their own coordinates. */
 const ANGLER_SCALE = 1.5;
-/** Overboard, he splashes about this far behind (right of) his boat's centre (world px). */
-const ANGLER_SWIM_DX = 120;
 /** How far below the surface the boat's waterline centre sits (world px). */
 const ANGLER_DRAFT = 16;
 /** His rod tip's height over the boat's waterline centre (boat coordinates). */
@@ -5037,12 +5023,12 @@ function drawBoatHull(ctx: CanvasRenderingContext2D, seed: number, water = 0): v
   ctx.restore();
 }
 
-type AnglerMood = "calm" | "strain" | "proud" | "shock";
+type AnglerMood = "calm" | "strain" | "proud" | "shock" | "angry";
 
 /**
  * The fisherman, sitting in his boat facing left (origin at the boat's
  * waterline centre). `tipX/tipY` is his rod tip (no rod if null), `bend`
- * 0..1 how far it bows, `lean` how far he leans back.
+ * 0..1 how far it bows, `lean` how far he leans back. Without `hat` he's bald.
  */
 function drawFisherman(
   ctx: CanvasRenderingContext2D,
@@ -5052,6 +5038,7 @@ function drawFisherman(
   lean: number,
   time: number,
   mood: AnglerMood,
+  hat = true,
 ): void {
   ctx.save();
   ctx.lineJoin = "round";
@@ -5108,12 +5095,13 @@ function drawFisherman(
   } else {
     line(ctx, 11, -14, hx + 1, hy);
     if (mood === "proud") line(ctx, 22, -14, 28, -30);
+    else if (mood === "angry") line(ctx, 22, -14, 28, -30 + Math.sin(time * 25) * 3);
     else line(ctx, 20, -13, hx + 4, hy + 2);
   }
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 1;
   ctx.fillStyle = "#f1c27d";
-  for (const [x, y] of mood === "shock" ? [[2, -26], [26, -27]] : mood === "proud" ? [[hx + 1, hy], [28, -30]] : [[hx + 1, hy], [hx + 4, hy + 2]]) {
+  for (const [x, y] of mood === "shock" ? [[2, -26], [26, -27]] : mood === "proud" ? [[hx + 1, hy], [28, -30]] : mood === "angry" ? [[hx + 1, hy], [28, -30 + Math.sin(time * 25) * 3]] : [[hx + 1, hy], [hx + 4, hy + 2]]) {
     ctx.beginPath();
     ctx.arc(x, y, 2.6, 0, Math.PI * 2);
     ctx.fill();
@@ -5164,6 +5152,11 @@ function drawFisherman(
     ctx.beginPath();
     ctx.arc(11, -25, mood === "strain" ? 0.8 : 1.3, 0, Math.PI * 2);
     ctx.fill();
+    if (mood === "angry") {
+      // A furious brow.
+      ctx.lineWidth = 1.6;
+      line(ctx, 8, -28.5, 13.5, -26.8);
+    }
     if (mood === "strain") {
       // Gritted, sweating.
       ctx.lineWidth = 1.2;
@@ -5175,7 +5168,14 @@ function drawFisherman(
       ctx.fill();
     }
   }
-  if (mood !== "shock") {
+  if (mood === "angry") {
+    // The pipe's gone too: a grumpy mouth in the beard.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(10, -16.5, 2.5, Math.PI * 1.15, Math.PI * 1.85);
+    ctx.stroke();
+  } else if (mood !== "shock") {
     // Pipe (calm) or a grin.
     if (mood === "proud") {
       ctx.fillStyle = "#fff";
@@ -5201,6 +5201,16 @@ function drawFisherman(
       }
     }
   }
+  if (!hat) {
+    // Bald, with a shine.
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(14, -24, 4, Math.PI * 1.2, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   // Sou'wester: brim, crown, and the long back flap.
   ctx.fillStyle = "#f4a300";
   ctx.strokeStyle = OUTLINE;
@@ -5222,69 +5232,43 @@ function drawFisherman(
   ctx.restore();
 }
 
-/** Overboard: flailing at the surface, his sou'wester gone, legs kicking under water. */
-function drawSwimmingFisherman(ctx: CanvasRenderingContext2D, x: number, surface: number, time: number): void {
+/** 0..1 how far over he is, `t` s after his line snapped: over fast, a while on his back, then up again. */
+function toppleAmount(t: number): number {
+  if (t < 0.22) return 1 - (1 - t / 0.22) ** 2;
+  if (t < ANGLER_TOPPLE_TIME) return 1;
+  return Math.max(0, 1 - (t - ANGLER_TOPPLE_TIME) / 0.4);
+}
+
+/** His rubber boots sticking up over the gunwale, kicking (boat coordinates). `k` 0..1 how far up. */
+function drawBoots(ctx: CanvasRenderingContext2D, time: number, k: number): void {
   ctx.save();
-  ctx.translate(x, surface + Math.sin(time * 5) * 1.5);
-  ctx.scale(1.4, 1.4);
   ctx.lineCap = "round";
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 5;
-  const kick = Math.sin(time * 12) * 6;
-  line(ctx, -3, 14, -6 + kick, 30);
-  line(ctx, 3, 14, 6 - kick, 30);
-  ctx.fillStyle = "#ffc300";
-  ctx.lineWidth = 2.5;
-  roundRect(ctx, -9, -3, 18, 19, 6);
-  ctx.fill();
-  ctx.stroke();
-  ctx.strokeStyle = "#e6a800";
-  ctx.lineWidth = 5;
-  line(ctx, -6, 0, -14, -12 + Math.sin(time * 14) * 5);
-  line(ctx, 6, 0, 14, -12 + Math.cos(time * 14) * 5);
-  // The water over everything below the surface.
-  ctx.fillStyle = "rgba(20,110,150,0.4)";
-  ctx.fillRect(-16, 1, 32, 32);
-  // Head bobbing at the surface: bald now, beard dripping.
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2.5;
-  ctx.fillStyle = "#f1c27d";
-  ctx.beginPath();
-  ctx.arc(0, -6, 6.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#e9ecef";
-  ctx.beginPath();
-  ctx.moveTo(5, -5);
-  ctx.quadraticCurveTo(4, 2, -1, 3);
-  ctx.quadraticCurveTo(-6, 2, -5, -5);
-  ctx.quadraticCurveTo(0, -2, 5, -5);
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.fillStyle = OUTLINE;
-  ctx.beginPath();
-  ctx.arc(-3, -8, 1.3, 0, Math.PI * 2);
-  ctx.arc(2, -8, 1.3, 0, Math.PI * 2);
-  ctx.fill();
-  // Spluttering bubbles
-  ctx.strokeStyle = "rgba(255,255,255,0.8)";
-  ctx.lineWidth = 1.2;
-  for (let i = 0; i < 3; i++) {
-    const k = (time * 1.5 + i / 3) % 1;
+  for (const [i, x] of [[0, 4], [1, 12]]) {
+    const kick = Math.sin(time * 14 + i * 2) * 3;
+    const top = -9 - 16 * k;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 6.5;
+    line(ctx, x + 6, -6, x + kick, top);
+    ctx.strokeStyle = "#2d6a4f";
+    ctx.lineWidth = 4.5;
+    line(ctx, x + 6, -6, x + kick, top);
+    ctx.fillStyle = "#1b4332";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(-4 + i * 4 + Math.sin(k * 8 + i) * 2, 20 - k * 22, 1.5 + k * 1.5, 0, Math.PI * 2);
+    ctx.ellipse(x + kick - 2, top - 1, 4, 2.5, -0.3, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
   }
   ctx.restore();
 }
 
-/** His sou'wester, floating upside down. */
-function drawFloatingHat(ctx: CanvasRenderingContext2D, x: number, surface: number, time: number): void {
+/** His sou'wester: floating upside down at the surface at `y`, or flying through the air turned by `spin`. */
+function drawFloatingHat(ctx: CanvasRenderingContext2D, x: number, y: number, time: number, spin?: number): void {
   ctx.save();
-  ctx.translate(x, surface + Math.sin(time * 3 + 1) * 1.5);
+  ctx.translate(x, spin === undefined ? y + Math.sin(time * 3 + 1) * 1.5 : y);
   ctx.scale(1.4, 1.4);
-  ctx.rotate(Math.PI + Math.sin(time * 2) * 0.15);
+  ctx.rotate(spin ?? Math.PI + Math.sin(time * 2) * 0.15);
   ctx.fillStyle = "#f4a300";
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 2;
