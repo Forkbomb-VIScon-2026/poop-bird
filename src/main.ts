@@ -1007,6 +1007,7 @@ function onGameOver(): void {
   }
   $("go-balloons").textContent = String(game.balloonsPopped);
   $("go-lines").textContent = String(game.anglersSnapped);
+  $("go-sharks").textContent = String(game.sharksSpiked);
 
   // Landed by the fisherman: his trophy photo.
   show($("go-trophy"), game.trophy !== null);
@@ -1306,6 +1307,10 @@ function handleGameEvents(): void {
         sound.splat(true);
         buzz(200);
         break;
+      case "chomp":
+        sound.sharkBite();
+        buzz([80, 40, 200]);
+        break;
       case "zap":
         sound.zap();
         buzz([30, 20, 30, 20, 120]);
@@ -1451,6 +1456,16 @@ function handleGameEvents(): void {
         sound.lineSnap();
         buzz(60);
         break;
+      case "sharkSpotted":
+        sound.sharkSpotted();
+        break;
+      case "sharkWindup":
+        break;
+      case "sharkSpiked":
+        sound.sharkYelp();
+        sound.hit(e.combo);
+        buzz([40, 30, 80]);
+        break;
     }
   }
   game.events.length = 0;
@@ -1526,6 +1541,10 @@ window.addEventListener("keydown", (e) => {
     case "h":
       // Debug shortcut: a fisherman rows in (ocean only).
       if (debug?.visible && state === "playing") game.spawnAnglerNow();
+      break;
+    case "s":
+      // Debug shortcut: a shark swims in (ocean only).
+      if (debug?.visible && state === "playing") game.spawnSharkNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.

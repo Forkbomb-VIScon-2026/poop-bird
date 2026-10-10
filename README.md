@@ -76,6 +76,7 @@ starts the face dataset collector (local credentials `local` /
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
+| **S** | With the debug panel open: a shark swims in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 
 ### On phones and tablets
@@ -248,6 +249,15 @@ city by city (the debug panel's "Progression" group).
     his hat flying off into the water. A moment later he sits up again, bald
     and shaking his fist. Unspiked, the fish just slips past the line.
   Tunables are in the debug panel's "Fisherman" group.
+- **Sharks:** most ocean stages (`sharkChance`) have a shark, a few obstacles
+  in (`sharkSlot`), in open water. It glides in from ahead at the fish's depth
+  (a "dun-dun" announces it), stops, opens its jaws and a "!" pops over it,
+  and "SPIKE UP!" flashes by the fish. Then it lunges, homing on the fish:
+  it can't be outswum, the only defence is to be spiked when it bites (the
+  spines reach a bit further than its bite). Spiked, it yelps, turns tail
+  with spines in its snout (×5, "NOT TODAY!"). Not spiked, it eats you
+  and swims off with your tail sticking out of its mouth. Spiking up at the
+  "!" leaves time before the spikes pop. Tunables are in the "Sharks" group.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
 - **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
   wall comes up ahead. Once the last obstacle is behind you and the wall is

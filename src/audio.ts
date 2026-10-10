@@ -179,4 +179,7 @@ export class Sound {
   anglerHooked(): void { this.play("angler_hooked"); }
   reelClick(): void { this.play("reel_click", 0.5, 0.25); }
   lineSnap(): void { this.play("line_snap"); }
+  sharkSpotted(): void { this.play("shark_spotted"); }
+  sharkBite(): void { this.play("shark_bite"); }
+  sharkYelp(): void { this.play("shark_yelp"); }
 }
