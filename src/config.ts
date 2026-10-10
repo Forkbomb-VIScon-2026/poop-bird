@@ -48,6 +48,14 @@ export const CONFIG_SPEC = {
   sweetSpotMultiplier: { value: 1.35, min: 1, max: 3, step: 0.05, group: "Charge", label: "Sweet-spot bonus", hint: "× push" },
   stunTime: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Charge", label: "Accident stun", hint: "s tumbling without push" },
 
+  // --- Face lock ------------------------------------------------------------
+  faceCropScale: { value: 2.2, min: 1.3, max: 4, step: 0.1, group: "Face lock", label: "Crop size", hint: "× the locked face box; detection only sees this square around the player" },
+  faceLockMaxJump: {
+    value: 0.8, min: 0.2, max: 3, step: 0.1, group: "Face lock", label: "Max jump",
+    hint: "face sizes the locked face may move between detections; a face farther away (or ±50% in size) is someone else",
+  },
+  faceRelockSeconds: { value: 1.0, min: 0.2, max: 5, step: 0.1, group: "Face lock", label: "Relock after", hint: "s without the locked face before searching the full frame again" },
+
   // --- Strain detection ----------------------------------------------------
   strainOn: { value: 0.45, min: 0.05, max: 0.95, step: 0.01, group: "Strain", label: "On threshold" },
   strainOff: { value: 0.3, min: 0.02, max: 0.9, step: 0.01, group: "Strain", label: "Off threshold" },

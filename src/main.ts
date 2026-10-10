@@ -6,7 +6,7 @@ import { config } from "./config";
 import { Sound } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
-import { FaceTracker, describeCameraError, type FaceFrame } from "./face";
+import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { Game } from "./game";
 import { FaceRecorder, type RecorderKind } from "./recorder";
 import { Renderer, drawFrontPage } from "./render";
@@ -182,10 +182,39 @@ tracker.onFrame((frame) => {
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config);
   if (faceRecorder && !faceRecorder.push(frame)) finishFaceRecording();
+  placeCamBox($("cam-lock"), frame.box);
+  const crop = document.getElementById("cam-crop");
+  if (crop) placeCamBox(crop, frame.crop);
   if (state === "playing" && game.phase === "playing" && game.stage === "city") {
     snapshot.offer(video, frame.box, strain.smoothed);
   }
 });
+
+/**
+ * Positions an overlay over the webcam preview at a normalized video box,
+ * matching the preview's mirroring and object-fit: cover cropping.
+ */
+function placeCamBox(el: HTMLElement, box: FaceBox | null): void {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  show(el, box !== null && vw > 0 && vh > 0);
+  if (!box || !vw || !vh) return;
+  const wrap = el.parentElement!;
+  const scale = Math.max(wrap.clientWidth / vw, wrap.clientHeight / vh);
+  const offX = (wrap.clientWidth - vw * scale) / 2;
+  const offY = (wrap.clientHeight - vh * scale) / 2;
+  el.style.left = `${offX + (1 - box.x - box.w) * vw * scale}px`;
+  el.style.top = `${offY + box.y * vh * scale}px`;
+  el.style.width = `${box.w * vw * scale}px`;
+  el.style.height = `${box.h * vh * scale}px`;
+}
+
+/** N: lock onto another face in view (when the wrong one got picked). */
+async function switchFace(): Promise<void> {
+  if (mode !== "face" || !tracker.ready) return;
+  const found = await tracker.switchFace();
+  showToast(found ? "🔄 Tracking another face" : "Only one face in view", 1500);
+}
 
 // --- Debug face recorder -------------------------------------------------------------
 
@@ -1184,6 +1213,9 @@ window.addEventListener("keydown", (e) => {
     case "o":
       // Debug shortcut: start a run as the pufferfish.
       if (debug?.visible) startOceanRun();
+      break;
+    case "n":
+      void switchFace();
       break;
     case "c":
       void recalibrate();

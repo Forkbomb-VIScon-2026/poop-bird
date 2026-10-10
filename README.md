@@ -60,6 +60,7 @@ access on anything other than localhost, put it behind HTTPS.
 | **M** | Mute |
 | **R** | Play again from game over |
 | **C** | Re-run calibration |
+| **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
 | **G** | With the debug panel open: spawn the next gate now |
 | **L** | With the debug panel open: spawn a power line now |
@@ -196,7 +197,21 @@ webcam), and the wiring in `src/main.ts`.
    strain state, so a missed frame mid-grimace doesn't cause a release. After
    that, the strain drops to 0 (leaving the frame releases) and the preview
    shows "Can't see you".
-8. **Decoupled loops.** Detection runs on `requestVideoFrameCallback` (or rAF
+8. **Face lock.** With several people in view, MediaPipe (`numFaces: 1`)
+   would follow whichever face it happens to track, and can jump to a
+   bystander when its tracking confidence drops (straining does that). So the
+   first face found is locked, and from then on MediaPipe only sees a square
+   crop around it (`faceCropScale`, 2.2× the face box), scaled into a 384 px
+   canvas. Other faces aren't in its input at all. A face found in the crop
+   only counts if its centre is within `faceLockMaxJump` (0.8) face sizes of
+   the locked one and its size is within ±50%; anyone else (say, right behind
+   the player) counts as no face. When the locked face is missing, the crop
+   widens to cover that radius, and only after `faceRelockSeconds` (1 s) does
+   it search the full frame again. **N** masks the locked face out and locks onto another one. The
+   preview outlines the locked face (debug builds also show the crop dashed).
+   Detecting several faces instead would cost one landmark-model run per
+   visible face (about 2.5× with three people); the crop costs nothing extra.
+9. **Decoupled loops.** Detection runs on `requestVideoFrameCallback` (or rAF
    with a `currentTime` check), so only when there's a new video frame. Physics
    runs on a fixed 120 Hz timestep in the render loop.
 
