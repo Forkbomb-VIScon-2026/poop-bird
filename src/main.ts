@@ -799,12 +799,18 @@ async function oceanTipBanners(token: number): Promise<boolean> {
     ["SPIKES! 🐡", "Puff past the red line on the meter to spike out. Spiked, you pop jellyfish 🪼"],
     ["WATCH OUT! 🪸", "Not spiked, jellyfish sting. Dodge the coral and rocks, stay off the sea floor."],
   ];
+  const banner = $("puff-calib");
   show($("puff-calib-bar"), false);
-  for (const [title, hint] of tips) {
-    setPuffOverlay(title, hint, null);
-    if (!(await waitPlaying(token, 4500))) return false;
+  banner.classList.add("puff-tips");
+  try {
+    for (const [title, hint] of tips) {
+      setPuffOverlay(title, hint, null);
+      if (!(await waitPlaying(token, 4500))) return false;
+    }
+  } finally {
+    banner.classList.remove("puff-tips");
+    show($("puff-calib-bar"), true);
   }
-  show($("puff-calib-bar"), true);
   return true;
 }
 
