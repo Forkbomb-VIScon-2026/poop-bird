@@ -148,6 +148,26 @@ export interface Obstacle {
   tabloid: Tabloid | null;
   /** Ocean: a boat floats at the surface with its anchor hanging down to `gapTop`. */
   anchor: boolean;
+  /** Set when the boat drops its anchor as the fish comes near. */
+  drop: AnchorDrop | null;
+}
+
+/**
+ * A boat dropping its anchor. Hanging: like any anchor, until the fish comes
+ * near. Warning: a "!" by the anchor, which rattles on its chain, and arrows
+ * pointing down below it.
+ * Falling: it drops onto the coral, the rock or the sea floor. Down: it rests
+ * there with its chain slack, so the way through is above it now.
+ */
+export type AnchorDropState = "hanging" | "warning" | "falling" | "down";
+
+export interface AnchorDrop {
+  state: AnchorDropState;
+  /** Seconds in the current state. */
+  t: number;
+  /** Where the anchor's crown is now (`gapTop` while it hangs), and where it comes to rest. */
+  y: number;
+  to: number;
 }
 
 /** A paparazzo's photo that made it to print. `photoId` keys the image main.ts captured. */
@@ -553,7 +573,10 @@ export type GameEvent =
   | { type: "anglerReel" }
   | { type: "anglerLanded"; photoId: number }
   | { type: "anglerPhoto" }
-  | { type: "lineSnapped"; points: number };
+  | { type: "lineSnapped"; points: number }
+  | { type: "anchorWarn" }
+  | { type: "anchorRattle" }
+  | { type: "anchorLanded" };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -2008,6 +2031,7 @@ export class Game {
   private updateObstacles(dt: number, speed: number): void {
     for (const o of this.obstacles) o.x -= speed * dt;
     this.obstacles = this.obstacles.filter((o) => obstacleSpan(o).right > -60);
+    this.updateAnchorDrops(dt, speed);
 
     for (const o of this.obstacles) {
       if (!o.passed && obstacleSpan(o).right < this.bird.x - BIRD_RADIUS) o.passed = true;
@@ -2083,7 +2107,7 @@ export class Game {
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid, anchor: false,
+      passed: false, splats: [], tabloid, anchor: false, drop: null,
     });
   }
 
@@ -2091,19 +2115,24 @@ export class Game {
    * Coral or a rock from the sea floor, or a boat whose anchor hangs down from
    * the surface: over coral or a rock (a gap between them), or over open water
    * (dive under it). Now and then the sea floor holds an old shipwreck
-   * instead: a long, low hull with one broken mast. Returns the extra room a
-   * wreck's long hull needs before the next obstacle.
+   * instead: a long, low hull with one broken mast. Some boats drop their
+   * anchor as the fish comes near (`forceDrop`: this one does). Returns the
+   * extra room a wreck's long hull needs before the next obstacle.
    */
-  private spawnOceanObstacle(): number {
+  private spawnOceanObstacle(forceDrop = false): number {
     const gap = ramp(config.oceanGap, config.oceanGapMin, this.difficulty);
     // Not the last one: it can still be on screen when the fish leaps out, and
     // its boat would vanish from the harbour as the stage switches. Nor while a
     // fisherman is out: he rows against the scroll, so it would catch up with
     // his boat and his line.
     const last = this.stageObstacles >= Math.round(config.oceanObstacles) - 1;
-    const anchor = !last && !this.angler && Math.random() < config.oceanAnchorChance;
+    const anchor = forceDrop || (!last && !this.angler && Math.random() < config.oceanAnchorChance);
     const open = anchor && Math.random() < config.oceanAnchorOpenChance;
-    const wreck = !open && Math.random() < config.oceanWreckChance;
+    // A dropping anchor needs coral, a rock or the sea floor to land on, and the screen
+    // wide enough to see it coming (the whole warning, fall and lead before the fish).
+    const dropRoom = this.speed > 0 && (this.width + 40 - this.bird.x) / this.speed > ANCHOR_DROP_MIN_WARN + config.oceanAnchorDropFall + config.oceanAnchorDropLead;
+    const drop = anchor && (forceDrop || (dropRoom && Math.random() < config.oceanAnchorDropChance));
+    const wreck = !open && !drop && Math.random() < config.oceanWreckChance;
     // The boat, the shortest chain and the anchor itself all sit above the gap.
     let top = anchor ? ANCHOR_TOP_MIN : SURFACE_Y;
     let margin = anchor ? 10 : 40;
@@ -2118,13 +2147,96 @@ export class Game {
     const bottom: BottomKind = open ? "none" : wreck ? "wreck" : pick(["coral", "coral", "rock"]);
     const w = bottom === "wreck" ? 210 + Math.random() * 50 : bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
     const colors = bottom === "wreck" ? WRECK_COLORS : bottom === "rock" ? ROCK_COLORS : CORAL_COLORS;
+    const gapTop = center - gap / 2;
+    const gapBottom = open ? GROUND_Y : center + gap / 2;
     this.obstacles.push({
-      x: this.width + 40, w, gapTop: center - gap / 2,
-      gapBottom: open ? GROUND_Y : center + gap / 2,
+      x: this.width + 40, w, gapTop, gapBottom,
       bottom, color: pick(colors), seed: Math.random() * 1000,
       passed: false, splats: [], tabloid: null, anchor,
+      // Open water: it sinks a little way into the sand.
+      drop: drop ? { state: "hanging", t: 0, y: gapTop, to: open ? GROUND_Y + ANCHOR_SAND_DEPTH : gapBottom } : null,
     });
     return bottom === "wreck" ? w - 90 : 0;
+  }
+
+  /** Debug: a boat that drops its anchor comes in right now (ocean only). */
+  spawnAnchorDropNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.angler || this.gateSpawned) return;
+    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
+    this.spawnOceanObstacle(true);
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + config.oceanSpacingMin);
+  }
+
+  /**
+   * Boats dropping their anchor, timed by when the fish will get there (at
+   * the current speed): the warning starts `oceanAnchorDropWarn` before the
+   * fall, which ends `oceanAnchorDropLead` before the fish reaches the anchor.
+   * If the boat only comes on screen later, the warning is shorter.
+   */
+  private updateAnchorDrops(dt: number, speed: number): void {
+    const front = this.bird.x + this.hitRadius;
+    for (const o of this.obstacles) {
+      const d = o.drop;
+      if (!d) continue;
+      d.t += dt;
+      const cx = o.x + o.w / 2;
+      const eta = speed > 0 ? (cx - ANCHOR_W / 2 - front) / speed : Infinity;
+      const fall = config.oceanAnchorDropFall;
+      if (d.state === "hanging") {
+        const onScreen = cx + BOAT_W / 2 < this.width;
+        if (onScreen && eta <= config.oceanAnchorDropWarn + fall + config.oceanAnchorDropLead) {
+          d.state = "warning";
+          d.t = 0;
+          this.events.push({ type: "anchorWarn" });
+        }
+      } else if (d.state === "warning") {
+        // The chain clanks as the anchor strains on it.
+        if (d.t >= ANCHOR_RATTLE_EVERY) {
+          d.t = 0;
+          this.events.push({ type: "anchorRattle" });
+        }
+        if (eta <= fall + config.oceanAnchorDropLead) {
+          d.state = "falling";
+          d.t = 0;
+          d.y = o.gapTop;
+        }
+      } else if (d.state === "falling") {
+        // It falls faster and faster, and stirs up bubbles on the way.
+        const k = Math.min(1, d.t / Math.max(0.01, fall));
+        d.y = o.gapTop + (d.to - o.gapTop) * k * k;
+        if (Math.random() < dt * 30) {
+          this.particles.push({
+            x: cx + (Math.random() - 0.5) * ANCHOR_W, y: d.y - ANCHOR_H * Math.random(),
+            vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 40,
+            life: 0.5 + Math.random() * 0.5, maxLife: 1, size: 2 + Math.random() * 3,
+            color: "#e0fbfc", gravity: -160, world: true,
+          });
+        }
+        if (k >= 1) {
+          d.state = "down";
+          d.t = 0;
+          this.anchorLanded(o, cx);
+        }
+      }
+    }
+  }
+
+  /** The anchor hits the bottom: a cloud of sand (or bits of coral and grit) and a thud. */
+  private anchorLanded(o: Obstacle, cx: number): void {
+    const y = Math.min(GROUND_Y, o.drop?.to ?? GROUND_Y);
+    const sand = o.bottom === "none";
+    for (let i = 0; i < 22; i++) {
+      const s = Math.random() < 0.5 ? -1 : 1;
+      this.particles.push({
+        x: cx + s * Math.random() * 30, y: y - 4,
+        vx: s * (40 + Math.random() * 110), vy: -30 - Math.random() * 90,
+        life: 0.5 + Math.random() * 0.6, maxLife: 1.1, size: 3 + Math.random() * 5,
+        color: sand ? pick(["#e9d8a6", "#d4c08a", "#c9b27c"]) : pick(["#e9d8a6", o.color, "#cdb4db"]),
+        gravity: 140, world: true,
+      });
+    }
+    this.shake = Math.max(this.shake, 7);
+    this.events.push({ type: "anchorLanded" });
   }
 
   /** The stage ends at the waterfront: the quay's edge (city) or the far quay (ocean) scrolls in. */
@@ -3055,7 +3167,7 @@ export class Game {
     const church: Obstacle = {
       x: churchX, w: CHURCH_W, gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom: "church", color: "#f4ecdc", seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid: null, anchor: false,
+      passed: false, splats: [], tabloid: null, anchor: false, drop: null,
     };
     this.obstacles.push(church);
 
@@ -3562,6 +3674,22 @@ export const ANCHOR_H = 66;
 const ANCHOR_MIN_CHAIN = 16;
 /** The highest an anchored obstacle's gap can start. */
 const ANCHOR_TOP_MIN = SURFACE_Y + BOAT_DRAFT + ANCHOR_MIN_CHAIN + ANCHOR_H;
+/** A dropping anchor needs at least this many seconds of warning, or the boat doesn't drop it. */
+const ANCHOR_DROP_MIN_WARN = 0.5;
+/** Seconds between the clanks of a dropping anchor's chain during the warning. */
+export const ANCHOR_RATTLE_EVERY = 0.22;
+/** How far a dropped anchor's crown digs into the sand of the sea floor. */
+const ANCHOR_SAND_DEPTH = 6;
+
+/** Where an anchor's crown is: the gap's top edge, unless it's being dropped. */
+export function anchorCrown(o: Obstacle): number {
+  return o.drop ? o.drop.y : o.gapTop;
+}
+
+/** A dropped anchor rests on the bottom with its chain slack, so the chain no longer blocks. */
+export function anchorSlack(o: Obstacle): boolean {
+  return o.drop?.state === "down";
+}
 
 /** Horizontal extent of an obstacle, including an anchor's boat (which is wider than the column). */
 export function obstacleSpan(o: Obstacle): { left: number; right: number } {
@@ -3570,19 +3698,24 @@ export function obstacleSpan(o: Obstacle): { left: number; right: number } {
   return { left: Math.min(o.x, cx - BOAT_W / 2), right: Math.max(o.x + o.w, cx + BOAT_W / 2) };
 }
 
-/** Collision rectangles for an anchor and its boat: hull, chain and shank, stock, arms. */
+/**
+ * Collision rectangles for an anchor and its boat: hull, chain and shank,
+ * stock, arms. A slack chain (the anchor dropped) leaves only the shank.
+ */
 function anchorRects(o: Obstacle): Rect[] {
   const cx = o.x + o.w / 2;
   const hullBottom = SURFACE_Y + BOAT_DRAFT;
-  const top = o.gapTop - ANCHOR_H;
+  const crown = anchorCrown(o);
+  const top = crown - ANCHOR_H;
+  const shankTop = anchorSlack(o) ? top : hullBottom;
   return [
     // The bow and the transom curve up toward the keel: only the hull's middle counts.
     { x: cx - BOAT_W / 2 + 20, y: SURFACE_Y - BOAT_FREEBOARD, w: BOAT_W - 32, h: BOAT_FREEBOARD + BOAT_DRAFT },
-    { x: cx - 5, y: hullBottom, w: 10, h: o.gapTop - 12 - hullBottom },
+    { x: cx - 5, y: shankTop, w: 10, h: crown - 12 - shankTop },
     { x: cx - 21, y: top + 15, w: 42, h: 9 },
     // The arms curve up to the flukes: a wide band above, the crown below.
-    { x: cx - ANCHOR_W / 2, y: o.gapTop - 36, w: ANCHOR_W, h: 22 },
-    { x: cx - 16, y: o.gapTop - 14, w: 32, h: 14 },
+    { x: cx - ANCHOR_W / 2, y: crown - 36, w: ANCHOR_W, h: 22 },
+    { x: cx - 16, y: crown - 14, w: 32, h: 14 },
   ];
 }
 

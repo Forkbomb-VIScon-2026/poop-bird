@@ -1681,6 +1681,16 @@ function handleGameEvents(): void {
         sound.lineSnap();
         buzz(60);
         break;
+      case "anchorWarn":
+        sound.beep();
+        break;
+      case "anchorRattle":
+        sound.anchorRattle();
+        break;
+      case "anchorLanded":
+        sound.anchorLanded();
+        buzz(50);
+        break;
     }
   }
   game.events.length = 0;
@@ -1756,6 +1766,10 @@ window.addEventListener("keydown", (e) => {
     case "h":
       // Debug shortcut: a fisherman rows in (ocean only).
       if (debug?.visible && state === "playing") game.spawnAnglerNow();
+      break;
+    case "a":
+      // Debug shortcut: a boat that drops its anchor (ocean only).
+      if (debug?.visible && state === "playing") game.spawnAnchorDropNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.

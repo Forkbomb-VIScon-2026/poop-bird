@@ -11,6 +11,8 @@ import {
   BOAT_DRAFT,
   BOAT_FREEBOARD,
   BOAT_W,
+  anchorCrown,
+  anchorSlack,
   BILLBOARD_H,
   BILLBOARD_LEGS_INSET,
   BOUQUET_R,
@@ -564,7 +566,7 @@ export class Renderer {
   // --- obstacles --------------------------------------------------------------
 
   private drawObstacle(o: Obstacle, time: number): void {
-    if (o.anchor) this.drawAnchoredBoat(o);
+    if (o.anchor) this.drawAnchoredBoat(o, time);
     if (o.bottom === "none") return;
     if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
     if (o.bottom === "wreck") return this.drawWreck(o, time);
@@ -2402,37 +2404,33 @@ export class Renderer {
   /**
    * A boat at anchor: the hull on the surface (painted above the waterline,
    * red antifouling below, tinted by the water), a cabin and a mast above,
-   * and the chain down to the anchor, whose crown is the gap's top edge.
+   * and the chain down to the anchor, whose crown is the gap's top edge. A
+   * boat about to drop its anchor shows a "!" and arrows pointing down by the
+   * anchor, which rattles on its chain; once it's down, the chain hangs slack
+   * in a loose curve.
    */
-  private drawAnchoredBoat(o: Obstacle): void {
+  private drawAnchoredBoat(o: Obstacle, time: number): void {
     const ctx = this.ctx;
-    const cx = o.x + o.w / 2;
+    const boatX = o.x + o.w / 2;
     const keel = SURFACE_Y + BOAT_DRAFT;
     const deck = SURFACE_Y - BOAT_FREEBOARD;
-    const hl = cx - BOAT_W / 2;
-    const hr = cx + BOAT_W / 2;
-    const top = o.gapTop - ANCHOR_H;
+    const hl = boatX - BOAT_W / 2;
+    const hr = boatX + BOAT_W / 2;
+    const drop = o.drop;
+    const warning = drop?.state === "warning";
+    // Rattling: the anchor shakes, and jerks down a little on each clank of the chain (drawing only).
+    const jerk = warning ? 4 * Math.max(0, 1 - drop.t / 0.1) : 0;
+    const cx = boatX + (warning ? Math.sin(time * 70) * 1.8 : 0);
+    const crown = anchorCrown(o) + jerk;
+    const top = crown - ANCHOR_H;
     const iron = "#56616d";
 
     // Chain: links alternate face-on (a ring) and edge-on (a bar), down to the anchor's ring.
-    for (let y = keel - 6, i = 0; y < top + 2; y += 10, i++) {
-      if (i % 2 === 0) {
-        ctx.beginPath();
-        ctx.ellipse(cx, y + 6, 4.5, 7, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = OUTLINE;
-        ctx.lineWidth = 4.5;
-        ctx.stroke();
-        ctx.strokeStyle = iron;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      } else {
-        roundRect(ctx, cx - 2, y, 4, 13, 2);
-        ctx.fillStyle = iron;
-        ctx.fill();
-        ctx.strokeStyle = OUTLINE;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
+    if (anchorSlack(o)) drawChain(ctx, slackChainPath(boatX, keel - 6, cx, top + 2, o.seed, time), iron);
+    else {
+      const links: ChainLink[] = [];
+      for (let y = keel - 6; y < top + 2; y += 10) links.push({ x: cx, y, a: 0 });
+      drawChain(ctx, links, iron);
     }
 
     // Anchor: ring, shank, stock with ball ends, curved arms with flukes.
@@ -2450,7 +2448,7 @@ export class Renderer {
     roundRect(ctx, cx - 5, top + 12, 10, ANCHOR_H - 18, 3);
     ctx.fill();
     ctx.stroke();
-    const armY = o.gapTop - 33;
+    const armY = crown - 33;
     ctx.beginPath();
     ctx.arc(cx, armY, 27, 0.2, Math.PI - 0.2);
     ctx.lineWidth = 13;
@@ -2462,9 +2460,9 @@ export class Renderer {
     ctx.lineWidth = 2.5;
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(cx + s * 31, o.gapTop - 46);
-      ctx.lineTo(cx + s * 37, o.gapTop - 22);
-      ctx.lineTo(cx + s * 18, o.gapTop - 29);
+      ctx.moveTo(cx + s * 31, crown - 46);
+      ctx.lineTo(cx + s * 37, crown - 22);
+      ctx.lineTo(cx + s * 18, crown - 29);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
@@ -2490,14 +2488,14 @@ export class Renderer {
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(cx + weed * 33, o.gapTop - 26);
-    ctx.quadraticCurveTo(cx + weed * 42, o.gapTop - 8, cx + weed * 36, o.gapTop + 8);
+    ctx.moveTo(cx + weed * 33, crown - 26);
+    ctx.quadraticCurveTo(cx + weed * 42, crown - 8, cx + weed * 36, crown + 8);
     ctx.stroke();
     ctx.lineCap = "butt";
 
     // Mast with a pennant, and the cabin: above the water.
     const color = BOAT_COLORS[Math.floor(rnd(o.seed + 1) * BOAT_COLORS.length)];
-    const mastX = cx - 28;
+    const mastX = boatX - 28;
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 4;
     ctx.beginPath();
@@ -2514,12 +2512,12 @@ export class Renderer {
     ctx.fill();
     ctx.stroke();
     ctx.lineWidth = 3;
-    roundRect(ctx, cx - 6, deck - 26, 54, 28, 5);
+    roundRect(ctx, boatX - 6, deck - 26, 54, 28, 5);
     ctx.fillStyle = "#f1faee";
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = "#7fd3ea";
-    for (const wx of [cx + 2, cx + 26]) {
+    for (const wx of [boatX + 2, boatX + 26]) {
       roundRect(ctx, wx, deck - 19, 15, 10, 3);
       ctx.fill();
       ctx.lineWidth = 2;
@@ -2532,7 +2530,7 @@ export class Renderer {
     ctx.lineTo(hr, deck);
     ctx.lineTo(hr - 5, keel - 8);
     ctx.quadraticCurveTo(hr - 8, keel, hr - 22, keel);
-    ctx.lineTo(cx - BOAT_W * 0.18, keel);
+    ctx.lineTo(boatX - BOAT_W * 0.18, keel);
     ctx.quadraticCurveTo(hl + 6, keel - 2, hl - 8, deck - 8);
     ctx.closePath();
     ctx.save();
@@ -2555,8 +2553,33 @@ export class Renderer {
     // Hawsepipe where the chain comes out.
     ctx.fillStyle = OUTLINE;
     ctx.beginPath();
-    ctx.ellipse(cx, keel - 2, 6, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(boatX, keel - 2, 6, 3, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // About to drop it: a "!" by the anchor, swelling with each clank, and chevrons marching down below it.
+    if (warning) {
+      outlinedText(ctx, "!", cx + 52, top + 26 + Math.sin(time * 30) * 2, 30 + 8 * Math.max(0, 1 - drop.t / 0.12), "#ff595e");
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 0; i < 3; i++) {
+        const y = crown + 14 + i * 16;
+        const on = Math.max(0, Math.sin(time * 9 - i * 1.2));
+        ctx.globalAlpha = 0.25 + 0.75 * on;
+        ctx.beginPath();
+        ctx.moveTo(cx - 13, y);
+        ctx.lineTo(cx, y + 10);
+        ctx.lineTo(cx + 13, y);
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 8;
+        ctx.stroke();
+        ctx.strokeStyle = "#ff595e";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.lineCap = "butt";
+      ctx.lineJoin = "miter";
+    }
   }
 
   private drawJelly(j: Jelly, time: number, poppable: boolean): void {
@@ -4435,6 +4458,74 @@ function drawBillboardAd(
   ctx.fillText("EXCL!", 0, 1);
   ctx.restore();
   ctx.restore();
+}
+
+// --- anchor chain ------------------------------------------------------------
+
+/** Where a chain link starts, and its turn from hanging straight down (radians). */
+interface ChainLink {
+  x: number;
+  y: number;
+  a: number;
+}
+
+/** Chain links, alternating face-on (a ring) and edge-on (a bar). */
+function drawChain(ctx: CanvasRenderingContext2D, links: ChainLink[], iron: string): void {
+  links.forEach((l, i) => {
+    ctx.save();
+    ctx.translate(l.x, l.y);
+    ctx.rotate(l.a);
+    if (i % 2 === 0) {
+      ctx.beginPath();
+      ctx.ellipse(0, 6, 4.5, 7, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 4.5;
+      ctx.stroke();
+      ctx.strokeStyle = iron;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      roundRect(ctx, -2, 0, 4, 13, 2);
+      ctx.fillStyle = iron;
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+/**
+ * A slack chain from the hull down to a dropped anchor's ring: an S-curve
+ * that sways gently with the water, a link every 10 px along it.
+ */
+function slackChainPath(x0: number, y0: number, x1: number, y1: number, seed: number, time: number): ChainLink[] {
+  const side = rnd(seed + 7) < 0.5 ? -1 : 1;
+  const sway = Math.sin(time * 1.3 + seed) * 8;
+  const h = y1 - y0;
+  const c1 = { x: x0 + side * (40 + sway), y: y0 + h * 0.35 };
+  const c2 = { x: x1 - side * (34 - sway), y: y0 + h * 0.7 };
+  const at = (t: number) => {
+    const u = 1 - t;
+    return {
+      x: u * u * u * x0 + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * x1,
+      y: u * u * u * y0 + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * y1,
+    };
+  };
+  const links: ChainLink[] = [];
+  let prev = at(0);
+  let since = 10;
+  for (let i = 1; i <= 120; i++) {
+    const p = at(i / 120);
+    since += Math.hypot(p.x - prev.x, p.y - prev.y);
+    if (since >= 10) {
+      since = 0;
+      links.push({ x: prev.x, y: prev.y, a: Math.atan2(p.y - prev.y, p.x - prev.x) - Math.PI / 2 });
+    }
+    prev = p;
+  }
+  return links;
 }
 
 // --- wedding -----------------------------------------------------------------

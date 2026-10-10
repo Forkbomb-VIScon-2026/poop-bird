@@ -180,4 +180,7 @@ export class Sound {
   anglerHooked(): void { this.play("angler_hooked"); }
   reelClick(): void { this.play("reel_click", 0.5, 0.25); }
   lineSnap(): void { this.play("line_snap"); }
+  // A dropping anchor's chain clanks, then it thuds onto the bottom (borrowed sounds for now).
+  anchorRattle(): void { this.play("reel_click", 0.8, 0.1); }
+  anchorLanded(): void { this.play("bonk"); }
 }

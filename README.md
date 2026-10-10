@@ -76,6 +76,7 @@ starts the face dataset collector (local credentials `local` /
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
+| **A** | With the debug panel open: a boat that drops its anchor comes in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 
 ### On phones and tablets
@@ -242,6 +243,20 @@ city by city (the debug panel's "Progression" group).
   either. The last obstacle before the far quay is never a boat (it would
   vanish from the harbour as the bird leaps out), and neither is one while a
   fisherman is out (he rows against the scroll, so it would run into him).
+- **Dropping anchors.** Some of those boats (`oceanAnchorDropChance`, 35%;
+  never over a wreck) drop their anchor as the fish comes near. First the
+  warning (`oceanAnchorDropWarn`, 0.9 s): the anchor rattles and jerks on
+  its chain with a clank, a red "!" swells beside it on each clank, and red
+  chevrons below it march downward. Then it falls (`oceanAnchorDropFall`,
+  0.45 s), gathering speed and trailing bubbles, and lands on the coral or
+  rock, or digs into the sand, with a thud and a puff of grit
+  `oceanAnchorDropLead` (0.5 s) before the fish gets there. The timing is
+  worked out from the fish's arrival at the current scroll speed; if the
+  boat comes on screen late, the warning is shorter, and on screens too
+  narrow for even half a second of it the boat keeps its anchor. Once the
+  anchor is down its chain hangs slack (no longer a hit), so the way through
+  is above the anchor now: the bottom of the old gap is closed, and a fish
+  that was diving under has to rise.
 - **Size is the tradeoff.** The fish, and its hitbox, grow with puff. Rising
   makes you bigger.
 - **Spike-out.** At ~85% puff the spines come out. Spiked, you pop jellyfish
@@ -489,6 +504,7 @@ build is always the plain one:
 - **K** sends a slingshot kid on right away (city only)
 - **W** starts a wedding right away (city only)
 - **B** floats a hot-air balloon in right away (city only)
+- **A** brings in a boat that drops its anchor (ocean only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
