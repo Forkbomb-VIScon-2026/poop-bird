@@ -388,7 +388,10 @@ participant through about 3 minutes:
    half puff, pulses, puffing while looking around). Every step beeps: high
    for strain or puff, low for relax.
 5. The upload, with a "Delete this session" button and a fallback to save the
-   file when the upload fails.
+   file when the upload fails. Then **Next person** starts over at consent
+   with a fresh participant code (for one shared device at a collection
+   table, logged in once), and **Same person again** goes straight back to
+   the camera check.
 
 The scripts and the file format are in `src/session.ts`. A session is one
 gzipped JSON file of about 3–4 MB: per frame, the step label, all
