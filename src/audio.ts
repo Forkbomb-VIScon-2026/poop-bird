@@ -298,7 +298,7 @@ export class Sound {
     this.play("shutter", volume, delay);
   }
 
-  cameraBeep(_timer: number): void {
+  cameraBeep(_timer: number = 0): void {
     const volume = 1;
     const delay = 0;
     this.play("camera_beep", volume, delay);
