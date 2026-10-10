@@ -256,7 +256,9 @@ city by city (the debug panel's "Progression" group).
   with a timeline of its steps (so the next switch is never a surprise) and
   a look-around; there the fish shows each step (puffs up and floats, shrinks
   and sinks) whatever your face does. New players then get the ocean tips as two
-  banners. A fish lying on the sand when the level starts isn't killed by the
+  banners. Everyone else gets a short "GET READY!" banner instead, while the
+  fish swims to the middle of the sea on its own (`Game.guideY`), so the level
+  never starts with it on the sand or at the surface. A fish lying on the sand when the level starts isn't killed by the
   sea floor until it swims off (at most `oceanCalmFloorGrace`, 5 s). Details
   below.
 - **New players.** In face mode a new player always gets the swim lesson,

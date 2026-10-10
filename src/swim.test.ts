@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   applyWaterDrag,
+  guidePuff,
   initialSpikeState,
   popProgress,
   popWarning,
+  puffForSwimVelocity,
   puffScale,
   stepSpike,
   targetSwimVelocity,
@@ -62,6 +64,30 @@ describe("targetSwimVelocity", () => {
     expect(targetSwimVelocity(2, B)).toBeCloseTo(-120);
     expect(Number.isFinite(targetSwimVelocity(0.5, { ...B, oceanHoverPuff: 1 }))).toBe(true);
     expect(Number.isFinite(targetSwimVelocity(0.5, { ...B, oceanHoverPuff: 0 }))).toBe(true);
+  });
+});
+
+describe("puffForSwimVelocity", () => {
+  it("inverts targetSwimVelocity", () => {
+    for (let x = 0; x <= 1.0001; x += 0.1) {
+      expect(puffForSwimVelocity(targetSwimVelocity(x, B), B)).toBeCloseTo(x);
+    }
+  });
+
+  it("clamps velocities beyond the max sink and rise speeds", () => {
+    expect(puffForSwimVelocity(1000, B)).toBe(0);
+    expect(puffForSwimVelocity(-1000, B)).toBe(1);
+  });
+});
+
+describe("guidePuff", () => {
+  it("hovers at the target, rises from below it and sinks from above it", () => {
+    expect(guidePuff(300, 300, 0.5, B)).toBeCloseTo(0.4);
+    expect(guidePuff(500, 300, 0.5, B)).toBe(1);
+    expect(guidePuff(100, 300, 0.5, B)).toBe(0);
+    const near = guidePuff(310, 300, 0.5, B);
+    expect(near).toBeGreaterThan(0.4);
+    expect(near).toBeLessThan(1);
   });
 });
 

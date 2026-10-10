@@ -7,7 +7,7 @@ import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
-import { BIRD_RADIUS, GROUND_Y, Game, VIEW_H, wireAt } from "./game";
+import { BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
@@ -769,10 +769,33 @@ async function runSwimLesson(): Promise<void> {
   if (!seenTutorials.has("ocean")) {
     if (!(await oceanTipBanners(token))) return abandonPuffCalibration(token);
     markTutorialSeen("ocean");
-  }
+  } else if (!(await swimToMiddle(token))) return abandonPuffCalibration(token);
   // The level starts. A relaxed player's fish may lie on the sand: the sea floor spares it until it swims off (Game).
   endPuffCalibrationOverlay(token);
   game.calmWater = false;
+}
+
+/**
+ * Without the tips, the level would start wherever the lesson left the fish
+ * (often on the sea floor or at the surface). So it swims to the middle on its
+ * own first (Game.guideY), under a heads-up banner. false = abandoned.
+ */
+async function swimToMiddle(token: number): Promise<boolean> {
+  setPuffOverlay("GET READY! 🐡", "Here come the rocks and jellyfish.", null);
+  show($("puff-calib-bar"), false);
+  game.guideY = OCEAN_MID_Y;
+  try {
+    // At least a moment to read the banner; at most long enough to cross the whole sea.
+    for (let t = 0; t < 4000; t += 50) {
+      if (!(await waitPlaying(token, 50))) return false;
+      const there = Math.abs(game.bird.y - OCEAN_MID_Y) < 15 && Math.abs(game.bird.vy) < 25;
+      if (t >= 1500 && there) break;
+    }
+  } finally {
+    game.guideY = null;
+    show($("puff-calib-bar"), true);
+  }
+  return true;
 }
 
 /** The ocean tips for new players, as banners over the calm water, after `intro` if given. */
