@@ -169,55 +169,100 @@ canvas#game {
   animation: pop 0.25s ease-out;
 }
 
-/* In-game overlay while the world is frozen for the puff calibration. */
-.puff-calib {
+/*
+ * The coach: one banner for every tutorial step and the puff calibration. Over
+ * the game near the top; docked beside the bird on the perch.
+ */
+.coach {
   position: absolute;
   left: 50%;
-  top: 22%;
+  top: max(calc(64px + env(safe-area-inset-top)), 14vh);
   transform: translateX(-50%);
-  width: min(460px, calc(100vw - 32px));
+  width: min(720px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   pointer-events: none;
   z-index: 9;
 }
 
-.puff-calib h2 {
-  font-size: clamp(30px, 6vw, 52px);
+.coach.docked {
+  position: static;
+  transform: none;
+  width: auto;
+  max-width: 100%;
+}
+
+.coach-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.coach h2 {
+  font-size: clamp(26px, 4.4vw, 52px);
+  line-height: 1.05;
   font-weight: 900;
   color: #fff;
   -webkit-text-stroke: 3px var(--ink);
   paint-order: stroke fill;
   text-shadow: 0 5px 0 var(--ink);
-  margin: 0 0 6px;
+  margin: 0;
+  text-wrap: balance;
+}
+
+/* A new step wobbles in (main.ts restarts it); a step just done turns green. */
+.coach h2.wobble {
   animation: wobble 0.5s ease-out;
 }
 
-.puff-calib .hint {
+.coach.done h2 {
+  color: var(--green);
+}
+
+.coach .hint {
+  font-size: clamp(16px, 2.2vw, 24px);
+  line-height: 1.25;
+  font-weight: 800;
   color: #fff;
-  font-weight: 700;
+  -webkit-text-stroke: 1px var(--ink);
+  paint-order: stroke fill;
   text-shadow: 0 2px 0 var(--ink);
-  margin: 0 0 8px;
+  margin: 6px 0 0;
+  max-width: 34ch;
+  opacity: 1;
+  text-wrap: balance;
 }
 
-/* The ocean tips at the end of the swim lesson: more to read, so bigger. */
-.puff-calib.puff-tips .hint {
-  font-size: clamp(18px, 2.6vw, 24px);
-  line-height: 1.3;
+.coach .hint:empty {
+  display: none;
 }
 
-.puff-calib .progress-fill {
+/* The ocean tips: more to read, so bigger. */
+.coach.tips .hint {
+  font-size: clamp(18px, 2.6vw, 26px);
+}
+
+.coach .progress {
+  width: min(460px, 100%);
+  margin: 8px 0 0;
+}
+
+.coach .progress-fill {
   background: #4cc9f0;
 }
 
-/* The face to make: relaxed, or the pufferfish face (cheeks puffed, lips pursed). */
-svg.face.puff-face {
-  width: clamp(56px, 11vh, 88px);
-  height: clamp(56px, 11vh, 88px);
-  margin: 0 auto 4px;
+/* The face to make: relaxed, strained, or the pufferfish face (cheeks puffed, lips pursed). */
+svg.face.coach-face {
+  flex: none;
+  width: clamp(44px, 8vh, 76px);
+  height: clamp(44px, 8vh, 76px);
   filter: drop-shadow(0 3px 0 rgba(43, 45, 66, 0.6));
 }
 
-svg.face.puff-face.puffing {
+svg.face.coach-face.puffing {
   animation: puff-breathe 1.2s ease-in-out infinite;
 }
 
@@ -225,6 +270,32 @@ svg.face.puff-face.puffing {
   50% {
     transform: scale(1.08);
   }
+}
+
+.coach-dots {
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.coach-dots li {
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: #fff;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.coach-dots li.done {
+  background: var(--green);
+}
+
+.coach-dots li.now {
+  background: var(--gold);
+  transform: scale(1.35);
 }
 
 /* Calibration timeline: what's coming, so a switch never comes as a surprise. */
@@ -937,25 +1008,6 @@ svg.face.calib-face {
   animation: pulse 0.9s ease-in-out infinite;
 }
 
-.ready-text {
-  font-size: clamp(32px, 6vw, 64px);
-  font-weight: 900;
-  color: #fff;
-  -webkit-text-stroke: 3px var(--ink);
-  paint-order: stroke fill;
-  text-shadow: 0 6px 0 var(--ink);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-.ready-sub {
-  font-size: clamp(18px, 2.5vw, 26px);
-  font-weight: 800;
-  color: #fff;
-  -webkit-text-stroke: 1px var(--ink);
-  paint-order: stroke fill;
-  text-shadow: 0 2px 0 var(--ink);
-}
-
 /* --- Perch (ready) ------------------------------------------------------------ */
 
 /* Practice poops don't score: no score until the run starts. */
@@ -982,38 +1034,10 @@ svg.face.calib-face {
   pointer-events: auto;
 }
 
-.perch-text {
+.perch-coach-slot {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.perch .ready-text {
-  font-size: clamp(26px, 4.4vw, 54px);
-  line-height: 1.05;
-  animation: none;
-}
-
-.perch-line {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 12px;
-}
-
-svg.face.perch-face {
-  flex: none;
-  width: clamp(44px, 8vh, 76px);
-  height: clamp(44px, 8vh, 76px);
-}
-
-.perch .ready-sub {
-  max-width: 28ch;
-}
-
-.perch .ready-sub:empty {
-  display: none;
+  max-width: 100%;
 }
 
 /* The webcam with the strain gauge on its right; the "that's you" arrow points left, at the bird. */
@@ -1081,6 +1105,17 @@ svg.face.perch-face {
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  transition: opacity 0.4s, transform 0.4s;
+}
+
+/* While the relaxed face is read: just the bird and the webcam. The gauge slides in after. */
+.perch.intro .gauge {
+  opacity: 0;
+  transform: translateX(24px);
+}
+
+.perch.intro .perch-help {
+  visibility: hidden;
 }
 
 svg.face.gauge-face {
@@ -1295,7 +1330,17 @@ svg.face.gauge-face {
   transform: rotate(1.5deg);
 }
 
-.go-hof-form {
+.go-strain {
+  font-weight: 700;
+}
+
+.go-strain b {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.go-lb-form {
   margin-top: 14px;
   display: flex;
   gap: 8px;
@@ -1305,57 +1350,70 @@ svg.face.gauge-face {
   font-weight: 700;
 }
 
-.go-hof-form input {
+.go-lb-form input:not([type="checkbox"]) {
   font: inherit;
   padding: 6px 10px;
   border: 3px solid var(--ink);
   border-radius: 10px;
-  margin-left: 6px;
-  width: 190px;
+  width: 170px;
 }
 
-/* --- Hall of Fame ------------------------------------------------------------------ */
+.go-lb-form .opt {
+  margin: 0;
+}
 
-.hof {
+.go-lb-status {
+  margin: 10px 0 0;
+  font-weight: 800;
+}
+
+/* --- Leaderboard ------------------------------------------------------------------ */
+
+.lb {
   margin-top: 10px;
   text-align: left;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 6px 16px;
 }
 
-.hof h3 {
+.lb h3 {
   text-align: center;
   margin: 6px 0;
 }
 
-.hof ol {
+.lb ol {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.hof li {
+.lb li {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 4px 8px;
   border-radius: 10px;
 }
 
-.hof li:nth-child(odd) {
+.lb li:nth-child(odd) {
   background: rgba(0, 0, 0, 0.05);
 }
 
-.hof li.me {
+.lb li.me {
   background: var(--gold);
 }
 
-.hof .rank {
+.lb .rank {
   font-weight: 900;
-  width: 26px;
+  width: 28px;
+  flex: none;
 }
 
-.hof .thumb {
+.lb .thumb {
   width: 40px;
   height: 40px;
+  flex: none;
   border-radius: 8px;
   border: 2px solid var(--ink);
   object-fit: cover;
@@ -1366,29 +1424,56 @@ svg.face.gauge-face {
   font-size: 22px;
 }
 
-.hof .name {
+/* The faces are the point of this board. */
+.lb-faces .thumb {
+  width: 56px;
+  height: 56px;
+}
+
+.lb .name {
   flex: 1;
+  min-width: 0;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.hof .date {
-  font-size: 12px;
-  opacity: 0.6;
-}
-
-.hof .score {
+.lb .value {
   font-weight: 900;
-  min-width: 60px;
   text-align: right;
 }
 
-.hof-empty {
+.lb-faces .value {
+  font-size: 20px;
+  color: var(--accent);
+}
+
+.lb-remove {
+  flex: none;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.lb-remove:hover,
+.lb-remove:focus-visible {
+  opacity: 1;
+}
+
+.lb-note {
+  grid-column: 1 / -1;
   text-align: center;
   opacity: 0.6;
   font-size: 14px;
+}
+
+.lb-board .lb-note {
+  margin: 4px 0;
 }
 
 /* --- Debug panel ---------------------------------------------------------------------- */
@@ -1690,6 +1775,30 @@ body.debug-open #cam {
     bottom: 8px;
   }
 
+  .coach:not(.docked) {
+    top: calc(48px + env(safe-area-inset-top));
+  }
+
+  .coach h2 {
+    font-size: 24px;
+    -webkit-text-stroke-width: 2px;
+    text-shadow: 0 3px 0 var(--ink);
+  }
+
+  .coach .hint {
+    font-size: 14px;
+    margin-top: 2px;
+  }
+
+  svg.face.coach-face {
+    width: 36px;
+    height: 36px;
+  }
+
+  .coach-dots {
+    margin-top: 4px;
+  }
+
   .perch-cam-slot {
     width: clamp(140px, 28vw, 48vh);
   }
@@ -1767,7 +1876,7 @@ body.debug-open #cam {
     height: 144px;
   }
 
-  .go-hof-form {
+  .go-lb-form {
     margin-top: 8px;
   }
 }

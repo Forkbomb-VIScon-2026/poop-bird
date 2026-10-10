@@ -19,6 +19,7 @@ import {
   STRAIN_FEATURES,
   smoothStrain,
   stepStrain,
+  strainedness,
   updateHysteresis,
   zeroFeatures,
   type Calibration,
@@ -409,5 +410,22 @@ describe("restoreCalibration", () => {
     expect(restoreCalibration(null, STRAIN_FEATURES)).toBeNull();
     expect(restoreCalibration("nope", STRAIN_FEATURES)).toBeNull();
     expect(restoreCalibration({ ...calib, weights: { ...calib.weights, browDown: "x" } }, STRAIN_FEATURES)).toBeNull();
+  });
+});
+
+describe("strainedness", () => {
+  it("ranks a strain face above a relaxed blink, and that above a relaxed face", () => {
+    const relaxed = fv({ browDown: 0.25, eyeSquint: 0.3, eyeBlink: 0.15, mouthShrugLower: 0.6 });
+    const blink = fv({ ...relaxed, eyeBlink: 1 });
+    const strained = fv({ browDown: 0.7, eyeSquint: 0.7, eyeBlink: 0.4 });
+    expect(strainedness(relaxed)).toBeCloseTo((0.25 + 0.3 + 0.075) / 2.5);
+    expect(strainedness(strained)).toBeGreaterThan(strainedness(blink));
+    expect(strainedness(blink)).toBeGreaterThan(strainedness(relaxed));
+  });
+
+  it("stays within 0..1 and ignores the mouth", () => {
+    expect(strainedness(zeroFeatures())).toBe(0);
+    expect(strainedness(fv({ browDown: 1, eyeSquint: 1, eyeBlink: 1 }))).toBe(1);
+    expect(strainedness(fv({ browDown: 2, eyeSquint: -1, mouthPress: 1, mouthRollLower: 1 }))).toBeCloseTo(1 / 2.5);
   });
 });

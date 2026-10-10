@@ -14,14 +14,14 @@ export const SOUND_NAMES = [
   "zap",
   "power_line",
   "balloon_pop",
-  "chute_open",
+  "chute_open_1",
+  "chute_open_2",
   "basket_landed",
   "burner",
   "splat",
   "hit",
   "shutter",
   "camera_beep",
-  "power_down",
   "drone_crash",
   "smash",
   "slingshot_draw",
@@ -31,10 +31,7 @@ export const SOUND_NAMES = [
   "ricochet",
   "kid_cry",
   "curse",
-  "beep",
   "sad_trombone",
-  "wedding_arrived",
-  "wedding_beat",
   "wedding_kiss",
   "wedding_ruined",
   "wedding_married",
@@ -44,6 +41,9 @@ export const SOUND_NAMES = [
   "angler_cast",
   "angler_hooked",
   "reel_click",
-  "line_snap"
+  "line_snap",
+  "power_down",
+  "wedding_arrived",
+  "wedding_beat"
 ] as const;
 export type SoundName = (typeof SOUND_NAMES)[number];

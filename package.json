@@ -20,6 +20,7 @@
     "tunnel": "ssh -N -o ExitOnForwardFailure=yes -L 8788:localhost:8080 viscon@24-direct.viscon-hackathon.ch",
     "data:pull": "node scripts/data.ts pull",
     "data:purge": "node scripts/data.ts purge",
+    "leaderboard": "node scripts/leaderboard.ts",
     "eval": "node scripts/run-ts.mjs scripts/eval/main.ts",
     "copy-wasm": "node scripts/copy-wasm.mjs",
     "fetch-model": "node scripts/fetch-model.mjs",

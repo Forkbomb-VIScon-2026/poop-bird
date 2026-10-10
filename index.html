@@ -62,15 +62,20 @@
         <div id="hud-toast" class="hud-toast hidden"></div>
       </div>
 
-      <!-- Swim lesson and puff calibration banners (first dive in face mode, in calm water) -->
-      <div id="puff-calib" class="puff-calib hidden">
-        <!-- Calibration only: the steps, the current one highlighted (puff steps in red). -->
-        <ol id="puff-calib-timeline" class="puff-timeline hidden"></ol>
-        <!-- The face for this step (or the next one, during a countdown). -->
-        <svg id="puff-calib-face" class="face puff-face hidden"><use id="puff-calib-face-use" href="#face-relaxed" /></svg>
-        <h2 id="puff-calib-title">PUFFERFISH FACE! 🐡</h2>
-        <p id="puff-calib-hint" class="hint">Puff your cheeks and purse your lips, like a kiss. Hold it.</p>
-        <div id="puff-calib-bar" class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
+      <!-- The coach: every tutorial step and the puff calibration, as one banner. On the perch it sits
+           beside the bird (moved into #perch-coach-slot); in the city and the ocean, over the game. -->
+      <div id="coach" class="coach hidden">
+        <!-- Puff calibration only: the steps, the current one highlighted (puff steps in red). -->
+        <ol id="coach-timeline" class="puff-timeline hidden"></ol>
+        <div class="coach-line">
+          <!-- The face for this step (or the next one, during a countdown). -->
+          <svg id="coach-face" class="face coach-face hidden"><use id="coach-face-use" href="#face-relaxed" /></svg>
+          <h2 id="coach-title"></h2>
+        </div>
+        <p id="coach-hint" class="hint"></p>
+        <div id="coach-bar" class="progress hidden"><div id="coach-progress" class="progress-fill"></div></div>
+        <!-- A tutorial's steps: done ones filled, the current one bigger. -->
+        <ol id="coach-dots" class="coach-dots hidden"></ol>
       </div>
 
       <!-- Webcam preview (also used, enlarged, during calibration) -->
@@ -96,8 +101,20 @@
           <div class="start-play">
             <button id="btn-face" class="btn primary big" data-default>😣 Play</button>
             <button id="btn-keyboard" class="btn icon" data-keys="K" aria-label="Play without the camera" title="Play without the camera"><svg class="kbd-only kbd-icon" viewBox="0 0 40 26" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="23" rx="4" fill="#fff" stroke="currentColor" stroke-width="3" /><g fill="currentColor"><rect x="7" y="7" width="4" height="4" rx="1" /><rect x="14" y="7" width="4" height="4" rx="1" /><rect x="21" y="7" width="4" height="4" rx="1" /><rect x="28" y="7" width="4" height="4" rx="1" /><rect x="11" y="15" width="18" height="4" rx="1" /></g></svg><span class="touch-only">👆</span></button>
+            <button id="btn-leaderboard" class="btn icon" data-keys="L" aria-label="Leaderboard" title="Leaderboard">🏆</button>
           </div>
           <label class="opt light" title="Show tips, like how to swim in the ocean"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here</label>
+        </div>
+      </section>
+
+      <!-- The online leaderboard (start screen's 🏆), over the demo. -->
+      <section id="screen-leaderboard" class="screen hidden">
+        <div class="card wide">
+          <h2>🏆 Leaderboard</h2>
+          <div id="lb-full" class="lb"></div>
+          <div class="buttons">
+            <button id="btn-lb-back" class="btn primary" data-default data-keys="Escape">Back</button>
+          </div>
         </div>
       </section>
 
@@ -151,14 +168,8 @@
            In face mode the webcam (#cam, moved into #perch-cam-slot) and a strain gauge sit beside the bird. -->
       <section id="screen-ready" class="screen hidden passthrough">
         <div id="perch" class="perch">
-          <!-- One short instruction, with the face it asks for (face mode). -->
-          <div class="perch-text">
-            <div class="perch-line">
-              <svg id="perch-face" class="face perch-face"><use id="perch-face-use" href="#face-strained" /></svg>
-              <div class="ready-text" id="ready-text"></div>
-            </div>
-            <div class="ready-sub" id="ready-sub"></div>
-          </div>
+          <!-- The coach (#coach) goes here while the bird is on the perch. -->
+          <div id="perch-coach-slot" class="perch-coach-slot"></div>
           <div id="perch-you" class="perch-you">
             <div class="perch-arrow" id="perch-arrow" aria-hidden="true">
               <svg viewBox="-4 -4 68 48">
@@ -235,22 +246,24 @@
             <div id="go-snapshot" class="go-snapshot hidden">
               <div class="go-snapshot-title">Your finest strain</div>
               <img id="go-snapshot-img" alt="Your strain face at peak strain" />
+              <div class="go-strain" title="How strained your face looked, 0–100: the leaderboard ranks faces by this">Strainedness <b id="go-strain">0</b></div>
               <button id="btn-download" class="btn small">⬇️ Download</button>
-              <div class="privacy small">Stays on this device.</div>
+              <div class="privacy small">Stays on this device unless you share it.</div>
             </div>
           </div>
-          <form id="go-hof-form" class="go-hof-form hidden">
-            <label>You made the Hall of Fame! Name:
-              <input id="go-name" maxlength="16" autocomplete="off" placeholder="Anonymous Pooper" />
-            </label>
-            <button type="submit" class="btn small primary">Save</button>
+          <!-- Opt-in: nothing is sent unless the player presses Submit, and the face only with the box ticked. -->
+          <form id="go-lb-form" class="go-lb-form hidden">
+            <input id="go-name" maxlength="16" autocomplete="off" placeholder="Your name" aria-label="Your name" />
+            <label id="go-lb-face-opt" class="opt"><input type="checkbox" id="go-lb-face" /> 📸 with my face</label>
+            <button id="btn-lb-submit" type="submit" class="btn small primary">🏆 Submit to the leaderboard</button>
           </form>
+          <p id="go-lb-status" class="go-lb-status hidden"></p>
           <div class="buttons">
             <button id="btn-again" class="btn primary" data-default data-keys="R">Play again</button>
             <button id="btn-go-calibrate" class="btn" data-shortcut="C">Recalibrate</button>
             <button id="btn-go-menu" class="btn" data-keys="Escape">Menu</button>
           </div>
-          <div id="go-hof" class="hof"></div>
+          <div id="go-lb" class="lb"></div>
         </div>
       </section>
 

@@ -7,7 +7,8 @@ Then dive into the harbour, where the bird becomes a pufferfish that you steer
 by **making a pufferfish face**: cheeks puffed, lips pursed.
 
 Everything runs in the browser: face tracking runs locally with MediaPipe, and
-no video, snapshot or score leaves the device.
+no video, snapshot or score leaves the device unless the player submits a run
+to the [leaderboard](#leaderboard).
 
 ## Run it
 
@@ -30,7 +31,7 @@ Other scripts:
 | `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
-| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector) |
+| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector, leaderboard) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
 | `npm run data:pull` / `data:purge` | Copy the face dataset from the team VM into `data/` / delete that copy (see [Face dataset](#face-dataset)) |
@@ -66,7 +67,8 @@ starts the face dataset collector (local credentials `local` /
 | **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
 | **R** | Play again from game over |
 | **K** | Menu: play with the keyboard |
-| **Esc** | Calibration and game over: back to the menu |
+| **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
+| **Esc** | Calibration, game over and the leaderboard: back to the menu |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
@@ -76,6 +78,7 @@ starts the face dataset collector (local credentials `local` /
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
+| **A** | With the debug panel open: a boat that drops its anchor comes in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 
 ### On phones and tablets
@@ -100,20 +103,40 @@ wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
 ## How it plays
 
 Calibration is optional. Every run starts on the **perch**: the bird sits in
-its nest on top of a street lamp, with the player's webcam and an upright
-strain gauge right beside it, and a big arrow from the webcam to the bird says
-"that's you!". Above them is a single instruction next to a sketch of the face
-it asks for. The gauge
-fills as the face strains; over its 💩 line, the bird charges. Face mode runs
-on a default calibration fitted to a quick read of the player's relaxed face.
+its nest on top of a street lamp, with the player's webcam beside it and a big
+arrow from the webcam to the bird saying "that's you!". Face mode runs on a
+default calibration fitted to a quick read of the player's relaxed face; while
+that runs ("Relax and look here"), only the bird and the webcam show. Then an
+upright strain gauge slides in beside the webcam: it fills as the face
+strains, and over its 💩 line the bird charges.
 
+**The coach.** Every tutorial step is one banner, the coach (`#coach`): a
+sketch of the face to make, one short line, sometimes a hint under it, and
+during the flight lesson a row of dots for where you are. Each step moves on
+once the player has done it (the line turns green for a moment), not on a
+timer. On the perch it sits beside the bird; in the city and the ocean, over
+the game near the top. The swim lesson and the puff calibration use it too.
+
+- **Flight lesson** (new players: the tutorial hasn't been seen on this
+  browser, or "I'm new here" is ticked), six steps:
+  1. "Squeeze your face" (Hold Space) until the bird starts filling up,
+  2. "Now relax": the poop hops the bird up, and the coach says "Pooping
+     pushes you up!",
+  3. "Squeeze longer to fly": a full bird takes off,
+  4. in a **calm city** (`Game.calmCity`: no obstacles, paparazzi or kids,
+     and the street bounces the bird back up instead of ending the run):
+     "Squeeze & relax to stay up" until three poops (or 20 s),
+  5. "Poop on the car! 🎯": a car drives on; until the first hit (or 12 s),
+  6. "Now dodge the buildings!": the lesson counts as seen, and the calm ends
+     once the bird is clear of the street (or after 8 s); the first obstacle
+     comes `firstObstacleDelay` later.
+  An accident (held too long) shows "Too long! Relax as soon as it's full".
+  The perch part and the city part are remembered separately (`perch`,
+  `city` in `TUTORIALS`).
 - **Takeoff takes a full poop.** "Squeeze till the bird is full": smaller
   poops just hop in the nest ("Squeeze longer to take off"), so a stray strain
   never starts the run. Once the bird is full, the line changes to "Relax to
   fly! 🚀", and letting go then starts the run. There's no countdown.
-- **New players** (the perch tutorial hasn't been seen on this browser, or
-  "I'm new here" is ticked) first get one guided practice poop: "Squeeze your
-  face" until the bird starts filling up, then "Now relax".
 - **Tuning** (the full two-phase calibration) is a small "Tune to my face"
   button (or **C**). It turns yellow and pulses with a question when the gauge
   doesn't follow the face: it never reaches the 💩 line when the player is
@@ -223,8 +246,8 @@ city by city (the debug panel's "Progression" group).
   lesson** (see below).
 - **Swim lesson** (face mode, first dive). The fish swims on in **calm
   water** (`Game.calmWater`: no obstacles or jellyfish, no spiking, the sea
-  floor doesn't kill) while banners walk you through it: relax, "PUCKER &
-  PUFF!", "LET IT OUT", once more. Each banner has a pictogram of the face to
+  floor doesn't kill) while the coach walks you through it: relax, "Pucker &
+  puff!", "Let it out", once more. Each step has a pictogram of the face to
   make (relaxed, or the pufferfish face: cheeks puffed, lips pursed); the
   steps follow each other without countdowns. The fish follows
   your measured puff meanwhile (pursed lips, as there's no puff calibration
@@ -260,6 +283,24 @@ city by city (the debug panel's "Progression" group).
   either. The last obstacle before the far quay is never a boat (it would
   vanish from the harbour as the bird leaps out), and neither is one while a
   fisherman is out (he rows against the scroll, so it would run into him).
+- **Dropping anchors.** Some of those boats (`oceanAnchorDropChance`, 35%;
+  never over a wreck) drop their anchor as the fish comes near. First the
+  warning (`oceanAnchorDropWarn`, 0.9 s): the anchor rattles and jerks on
+  its chain with a clank, a red "!" swells beside it on each clank, and red
+  chevrons below it march downward. Then the chain rips just below the hull
+  with a snap, leaving a short stub with a torn link on the boat, and the
+  anchor falls, gathering speed and trailing bubbles, with the torn-off chain
+  above it. It lands on the coral or rock, or digs into the sand, with a thud
+  and a puff of grit, and the chain piles up on it. All of that
+  (`oceanAnchorDropFall`, 0.45 s) is over `oceanAnchorDropLead` (0.5 s)
+  before the fish gets there. The chain is a hit wherever it is (the stub,
+  the falling piece), just like on a boat that keeps its anchor. The timing
+  is worked out from the fish's arrival at the current scroll speed; if the
+  boat comes on screen late, the warning is shorter, and on screens too
+  narrow for even half a second of it the boat keeps its anchor. Once the
+  anchor is down, the way through is above it, between the stub and the
+  anchor: the bottom of the old gap is closed, and a fish that was diving
+  under has to rise.
 - **Size is the tradeoff.** The fish, and its hitbox, grow with puff. Rising
   makes you bigger.
 - **Spike-out.** At ~85% puff the spines come out. Spiked, you pop jellyfish
@@ -297,6 +338,101 @@ city by city (the debug panel's "Progression" group).
 - With Space alone: hold to inflate (rise), let go to deflate (sink), and tap to
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
+
+## Leaderboard
+
+The game-over screen and the start screen's 🏆 (**L**) show the online
+leaderboard: two boards of the runs players chose to submit.
+
+- **🏆 Top scores**, by score.
+- **😣 Most strained faces**, by how strained the run's finest-strain face
+  looks, 0–100. Only runs submitted with their face are on it.
+
+Only runs played with the face count. After a keyboard or touch run the
+game-over screen says so instead of offering to submit, and the collector
+turns away submissions that aren't face-mode runs. (At first keyboard runs
+were accepted; the collector deletes any it finds when it starts.)
+
+Nothing is sent until the player presses "Submit to the leaderboard" on the
+game-over screen (with a name, 16 characters at most). The face goes along
+only if they tick "with my face", which starts unticked every run, so the next
+player at the same machine doesn't inherit the choice. A run submitted from
+a browser has a ✕ there to take it off again (the delete key is kept in
+`localStorage`).
+
+**Strainedness** (`strain.ts` `strainedness`) is the weighted mean of the raw
+`browDown`, `eyeSquint` and ½ × `eyeBlink` blendshapes. These move on a strain
+face for nearly everyone in the face dataset, and the mouth doesn't. It
+ignores the calibration: the calibrated strain tops out at 1 for anyone who
+strains past their own calibration (and a timid calibration would win), so it
+can't rank players against each other. In the dataset, relaxed faces score
+about 20–30 and hard strains 60–75. The score is smoothed like the strain
+signal (`emaAlpha`), and the finest-strain snapshot is the frame where it
+peaked while the game counted the player as straining in the city, so a laugh
+or a blink doesn't count.
+
+**Server.** The collector serves it (`collector/leaderboard.ts`, format and
+ranking in `src/leaderboard.ts`) on the same `poopbird-data` volume as the
+face dataset, so it survives deploys:
+
+| Request | |
+| --- | --- |
+| `GET /api/leaderboard?limit=10` | both boards (at most 100 each) |
+| `POST /api/leaderboard` | a run (`application/json` only); answers its places and a delete key |
+| `GET /api/leaderboard/<id>.jpg` | a shared face |
+| `DELETE /api/leaderboard/<id>` | with `X-Delete-Key`, or the dev token |
+| `GET /api/leaderboard/runs` | every stored run, both pools (dev token) |
+
+Each board keeps its top 500, far more than it lists. A run on neither isn't
+stored, and one pushed off both is deleted, face and all. Submissions are
+limited to 300 an hour per address (Caddy sets the address; a client can't
+fake it).
+
+### Moderation
+
+Scores and strainedness come from the player's browser, so anyone who can open
+the game could post any number, or any picture as their face. The team
+removes bad runs with `npm run leaderboard`, which uses the dev token over SSH
+(like `npm run data:pull`: it needs your SSH key on the VM). Nobody else can
+remove a run, except its submitter from their own browser.
+
+```sh
+npm run leaderboard                                  # what the boards show, the newest runs, and their ids
+npm run leaderboard -- remove <id> [<id>…]           # delete runs (faces included)
+npm run leaderboard -- remove-name "Spam Bot"        # list every run under a name; add --yes to delete them
+npm run leaderboard -- remove-since "2026-10-11 14:30"   # the same for everything since then (a flood)
+npm run leaderboard -- list --all --debug            # every stored run, debug-build runs too
+```
+
+Because the boards keep 500 runs and show at most 100, a flood of fake runs
+doesn't wipe the real ones: removing the fakes brings them back.
+
+### Hardening
+
+What players send ends up in other players' pages, so:
+
+- **Names** are text only (`textContent`, never HTML), at most 16 characters.
+  Control and invisible formatting characters (bidi overrides, zero-width) are
+  dropped, and stacks of combining marks capped at two, so a name can't
+  reorder or spill over the rows around it.
+- **Faces** must be JPEGs (start and end markers, a frame header) of at most
+  120 kB and 400 × 800 px; a small file declaring a huge image could stall
+  every viewer's browser. They're served as `image/jpeg` with `nosniff` and a
+  `Content-Security-Policy` of `default-src 'none'; sandbox`, so even a file
+  crafted to look like HTML runs nothing when opened directly. The page only
+  loads face URLs of the collector's own `/api/leaderboard/<id>.jpg` form.
+- **Submissions** must be `application/json`, which a form on another site
+  can't send, so other sites can't submit through a logged-in visitor's
+  browser. Ids are 16 hex digits, checked before they touch a file path.
+- **Not prevented:** made-up scores, strainedness and pictures (the server
+  can't check what happened in the browser), and offensive names. That's what
+  moderation is for.
+
+Debug builds (`npm run dev:debug`) submit their runs as debug runs and show
+only those, so testing never puts anything on the public boards. With `npm run
+dev`, `/api` goes to the VM through `npm run tunnel` (or `COLLECTOR_URL`); a
+local collector (`npm run collector`, see [Face dataset](#face-dataset)) gives
+an empty board to play with.
 
 ## How the strain detection works
 
@@ -507,6 +643,7 @@ build is always the plain one:
 - **K** sends a slingshot kid on right away (city only)
 - **W** starts a wedding right away (city only)
 - **B** floats a hot-air balloon in right away (city only)
+- **A** brings in a boat that drops its anchor (ocean only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a
@@ -644,15 +781,19 @@ when a change is ready to merge. Older debug-recorder clips
 - Video frames go to MediaPipe running in the page (WASM/WebGL) and nowhere
   else.
 - The "finest strain" snapshot is taken in every face-mode run. It's a 200 px
-  JPEG of your face at peak strain, kept in memory, shown on the game-over
-  screen, and saved only if you add the run to the local Hall of Fame
-  (`localStorage`, top 5).
+  JPEG of your face at its most strained, kept in memory and shown on the
+  game-over screen. It leaves the device only if you submit the run to the
+  [leaderboard](#leaderboard) with "with my face" ticked; then everyone who
+  can open the game sees it until you remove it (✕) or it drops off the
+  boards. Without the face, a submitted run is a name, a score and a few
+  stats.
 - The paparazzi's photos show your face in face mode, and the bird with the
   keyboard. So does the bird in the wedding photos. They stay in memory for
   the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
-- Playing never sends face data anywhere. Only the separate dataset recorder
+- Playing sends nothing anywhere unless you submit a run to the
+  leaderboard. Apart from that, only the separate dataset recorder
   (`collect.html`) uploads, after explicit consent, and it records expression
   scores and face-mesh points, never video or images. See
   [Face dataset](#face-dataset).
@@ -672,17 +813,23 @@ src/
   audio.ts      WebAudio synth sounds
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
-  storage.ts    safe localStorage, best score, Hall of Fame
+  storage.ts    safe localStorage, best score, your leaderboard runs
+  leaderboard.ts       leaderboard format, checks, ranking (shared with the collector)
+  leaderboard-view.ts  the boards in the page: fetch, submit, remove, draw
   main.ts       screens, input, loops, calibration flow
   session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
   collect.ts    the dataset recorder page (collect.html)
 collector/
   server.ts     dataset upload/download server (Node, no deps)       server.test.ts
+  leaderboard.ts  the online leaderboard's routes and storage        leaderboard.test.ts
+  http.ts       helpers shared by both
   Dockerfile
 scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm
   fetch-model.mjs  downloads face_landmarker.task
   data.ts          data:pull / data:purge
+  leaderboard.ts   leaderboard moderation: list and remove runs
+  vm.ts            dev token + SSH tunnel to the collector (data.ts, leaderboard.ts)
   run-ts.mjs       runs a TS script through Vite (used by eval)
   eval/            detection scoreboard: load, strain, puff, variants
 ```

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { config, ramp } from "./config";
 import {
-  ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, PERCH_Y, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects,
+  ANCHOR_H, ANCHOR_RIP_Y, ANCHOR_W, BIRD_RADIUS, BOAT_DRAFT, GROUND_Y, Game, OCEAN_MID_Y, PERCH_Y, SURFACE_Y, WATER_Y, WRECK_HULL_H,
+  WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects, type Obstacle,
 } from "./game";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
@@ -115,6 +116,34 @@ describe("calm water", () => {
   });
 });
 
+describe("calm city", () => {
+  it("spawns no obstacles and bounces the bird off the street, while cars still come", () => {
+    const game = new Game(1000);
+    game.calmCity = true;
+    for (let i = 0; i < 60 * 30; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    expect(game.obstacles).toHaveLength(0);
+    expect(game.bird.y).toBeLessThan(GROUND_Y - BIRD_RADIUS);
+    game.spawnCarNow();
+    expect(game.targets.some((t) => t.kind === "car")).toBe(true);
+  });
+
+  it("brings the first obstacle a full delay after it ends", () => {
+    const game = new Game(1000);
+    game.calmCity = true;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    game.calmCity = false;
+    const from = game.distance;
+    for (let i = 0; i < 60 * 30 && game.obstacles.length === 0; i++) {
+      // Held in the air: without calm, the street would end the run.
+      Object.assign(game.bird, { y: 240, vy: 0 });
+      game.step(1 / 60);
+    }
+    expect(game.obstacles.length).toBeGreaterThan(0);
+    expect(game.distance - from).toBeGreaterThan(config.firstObstacleDelay - 50);
+  });
+});
+
 describe("leaping out", () => {
   /** Dives in, then brings the far quay up `ahead` px in front of the fish at depth `y`. */
   function leapFrom(ahead: number, y: number, puff: number): Game {
@@ -191,7 +220,7 @@ describe("anchored boats", () => {
     const w = 70;
     game.obstacles = [{
       x: game.bird.x - w / 2, w, gapTop: 260, gapBottom: GROUND_Y, bottom: "none", color: "#000", seed: 1,
-      passed: false, splats: [], tabloid: null, anchor: true,
+      passed: false, splats: [], tabloid: null, anchor: true, drop: null,
     }];
     Object.assign(game.bird, { y, vy: 0 });
     game.puffInput = config.oceanHoverPuff;
@@ -208,6 +237,104 @@ describe("anchored boats", () => {
     const game = underBoat(380);
     for (let i = 0; i < 30; i++) game.step(1 / 60);
     expect(game.phase).toBe("playing");
+  });
+});
+
+describe("dropping anchors", () => {
+  const saved = { open: config.oceanAnchorOpenChance, jelly: config.oceanJellyRate };
+  afterEach(() => {
+    config.oceanAnchorOpenChance = saved.open;
+    config.oceanJellyRate = saved.jelly;
+  });
+
+  for (const open of [false, true]) {
+    it(`come to rest ${open ? "on the sea floor" : "on the coral or rock"}, leaving a gap above them`, () => {
+      config.oceanAnchorOpenChance = open ? 1 : 0;
+      const game = new Game(1000);
+      const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
+      const hullBottom = SURFACE_Y + BOAT_DRAFT;
+      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"](true);
+      for (const o of game.obstacles) {
+        const d = o.drop!;
+        expect(d.state).toBe("hanging");
+        expect(open ? o.bottom === "none" : o.bottom === "coral" || o.bottom === "rock").toBe(true);
+        expect(d.to).toBe(open ? GROUND_Y + 6 : o.gapBottom);
+        // Hanging, it's like any anchor: the gap is below it.
+        for (const r of obstacleRects(o)) expect(r.y + r.h <= o.gapTop + 1e-6 || r.y >= o.gapBottom - 1e-6).toBe(true);
+        // Down, the chain has ripped: the way through is between the stub on the hull and the anchor.
+        const above = d.to - ANCHOR_H;
+        Object.assign(d, { state: "down", y: d.to, chain: above });
+        expect(above - ANCHOR_RIP_Y).toBeGreaterThanOrEqual(gap);
+        const rects = obstacleRects(o);
+        for (const r of rects) expect(r.y + r.h <= ANCHOR_RIP_Y + 1e-6 || r.y >= above - 1e-6).toBe(true);
+        // The stub is still a hit.
+        expect(rects.some((r) => r.y <= hullBottom && r.y + r.h >= ANCHOR_RIP_Y - 1e-6 && r.w < 20)).toBe(true);
+      }
+    });
+  }
+
+  it("rip the chain, which is still a hit as it falls with the anchor", () => {
+    const game = new Game(1000);
+    game["spawnOceanObstacle"](true);
+    const o = game.obstacles[0];
+    const d = o.drop!;
+    // Hanging, the chain runs from the hull to the anchor.
+    const chain = (rects: ReturnType<typeof obstacleRects>) => rects.filter((r) => r.w === 10);
+    expect(chain(obstacleRects(o))).toHaveLength(1);
+    expect(chain(obstacleRects(o))[0].y).toBe(SURFACE_Y + BOAT_DRAFT);
+    // Falling: the stub, and the torn-off piece from its top end down to the anchor.
+    Object.assign(d, { state: "falling", y: o.gapTop + 40, chain: ANCHOR_RIP_Y + 40 });
+    const pieces = chain(obstacleRects(o)).sort((a, b) => a.y - b.y);
+    expect(pieces).toHaveLength(2);
+    expect(pieces[0].y + pieces[0].h).toBe(ANCHOR_RIP_Y);
+    expect(pieces[1].y).toBe(ANCHOR_RIP_Y + 40);
+    expect(pieces[1].y + pieces[1].h).toBe(d.y - 12);
+  });
+
+  /** In the ocean, alone with a boat far ahead that will drop its anchor (over open water); the fish hovers at `y`. */
+  function towardDrop(y: number): { game: Game; o: Obstacle } {
+    config.oceanJellyRate = 0;
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    expect(game.stage).toBe("ocean");
+    const w = 70;
+    const o: Obstacle = {
+      x: game.width - 160, w, gapTop: 260, gapBottom: GROUND_Y, bottom: "none", color: "#000", seed: 1,
+      passed: false, splats: [], tabloid: null, anchor: true, drop: { state: "hanging", t: 0, y: 260, to: GROUND_Y + 6, chain: ANCHOR_RIP_Y },
+    };
+    game.obstacles = [o];
+    Object.assign(game.bird, { y, vy: 0 });
+    game.puffInput = config.oceanHoverPuff;
+    return { game, o };
+  }
+
+  /** Steps until the anchor is behind the fish; returns the drop states seen and the one as the fish reached it. */
+  function swimPast(game: Game, o: Obstacle): { seen: Set<string>; onArrival: string | undefined } {
+    const seen = new Set<string>();
+    let onArrival: string | undefined;
+    for (let i = 0; i < 60 * 10 && game.phase === "playing" && o.x + o.w > game.bird.x - 60; i++) {
+      game.step(1 / 60);
+      game.obstacles = game.obstacles.filter((x) => x === o);
+      game.angler = null;
+      seen.add(o.drop!.state);
+      if (onArrival === undefined && o.x + o.w / 2 - ANCHOR_W / 2 <= game.bird.x + game.hitRadius) onArrival = o.drop!.state;
+    }
+    return { seen, onArrival };
+  }
+
+  it("warn, fall, and are down before the fish gets there", () => {
+    // Where the anchor hung: it would hit the fish, but it's gone by the time the fish arrives.
+    const { game, o } = towardDrop(230);
+    const { seen, onArrival } = swimPast(game, o);
+    expect([...seen]).toEqual(expect.arrayContaining(["warning", "falling", "down"]));
+    expect(onArrival).toBe("down");
+    expect(game.phase).toBe("playing");
+  });
+
+  it("block the way under them once they're down", () => {
+    const { game, o } = towardDrop(455);
+    swimPast(game, o);
+    expect(game.phase).not.toBe("playing");
   });
 });
 
