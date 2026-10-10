@@ -113,7 +113,8 @@ export interface Rect {
   h: number;
 }
 
-export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "coral" | "rock";
+/** "none": open water down to the sea floor (only under an anchor). */
+export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "coral" | "rock" | "none";
 
 export interface Splat {
   dx: number;
@@ -134,6 +135,8 @@ export interface Obstacle {
   splats: Splat[];
   /** Set when `bottom` is "billboard": the published front page it shows. */
   tabloid: Tabloid | null;
+  /** Ocean: a boat floats at the surface with its anchor hanging down to `gapTop`. */
+  anchor: boolean;
 }
 
 /** A paparazzo's photo that made it to print. `photoId` keys the image main.ts captured. */
@@ -1031,7 +1034,8 @@ export class Game {
     const { x, y } = this.bird;
     const r = this.hitRadius;
     for (const o of this.obstacles) {
-      if (o.x > x + 80 || o.x + o.w < x - 80) continue;
+      const span = obstacleSpan(o);
+      if (span.left > x + 80 || span.right < x - 80) continue;
       for (const rect of obstacleRects(o)) if (circleRect(x, y, r, rect)) return true;
     }
     for (const l of this.powerLines) {
@@ -1220,7 +1224,10 @@ export class Game {
       const sx = this.width + 50;
       const clear =
         this.shore?.kind !== "exit" &&
-        this.obstacles.every((o) => o.x > sx + 70 || o.x + o.w < sx - 70) &&
+        this.obstacles.every((o) => {
+          const span = obstacleSpan(o);
+          return span.left > sx + 70 || span.right < sx - 70;
+        }) &&
         (this.gateSpawned || this.nextObstacleAt - this.distance > 220);
       if (clear) {
         this.jellySpawnAcc = (Math.random() - 0.5) * 0.6;
@@ -1516,10 +1523,10 @@ export class Game {
 
   private updateObstacles(dt: number, speed: number): void {
     for (const o of this.obstacles) o.x -= speed * dt;
-    this.obstacles = this.obstacles.filter((o) => o.x + o.w > -60);
+    this.obstacles = this.obstacles.filter((o) => obstacleSpan(o).right > -60);
 
     for (const o of this.obstacles) {
-      if (!o.passed && o.x + o.w < this.bird.x - BIRD_RADIUS) o.passed = true;
+      if (!o.passed && obstacleSpan(o).right < this.bird.x - BIRD_RADIUS) o.passed = true;
     }
 
     if (this.phase !== "playing") return;
@@ -1575,19 +1582,33 @@ export class Game {
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid,
+      passed: false, splats: [], tabloid, anchor: false,
     });
   }
 
+  /**
+   * Coral or a rock from the sea floor, or a boat whose anchor hangs down from
+   * the surface: over coral or a rock (a gap between them), or over open water
+   * (dive under it).
+   */
   private spawnOceanObstacle(): void {
     const gap = ramp(config.oceanGap, config.oceanGapMin, this.difficulty);
-    const center = this.pickGapCenter(gap, SURFACE_Y, 40, config.oceanGapJump);
-    const bottom: BottomKind = pick(["coral", "coral", "rock"]);
+    // Not the last one: it can still be on screen when the fish leaps out, and
+    // its boat would vanish from the harbour as the stage switches.
+    const last = this.stageObstacles >= Math.round(config.oceanObstacles) - 1;
+    const anchor = !last && Math.random() < config.oceanAnchorChance;
+    const open = anchor && Math.random() < config.oceanAnchorOpenChance;
+    // The boat, the shortest chain and the anchor itself all sit above the gap.
+    const center = anchor
+      ? this.pickGapCenter(gap, ANCHOR_TOP_MIN, 10, config.oceanGapJump, open ? 0 : 40)
+      : this.pickGapCenter(gap, SURFACE_Y, 40, config.oceanGapJump);
+    const bottom: BottomKind = open ? "none" : pick(["coral", "coral", "rock"]);
     const w = bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
     this.obstacles.push({
-      x: this.width + 40, w, gapTop: center - gap / 2, gapBottom: center + gap / 2,
+      x: this.width + 40, w, gapTop: center - gap / 2,
+      gapBottom: open ? GROUND_Y : center + gap / 2,
       bottom, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid: null,
+      passed: false, splats: [], tabloid: null, anchor,
     });
   }
 
@@ -2394,7 +2415,7 @@ export class Game {
     const church: Obstacle = {
       x: churchX, w: CHURCH_W, gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom: "church", color: "#f4ecdc", seed: Math.random() * 1000,
-      passed: false, splats: [], tabloid: null,
+      passed: false, splats: [], tabloid: null, anchor: false,
     };
     this.obstacles.push(church);
 
@@ -2871,8 +2892,53 @@ export function bouquetHand(bride: Target): { x: number; y: number } {
   return { x: bride.x + bride.facing * 10, y: bride.y - bride.h * 0.55 };
 }
 
-/** Collision rectangles for an obstacle, shared by rendering and physics. */
+/** The anchor's boat: width, and how far its hull reaches below the surface (its deck is BOAT_FREEBOARD above). */
+export const BOAT_W = 150;
+export const BOAT_DRAFT = 22;
+export const BOAT_FREEBOARD = 18;
+/** The anchor hangs with its crown at the gap's top edge. */
+export const ANCHOR_W = 60;
+export const ANCHOR_H = 66;
+/** The shortest chain between the hull and the anchor's ring. */
+const ANCHOR_MIN_CHAIN = 16;
+/** The highest an anchored obstacle's gap can start. */
+const ANCHOR_TOP_MIN = SURFACE_Y + BOAT_DRAFT + ANCHOR_MIN_CHAIN + ANCHOR_H;
+
+/** Horizontal extent of an obstacle, including an anchor's boat (which is wider than the column). */
+export function obstacleSpan(o: Obstacle): { left: number; right: number } {
+  if (!o.anchor) return { left: o.x, right: o.x + o.w };
+  const cx = o.x + o.w / 2;
+  return { left: Math.min(o.x, cx - BOAT_W / 2), right: Math.max(o.x + o.w, cx + BOAT_W / 2) };
+}
+
+/** Collision rectangles for an anchor and its boat: hull, chain and shank, stock, arms. */
+function anchorRects(o: Obstacle): Rect[] {
+  const cx = o.x + o.w / 2;
+  const hullBottom = SURFACE_Y + BOAT_DRAFT;
+  const top = o.gapTop - ANCHOR_H;
+  return [
+    // The bow and the transom curve up toward the keel: only the hull's middle counts.
+    { x: cx - BOAT_W / 2 + 20, y: SURFACE_Y - BOAT_FREEBOARD, w: BOAT_W - 32, h: BOAT_FREEBOARD + BOAT_DRAFT },
+    { x: cx - 5, y: hullBottom, w: 10, h: o.gapTop - 12 - hullBottom },
+    { x: cx - 21, y: top + 15, w: 42, h: 9 },
+    // The arms curve up to the flukes: a wide band above, the crown below.
+    { x: cx - ANCHOR_W / 2, y: o.gapTop - 36, w: ANCHOR_W, h: 22 },
+    { x: cx - 16, y: o.gapTop - 14, w: 32, h: 14 },
+  ];
+}
+
+/**
+ * Collision rectangles for an obstacle, shared by rendering and physics. The
+ * bottom part comes first (rendering takes it as the column), then an anchor's.
+ */
 export function obstacleRects(o: Obstacle): Rect[] {
+  const rects: Rect[] = [];
+  if (o.bottom !== "none") rects.push(...bottomRects(o));
+  if (o.anchor) rects.push(...anchorRects(o));
+  return rects;
+}
+
+function bottomRects(o: Obstacle): Rect[] {
   const rects: Rect[] = [];
   if (o.bottom === "church") {
     const { cx, towerTop, naveTop } = churchGeometry(o);

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { BIRD_RADIUS, GROUND_Y, Game, WATER_Y } from "./game";
+import { afterEach, describe, expect, it } from "vitest";
+import { config, ramp } from "./config";
+import { ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, WATER_Y, obstacleRects } from "./game";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
 function atHarbour(edge: number, y: number, vy: number): Game {
@@ -66,4 +67,63 @@ describe("leaping out", () => {
       expect(game.bird.y + BIRD_RADIUS).toBeLessThan(GROUND_Y - 100);
     });
   }
+});
+
+describe("anchored boats", () => {
+  const saved = { chance: config.oceanAnchorChance, open: config.oceanAnchorOpenChance, jelly: config.oceanJellyRate };
+  afterEach(() => {
+    config.oceanAnchorChance = saved.chance;
+    config.oceanAnchorOpenChance = saved.open;
+    config.oceanJellyRate = saved.jelly;
+  });
+
+  for (const open of [false, true]) {
+    it(`keep the gap clear ${open ? "over open water" : "over coral and rocks"}`, () => {
+      config.oceanAnchorChance = 1;
+      config.oceanAnchorOpenChance = open ? 1 : 0;
+      const game = new Game(1000);
+      const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
+      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"]();
+      // (stageObstacles stays 0 here, so none of them is the stage's last.)
+      for (const o of game.obstacles) {
+        expect(o.anchor).toBe(true);
+        expect(o.bottom === "none").toBe(open);
+        expect(o.gapBottom).toBeLessThanOrEqual(GROUND_Y);
+        expect(o.gapBottom - o.gapTop).toBeGreaterThanOrEqual(gap - 1e-6);
+        // The boat sits on the surface, and the anchor hangs below it, above the gap.
+        expect(o.gapTop - SURFACE_Y).toBeGreaterThan(ANCHOR_H);
+        const rects = obstacleRects(o);
+        expect(Math.min(...rects.map((r) => r.y))).toBeLessThan(SURFACE_Y);
+        for (const r of rects) expect(r.y + r.h <= o.gapTop + 1e-6 || r.y >= o.gapBottom - 1e-6).toBe(true);
+      }
+    });
+  }
+
+  /** In the ocean, alone with an anchor over open water right at the fish, which hovers at `y`. */
+  function underBoat(y: number): Game {
+    config.oceanJellyRate = 0;
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    expect(game.stage).toBe("ocean");
+    const w = 70;
+    game.obstacles = [{
+      x: game.bird.x - w / 2, w, gapTop: 260, gapBottom: GROUND_Y, bottom: "none", color: "#000", seed: 1,
+      passed: false, splats: [], tabloid: null, anchor: true,
+    }];
+    Object.assign(game.bird, { y, vy: 0 });
+    game.puffInput = config.oceanHoverPuff;
+    return game;
+  }
+
+  it("stop a fish hugging the surface", () => {
+    const game = underBoat(SURFACE_Y);
+    game.step(1 / 60);
+    expect(game.phase).not.toBe("playing");
+  });
+
+  it("let a fish swim under the anchor", () => {
+    const game = underBoat(380);
+    for (let i = 0; i < 30; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+  });
 });
