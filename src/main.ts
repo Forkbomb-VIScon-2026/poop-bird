@@ -7,7 +7,7 @@ import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
-import { Game } from "./game";
+import { Game, wireAt } from "./game";
 import { Renderer, drawFrontPage, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
@@ -1174,6 +1174,26 @@ function frame(now: number): void {
   if (activePuffCalibration === null) {
     sound.setBurble(state === "playing" && game.swimming && !game.stunned ? game.fish.puff : -1);
   }
+
+  // Only audible during active city gameplay, and only when part of a line
+  // is actually visible. Distance is to the nearest point on any visible wire.
+  let powerLineProximity = 0;
+  if (state === "playing" && game.stage === "city" && game.phase === "playing") {
+    const { x, y } = game.bird;
+    const audibleRange = config.powerLineAudioRange;
+    for (const line of game.powerLines) {
+      const right = line.x + line.span * (line.poles - 1);
+      if (right < 0 || line.x > game.width) continue;
+      const nearestX = Math.max(0, Math.min(game.width, Math.max(line.x, Math.min(right, x))));
+      for (let i = 0; i < line.wires.length; i++) {
+        const wire = wireAt(line, i, nearestX);
+        if (!wire) continue;
+        const distance = Math.hypot(nearestX - x, wire.y - y);
+        powerLineProximity = Math.max(powerLineProximity, 1 - distance / audibleRange);
+      }
+    }
+  }
+  sound.setPowerLineProximity(powerLineProximity);
 
   updateHud();
   updateStrainBars();
