@@ -1,0 +1,69 @@
+{
+  "_comment": "Everything the bird can say in the player's voice, per game moment. The voice server speaks only these (by id, cue:index), so it can't be used to put arbitrary words in someone's mouth. src/voice.ts picks a few per player.",
+  "intro": [
+    "Wait. Is that my voice?",
+    "Okay. Deep breath. I can do this.",
+    "Hello? Is this thing on?"
+  ],
+  "takeoff": [
+    "Here we go!",
+    "Up, up and away!",
+    "Let's do this!"
+  ],
+  "strain": [
+    "Push! Push harder!",
+    "Oh, it's coming. It's coming!",
+    "Nnngh. I think I need a doctor.",
+    "Don't look at me!"
+  ],
+  "bigPoop": [
+    "Ahh. Much better.",
+    "Oh wow, that was a big one!",
+    "Bombs away!"
+  ],
+  "hit": [
+    "Bullseye!",
+    "Sorry! Not sorry.",
+    "Right on the head!",
+    "Special delivery!"
+  ],
+  "accident": [
+    "Oh no. Not in front of everyone!",
+    "That was not supposed to happen.",
+    "Nobody saw that. Right?"
+  ],
+  "photo": [
+    "No photos, please!",
+    "Delete that picture right now!"
+  ],
+  "wedding": [
+    "Oh, a wedding! Perfect timing.",
+    "Congratulations! I brought a gift."
+  ],
+  "weddingRuined": [
+    "Best wedding ever!",
+    "You may now kiss the bride."
+  ],
+  "dive": [
+    "Wait, I can't swim!",
+    "Why is there so much water?"
+  ],
+  "pop": [
+    "I think I just popped.",
+    "Ouch! That stings!"
+  ],
+  "balloon": [
+    "Pop goes the balloon!",
+    "Sorry about your balloon!"
+  ],
+  "crash": [
+    "Mommy!",
+    "This is the worst day of my life.",
+    "I regret nothing.",
+    "Tell my mom I was brave."
+  ],
+  "newBest": [
+    "New record! I'm a legend!",
+    "Did you see that? I'm the best!"
+  ]
+}

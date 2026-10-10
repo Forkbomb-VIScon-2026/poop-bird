@@ -7,7 +7,7 @@ WORKDIR /app
 COPY voice/requirements.txt voice/requirements.txt
 RUN pip install --no-cache-dir -r voice/requirements.txt \
       --extra-index-url https://download.pytorch.org/whl/cpu
-COPY voice/server.py voice/test_server.py voice/
+COPY voice/server.py voice/test_server.py voice/lines.json voice/
 RUN useradd --create-home app && mkdir /cache && chown app:app /cache
 USER app
 ENV HF_HOME=/cache PORT=8790 PYTHONUNBUFFERED=1

@@ -13,6 +13,8 @@
 // The pure parts (line picking, the director, WAV encoding, the loudness
 // check) are unit-tested in voice.test.ts.
 
+import CORPUS from "../voice/lines.json";
+
 /** Game moments the bird can comment on. */
 export type VoiceCue =
   | "intro" | "takeoff" | "strain" | "bigPoop" | "hit" | "accident" | "photo" | "wedding"
@@ -23,23 +25,11 @@ export const VOICE_SCRIPT =
   "Hello everyone! I'm a very proud bird, and today I'm flying over the whole city. " +
   "Watch me go. This is going to be absolutely amazing!";
 
-/** Everything the bird might say, per cue. Each player gets a random few (pickLines). */
-export const VOICE_LINES: Record<VoiceCue, readonly string[]> = {
-  intro: ["Wait. Is that my voice?", "Okay. Deep breath. I can do this.", "Hello? Is this thing on?"],
-  takeoff: ["Here we go!", "Up, up and away!", "Let's do this!"],
-  strain: ["Push! Push harder!", "Oh, it's coming. It's coming!", "Nnngh. I think I need a doctor.", "Don't look at me!"],
-  bigPoop: ["Ahh. Much better.", "Oh wow, that was a big one!", "Bombs away!"],
-  hit: ["Bullseye!", "Sorry! Not sorry.", "Right on the head!", "Special delivery!"],
-  accident: ["Oh no. Not in front of everyone!", "That was not supposed to happen.", "Nobody saw that. Right?"],
-  photo: ["No photos, please!", "Delete that picture right now!"],
-  wedding: ["Oh, a wedding! Perfect timing.", "Congratulations! I brought a gift."],
-  weddingRuined: ["Best wedding ever!", "You may now kiss the bride."],
-  dive: ["Wait, I can't swim!", "Why is there so much water?"],
-  pop: ["I think I just popped.", "Ouch! That stings!"],
-  balloon: ["Pop goes the balloon!", "Sorry about your balloon!"],
-  crash: ["Mommy!", "This is the worst day of my life.", "I regret nothing.", "Tell my mom I was brave."],
-  newBest: ["New record! I'm a legend!", "Did you see that? I'm the best!"],
-};
+/**
+ * Everything the bird might say, per cue (voice/lines.json, shared with the
+ * server, which speaks nothing else). Each player gets a random few (pickLines).
+ */
+export const VOICE_LINES: Record<VoiceCue, readonly string[]> = CORPUS;
 
 /**
  * How many lines each cue gets, in the order they are needed: the intro plays
@@ -53,6 +43,7 @@ const CUE_PLAN: readonly [VoiceCue, number][] = [
 ];
 
 export interface VoiceLine {
+  /** `cue:index` into VOICE_LINES; the server looks the text up by it. */
   id: string;
   cue: VoiceCue;
   text: string;
@@ -61,12 +52,9 @@ export interface VoiceLine {
 /** A random selection of lines for one player, in generation order. */
 export function pickLines(random: () => number = Math.random): VoiceLine[] {
   const picked = CUE_PLAN.map(([cue, count]) => {
-    const pool = [...VOICE_LINES[cue]];
+    const pool = VOICE_LINES[cue].map((text, index) => ({ id: `${cue}:${index}`, cue, text }));
     const lines: VoiceLine[] = [];
-    for (let i = 0; i < count && pool.length; i++) {
-      const [text] = pool.splice(Math.floor(random() * pool.length), 1);
-      lines.push({ id: `${cue}-${i}`, cue, text });
-    }
+    for (let i = 0; i < count && pool.length; i++) lines.push(...pool.splice(Math.floor(random() * pool.length), 1));
     return lines;
   });
   const rounds = Math.max(...picked.map((l) => l.length));
@@ -313,7 +301,7 @@ export async function fetchLines(
 ): Promise<void> {
   const body = JSON.stringify({
     voice: toBase64(encodeWav(recording, VOICE_RATE)),
-    lines: lines.map(({ id, text }) => ({ id, text })),
+    lines: lines.map((l) => l.id),
   });
   const res = await fetch(`${API}/lines`, { method: "POST", body, signal, headers: { "Content-Type": "application/json" } });
   if (!res.ok || !res.body) {

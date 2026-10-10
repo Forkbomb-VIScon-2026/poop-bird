@@ -24,10 +24,11 @@ describe("pickLines", () => {
     const lines = pickLines(seeded(3));
     expect(lines[0].cue).toBe("intro");
     // Every cue's first line comes before any second line.
-    const firstSecond = lines.findIndex((l) => l.id.endsWith("-1"));
-    expect(new Set(lines.slice(0, firstSecond).map((l) => l.cue)).size).toBe(firstSecond);
+    const seen = new Set<string>();
+    const firstSecond = lines.findIndex((l) => seen.has(l.cue) || !seen.add(l.cue));
+    expect(firstSecond).toBe(new Set(lines.map((l) => l.cue)).size);
     expect(new Set(lines.map((l) => l.id)).size).toBe(lines.length);
-    for (const l of lines) expect(VOICE_LINES[l.cue]).toContain(l.text);
+    for (const l of lines) expect(VOICE_LINES[l.cue][Number(l.id.split(":")[1])]).toBe(l.text);
     const strain = lines.filter((l) => l.cue === "strain");
     expect(strain).toHaveLength(2);
     expect(strain[0].text).not.toBe(strain[1].text);
@@ -36,15 +37,15 @@ describe("pickLines", () => {
   it("keeps the request small enough for the server", () => {
     const lines = pickLines();
     expect(lines.length).toBeLessThanOrEqual(24);
-    for (const l of lines) expect(l.text.length).toBeLessThanOrEqual(160);
+    for (const l of lines) expect(l.id).toMatch(/^[a-zA-Z]+:\d+$/);
   });
 });
 
 describe("VoiceDirector", () => {
   const lines: VoiceLine[] = [
-    { id: "hit-0", cue: "hit", text: "Bullseye!" },
-    { id: "hit-1", cue: "hit", text: "Sorry! Not sorry." },
-    { id: "crash-0", cue: "crash", text: "Mommy!" },
+    { id: "hit:0", cue: "hit", text: "Bullseye!" },
+    { id: "hit:1", cue: "hit", text: "Sorry! Not sorry." },
+    { id: "crash:0", cue: "crash", text: "Mommy!" },
   ];
   const make = () => new VoiceDirector({ gap: 3, cueCooldown: 10 }, seeded(7));
 

@@ -565,8 +565,9 @@ when the voice server is up.
 
 **How.** `src/voice.ts` records the mic (AudioWorklet, resampled to 24 kHz)
 and checks there's enough clear speech. It picks about 18 lines at random
-from `VOICE_LINES` (two for the frequent moments) and sends them with the
-recording to `voice/server.py`. That runs [Kyutai's Pocket
+from `voice/lines.json` (two for the frequent moments) and sends their ids
+with the recording to `voice/server.py`, which speaks only lines from that
+file, so it can't be made to say anything else in someone's voice. That runs [Kyutai's Pocket
 TTS](https://github.com/kyutai-labs/pocket-tts) (100M parameters, MIT) on the
 VM's CPU, two cores: it clones the voice from the recording (~2 s) and speaks
 each line (~1.5 s each), streaming them back one by one (NDJSON) in the order

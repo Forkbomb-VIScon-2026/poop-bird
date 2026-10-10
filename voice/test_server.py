@@ -9,7 +9,7 @@ import unittest
 
 import numpy as np
 
-from server import MAX_LINES, decode_wav, encode_wav, normalize, parse_request, trim_silence
+from server import LINES, MAX_LINES, decode_wav, encode_wav, normalize, parse_request, trim_silence
 
 RATE = 24000
 
@@ -21,7 +21,7 @@ def tone(seconds: float, amp: float = 0.5) -> np.ndarray:
 
 def request(samples=None, lines=None) -> bytes:
     voice = base64.b64encode(encode_wav(tone(5) if samples is None else samples, RATE)).decode()
-    return json.dumps({"voice": voice, "lines": lines or [{"id": "a", "text": "Hello!"}]}).encode()
+    return json.dumps({"voice": voice, "lines": lines or ["crash:0"]}).encode()
 
 
 class AudioTest(unittest.TestCase):
@@ -47,21 +47,26 @@ class AudioTest(unittest.TestCase):
 
 class ParseTest(unittest.TestCase):
     def test_valid(self):
-        samples, rate, lines = parse_request(request(lines=[{"id": "x", "text": "  Push!  "}]))
+        samples, rate, lines = parse_request(request(lines=["strain:0", "crash:0"]))
         self.assertEqual(rate, RATE)
         self.assertAlmostEqual(len(samples) / rate, 5, delta=0.01)
-        self.assertEqual(lines, [{"id": "x", "text": "Push!"}])
+        self.assertEqual(lines, [{"id": "strain:0", "text": LINES["strain:0"]}, {"id": "crash:0", "text": LINES["crash:0"]}])
+
+    def test_corpus(self):
+        self.assertEqual(LINES["crash:0"], "Mommy!")
+        self.assertFalse(any(k.startswith("_") for k in LINES))
 
     def test_rejects(self):
         cases = {
             "not json": b"nope",
             "no lines": json.dumps({"voice": ""}).encode(),
-            "too many lines": request(lines=[{"id": str(i), "text": "hi"} for i in range(MAX_LINES + 1)]),
-            "empty text": request(lines=[{"id": "a", "text": "  "}]),
-            "long text": request(lines=[{"id": "a", "text": "x" * 500}]),
+            "too many lines": request(lines=list(LINES)[: MAX_LINES + 1]),
+            "own text": request(lines=[{"id": "a", "text": "Say whatever I want"}]),
+            "unknown id": request(lines=["crash:99"]),
+            "duplicate": request(lines=["crash:0", "crash:0"]),
             "too short": request(samples=tone(0.5)),
             "too long": request(samples=tone(40)),
-            "not base64": json.dumps({"voice": "%%%", "lines": [{"id": "a", "text": "hi"}]}).encode(),
+            "not base64": json.dumps({"voice": "%%%", "lines": ["crash:0"]}).encode(),
         }
         for name, body in cases.items():
             with self.subTest(name), self.assertRaises(ValueError):

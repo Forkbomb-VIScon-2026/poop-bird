@@ -11,9 +11,12 @@ and the cloned voice is dropped once the lines are made.
 
 Endpoints (Caddy routes /api/voice/* here):
   GET  /api/voice/health   {"ready": bool, "cloning": bool, "busy": bool}
-  POST /api/voice/lines    JSON {"voice": base64 WAV, "lines": [{"id", "text"}]}
+  POST /api/voice/lines    JSON {"voice": base64 WAV, "lines": ["crash:0", ...]}
                            → 200 NDJSON: {"id", "wav": base64 WAV} per line,
                              then {"done": true}; or {"error": ...} with a 4xx/5xx
+
+It speaks only the game's own lines (lines.json, by id): a caller can't make
+it say anything else in someone's voice.
 
 The cloning weights are gated on Hugging Face: accept the terms at
 https://huggingface.co/kyutai/pocket-tts and pass a token as HF_TOKEN. Without
@@ -31,6 +34,7 @@ import os
 import threading
 import time
 import wave
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
@@ -46,11 +50,25 @@ FALLBACK_VOICE = os.environ.get("VOICE_FALLBACK_VOICE", "")
 
 MAX_BODY = 4 * 1024 * 1024
 MAX_LINES = 24
-MAX_LINE_CHARS = 160
 MIN_VOICE_SECONDS = 2.0
 MAX_VOICE_SECONDS = 30.0
 # Requests waiting behind the one being served; more get a 429.
 MAX_WAITING = 2
+
+
+
+def load_lines(path: Path = Path(__file__).with_name("lines.json")) -> dict[str, str]:
+    """The game's lines by id ("crash:0"), from lines.json (shared with src/voice.ts)."""
+    corpus = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        f"{cue}:{i}": text
+        for cue, texts in corpus.items()
+        if not cue.startswith("_")
+        for i, text in enumerate(texts)
+    }
+
+
+LINES = load_lines()
 
 
 # --- Audio helpers (pure, unit-tested) --------------------------------------------
@@ -105,8 +123,11 @@ def normalize(samples: np.ndarray, peak: float = 0.9) -> np.ndarray:
     return samples if top < 1e-4 else samples * (peak / top)
 
 
-def parse_request(body: bytes) -> tuple[np.ndarray, int, list[dict[str, str]]]:
-    """Validates a /lines request. Raises ValueError with a message for the client."""
+def parse_request(body: bytes, known: dict[str, str] = LINES) -> tuple[np.ndarray, int, list[dict[str, str]]]:
+    """
+    Validates a /lines request and looks up the lines' texts. Raises ValueError
+    with a message for the client.
+    """
     try:
         req = json.loads(body)
     except json.JSONDecodeError as e:
@@ -116,16 +137,13 @@ def parse_request(body: bytes) -> tuple[np.ndarray, int, list[dict[str, str]]]:
     lines = req.get("lines")
     if not isinstance(lines, list) or not 1 <= len(lines) <= MAX_LINES:
         raise ValueError(f"lines: 1 to {MAX_LINES} entries")
+    if len(set(map(str, lines))) != len(lines):
+        raise ValueError("lines: no duplicates")
     clean: list[dict[str, str]] = []
-    for line in lines:
-        if not isinstance(line, dict):
-            raise ValueError("each line needs an id and a text")
-        lid, text = line.get("id"), line.get("text")
-        if not isinstance(lid, str) or not isinstance(text, str) or not lid or not text.strip():
-            raise ValueError("each line needs an id and a text")
-        if len(text) > MAX_LINE_CHARS or len(lid) > 64:
-            raise ValueError(f"lines are at most {MAX_LINE_CHARS} characters")
-        clean.append({"id": lid, "text": text.strip()})
+    for lid in lines:
+        if not isinstance(lid, str) or lid not in known:
+            raise ValueError("lines: ids of the game's lines (lines.json)")
+        clean.append({"id": lid, "text": known[lid]})
     voice = req.get("voice")
     if not isinstance(voice, str):
         raise ValueError("voice: base64 WAV")
