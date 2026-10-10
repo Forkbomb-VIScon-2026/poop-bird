@@ -164,14 +164,19 @@ export class Renderer {
     if (!octx) return;
     octx.setTransform(1, 0, 0, 1, 0, 0);
     octx.clearRect(0, 0, w, h);
-    // Room for the fully puffed bird plus its sweat drops; its belly rests on the bottom edge.
+    const charge = Math.max(0, Math.min(1, strain));
+    // Room for the fully puffed bird plus its sweat drops.
     const s = h / (BIRD_RADIUS * 3.2);
     const half = BIRD_RADIUS * 1.6 * s;
-    const x = half + Math.max(0, Math.min(1, at)) * Math.max(0, w - half * 2);
-    octx.setTransform(s, 0, 0, s, x, h - BIRD_RADIUS * 1.15 * s);
+    // Over the fill's end, but whole on the canvas near either end of the bar.
+    const x = Math.max(half, Math.min(w - half, at * w));
+    // The bird puffs up around its centre (drawBird), so lift it as it grows: its belly
+    // (plus the outline) stays resting on the bottom edge, never sinking into the bar.
+    const belly = BIRD_RADIUS * (1 + charge * 0.28) + 2;
+    octx.setTransform(s, 0, 0, s, x, h - belly * s);
     const look: BirdLook = {
       bird: { x: 0, y: 0, vy: 0, rot: Math.sin(time * 2.5) * 0.06, stretch: 1, stretchV: 0, relief: relief ? 1 : 0, flap: 0 },
-      charge: { ...initialChargeState(), charge: Math.max(0, Math.min(1, strain)) },
+      charge: { ...initialChargeState(), charge },
       stunned: false,
       phase: "playing",
       overstrainProgress: 0,

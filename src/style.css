@@ -815,12 +815,12 @@ svg.face.calib-face {
   margin-top: 0;
 }
 
-/* Spans the track above the bar; the bird sits on the bar, over the fill's end. */
+/* Spans the track above the bar; the bird sits on top of the bar, over the fill's end. */
 .meter-bird {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(100% - 6px);
+  bottom: 100%;
   width: 100%;
   height: var(--meter-bird-h);
   z-index: 1;
