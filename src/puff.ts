@@ -10,8 +10,13 @@
 // change. The puff phase uses robust stats: lips purse for a moment as the
 // cheeks fill, and that blip must not be what the fish listens to.
 //
+// The gesture is the "pufferfish face": cheeks puffed with the lips pursed.
+// A plain puff barely moves what MediaPipe reports for some people, while
+// pursed lips light up mouthPucker, so mouthPucker through a fixed range
+// (the fallback) counts too, with or without a calibration.
+//
 // Unlike strain there is no hysteresis: the fish needs the analog value.
-//   features → rawPuff (weighted, normalized; or the fallback range)
+//   features → rawPuff (max of weighted/normalized and the fallback range)
 //   → stepPuff (time-corrected EMA, face-loss grace)
 //   → max(face puff, key puff) → Game.puffInput
 
@@ -153,13 +158,16 @@ export function fallbackPuff(score: number, min: number, max: number): number {
 }
 
 /**
- * The fallback's input: pressed lips (mouthPress), which stay pressed while
- * the cheeks are held full, or cheekPuff should a future model make it work.
- * Not mouthPucker: that only flickers as the cheeks fill. Geometry isn't used
- * here because its neutral values differ from face to face.
+ * The fallback's input: pursed lips (mouthPucker), the pufferfish face's
+ * signature, or cheekPuff should a future model make it work. In the face
+ * dataset mouthPucker stays near 0 while relaxed, looking around or laughing
+ * for everyone, and the pufferfish face lifts it to 0.2–1. Not mouthPress:
+ * some people rest with pressed lips (0.3 for one participant), which kept
+ * their fish afloat. Geometry isn't used here because its neutral values
+ * differ from face to face.
  */
 export function fallbackPuffScore(features: FeatureVector): number {
-  return Math.max(features.cheekPuff, features.mouthPress);
+  return Math.max(features.cheekPuff, features.mouthPucker);
 }
 
 export interface RawPuffParams {
@@ -168,10 +176,15 @@ export interface RawPuffParams {
   oceanFallbackMax: number;
 }
 
-/** Unsmoothed puff 0..1: the weighted puff calibration if there is one, else the fallback range. */
+/**
+ * Unsmoothed puff 0..1: the fallback range, or with a puff calibration the
+ * higher of the two. The calibration learns the player's own scale, but its
+ * hold may have been a weak or plain puff; a full pufferfish face then still
+ * reaches the top through the fallback.
+ */
 export function rawPuff(features: FeatureVector, calib: Calibration | null, p: RawPuffParams): number {
-  if (calib) return rawStrain(features, calib, p.featureClampMax);
-  return fallbackPuff(fallbackPuffScore(features), p.oceanFallbackMin, p.oceanFallbackMax);
+  const fallback = fallbackPuff(fallbackPuffScore(features), p.oceanFallbackMin, p.oceanFallbackMax);
+  return calib ? Math.max(rawStrain(features, calib, p.featureClampMax), fallback) : fallback;
 }
 
 export interface PuffState {

@@ -184,8 +184,8 @@ export const CONFIG_SPEC = {
   oceanCalibrationSeconds: { value: 3, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Puff calibration", hint: "s of the puff phase at the first dive (first calibrationSettle s ignored)" },
   oceanPuffMinSeparation: { value: 1.5, min: 0.2, max: 6, step: 0.1, group: "Ocean puff", label: "Min separation", hint: "a puff feature counts once its change exceeds this many noise units (full weight at 2×)" },
   oceanMinPuffChange: { value: 0.5, min: 0, max: 5, step: 0.05, group: "Ocean puff", label: "Min puff change", hint: "calibration quality: summed puff weights must exceed this (1 = one clearly separated feature)" },
-  oceanFallbackMin: { value: 0.06, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: relaxed", hint: "max(mouthPress, cheekPuff) mapped to puff 0 without a calibration" },
-  oceanFallbackMax: { value: 0.22, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: full puff", hint: "max(mouthPress, cheekPuff) mapped to puff 1 without a calibration" },
+  oceanFallbackMin: { value: 0.1, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Pucker: relaxed", hint: "max(mouthPucker, cheekPuff) mapped to puff 0; used with or without a calibration" },
+  oceanFallbackMax: { value: 0.5, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Pucker: full puff", hint: "max(mouthPucker, cheekPuff) mapped to puff 1; used with or without a calibration" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;

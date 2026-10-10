@@ -241,13 +241,21 @@ describe("fallbackPuff", () => {
     expect(fallbackPuff(0.2, 0.3, 0.3)).toBe(0);
   });
 
-  it("is used by rawPuff when there is no calibration, reading pressed lips (cheekPuff is dead)", () => {
-    expect(rawPuff(fv({ mouthPress: 0.3, cheekPuff: 0.00001 }), null, PARAMS)).toBeCloseTo(0.5);
-    expect(rawPuff(fv({ mouthPress: 0.05, cheekPuff: 0.3 }), null, PARAMS)).toBeCloseTo(0.5);
+  it("is used by rawPuff when there is no calibration, reading pursed lips (cheekPuff is dead)", () => {
+    expect(rawPuff(fv({ mouthPucker: 0.3, cheekPuff: 0.00001 }), null, PARAMS)).toBeCloseTo(0.5);
+    expect(rawPuff(fv({ mouthPucker: 0.05, cheekPuff: 0.3 }), null, PARAMS)).toBeCloseTo(0.5);
   });
 
-  it("ignores pursed lips, which only flicker as the cheeks fill", () => {
-    expect(rawPuff(fv({ mouthPucker: 0.9 }), null, PARAMS)).toBe(0);
+  it("ignores pressed lips, which some people rest with", () => {
+    expect(rawPuff(fv({ mouthPress: 0.9 }), null, PARAMS)).toBe(0);
+  });
+
+  it("lifts a calibrated puff to the pursed-lips level", () => {
+    const cal = buildPuffCalibration(mainCal, samples(PUFFED, 40), PARAMS)!;
+    expect(rawPuff(fv(RELAXED), cal, PARAMS)).toBeCloseTo(0, 1);
+    // The calibration hold had no pucker; a pufferfish face still reaches the top.
+    expect(rawPuff(fv({ ...RELAXED, mouthPucker: 0.6 }), cal, PARAMS)).toBe(1);
+    expect(rawPuff(fv({ ...RELAXED, mouthPucker: 0.3 }), cal, PARAMS)).toBeCloseTo(0.5);
   });
 });
 

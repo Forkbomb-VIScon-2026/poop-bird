@@ -7,7 +7,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { decodeFrames, type SegmentName, type Session } from "../../src/session";
+import { faceGeometry, type LandmarkPoint } from "../../src/puff";
+import { LANDMARK_COUNT, decodeFrames, decodeLandmarks, type SegmentName, type Session } from "../../src/session";
 import { zeroFeatures, type FeatureVector } from "../../src/strain";
 
 export interface Frame {
@@ -43,10 +44,29 @@ function features(f: Record<string, number> | null): FeatureVector | null {
   return f ? { ...zeroFeatures(), ...f } : null;
 }
 
+/**
+ * Sessions store the features as the recording build computed them. The
+ * landmark geometry is computed again here with the current faceGeometry, so
+ * geometry features added or changed since then score on every recording.
+ */
 function fromSession(s: Session, id: string): Recording {
   const segments: Recording["segments"] = {};
+  const aspect = s.device.video.width / s.device.video.height;
   for (const seg of s.segments) {
-    segments[seg.name] = decodeFrames(seg).map((fr) => ({ t: fr.t, label: fr.label, since: fr.since, f: features(fr.features) }));
+    const landmarks = decodeLandmarks(seg);
+    const per = LANDMARK_COUNT * 3;
+    segments[seg.name] = decodeFrames(seg).map((fr, i) => {
+      const f = features(fr.features);
+      if (f) {
+        const lm: LandmarkPoint[] = [];
+        for (let j = 0; j < LANDMARK_COUNT; j++) {
+          const k = i * per + j * 3;
+          lm.push({ x: landmarks[k], y: landmarks[k + 1], z: landmarks[k + 2] });
+        }
+        Object.assign(f, faceGeometry(lm, aspect));
+      }
+      return { t: fr.t, label: fr.label, since: fr.since, f };
+    });
   }
   return { id, participant: s.participant.code, holdout: isHoldout(s.participant.code), segments };
 }

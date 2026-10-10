@@ -4,7 +4,7 @@ A browser game you control by **straining your face**. The bird keeps falling;
 the only way up is to poop. Make a constipated face at your webcam to charge,
 relax to let go. Dodge the city, splat the cars, people and statues below.
 Then dive into the harbour, where the bird becomes a pufferfish that you steer
-by **puffing your cheeks**.
+by **making a pufferfish face**: cheeks puffed, lips pursed.
 
 Everything runs in the browser: face tracking runs locally with MediaPipe, and
 no video, snapshot or score leaves the device.
@@ -170,8 +170,9 @@ total distance.
   camera follows it down past the quay wall into the sea. Under water it
   gulps, loses its feathers in a burst of bubbles and becomes a deflated
   pufferfish, which then inflates. On the first dive in face mode, inflating
-  *is* the puff calibration: the world holds still with "PUFF YOUR CHEEKS!"
-  and the fish puffs up as you do (see below). Otherwise it inflates by itself
+  *is* the puff calibration: the world holds still with "PUFFERFISH FACE!"
+  (puff your cheeks and purse your lips) and the fish puffs up as you do (see
+  below). Otherwise it inflates by itself
   over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
   shows "Hold SPACE to puff up".
 - **Ocean tutorial.** A new player's first dive stops right after the bird
@@ -289,6 +290,21 @@ player sits down.
 Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 `src/strain.ts`.
 
+The gesture is the **pufferfish face**: cheeks puffed while the lips are
+pursed, like a kiss. In the face dataset a plain puff barely moved what
+MediaPipe reports for some people (no feature, blendshape or landmark,
+separated their puffs from their relaxed face), while pursed lips light up
+`mouthPucker` for everyone: near 0 while relaxed, looking around or laughing,
+0.2–1 with the pufferfish face. So the face puff is the higher of two signals:
+
+- the **pucker range**: `max(mouthPucker, cheekPuff)` mapped from
+  `oceanFallbackMin` (0.1, puff 0) to `oceanFallbackMax` (0.5, puff 1). It
+  needs no calibration, so it works from the first frame and whenever the
+  puff calibration is missing or failed.
+- the **puff calibration** below, which learns the player's own scale: some
+  people purse their lips much less than others and wouldn't get far up the
+  pucker range alone.
+
 1. **Features.** MediaPipe's `cheekPuff` blendshape stays near 0 however hard
    you puff ([google-ai-edge/mediapipe#4436](https://github.com/google-ai-edge/mediapipe/issues/4436)),
    so puff is read mostly from the face **landmarks** (`faceGeometry`): 3D
@@ -326,10 +342,10 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 5. **Quality check.** It fails on low face coverage, summed puff weights below
    `oceanMinPuffChange` (0.5, i.e. at least half a feature that clearly moved),
    or fewer than 60% of puff samples scoring above the hover point. A failure
-   never blocks the game: puff falls back to `max(mouthPress, cheekPuff)`
-   mapped through `oceanFallbackMin`..`oceanFallbackMax`, with a toast. A
-   calibration saved before these features existed has no neutral stats for
-   them, so the fish uses the fallback until you recalibrate with **C**.
+   never blocks the game: the fish then follows the pucker range alone, with a
+   toast. A calibration saved before these features existed has no neutral
+   stats for them, so the fish uses the pucker range until you recalibrate
+   with **C**.
 6. A passing puff calibration is saved like the main one, and the toast says
    which features it watches. **C** clears it, so the next dive samples again.
    After the face-loss grace, puff drops to 0 and the fish sinks.
@@ -340,7 +356,8 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 
 If the puff doesn't register, open the debug panel (`npm run dev:debug`) in the ocean: the feature
 rows show the geometry values as numbers with the relaxed-face marker, and the
-stats line "puff source" names the features the calibration picked.
+stats line "puff source" names the features the calibration picked (or
+"pucker range" without one).
 `poopBird.lastPuffAttempt` in the console holds the last attempt, including
 one that failed.
 
@@ -423,10 +440,11 @@ participant through about 3 minutes:
 
    Each break explains the next part and waits for its start button; nothing
    is recorded meanwhile. Every step beeps: high for strain or puff, low for
-   relax. The pufferfish face is a candidate gesture for the ocean: plain
-   puffs barely move what MediaPipe reports (`cheekPuff` stays 0 and the
-   geometry moves about as much as a relaxed face drifts), while pursed lips
-   light up `mouthPucker`.
+   relax. The pufferfish face is the ocean's gesture (see
+   [Puff detection](#puff-detection-ocean)): plain puffs barely move what
+   MediaPipe reports (`cheekPuff` stays 0 and the geometry moves about as much
+   as a relaxed face drifts), while pursed lips light up `mouthPucker`. The
+   plain puff script stays as a baseline.
 5. The upload, with a "Delete this session" button and a fallback to save the
    file when the upload fails. Then **Next person** starts over at consent
    with a fresh participant code (for one shared device at a collection
@@ -485,8 +503,12 @@ while relaxed, looking around and laughing, releases in the middle of a
 strain, and press and release latency. For puff it scores the plain puff
 and the pufferfish face separately, each with a calibration fitted from its
 own first hold: the median puff level while relaxed, at half and at full
-puff, how often the fish sinks while relaxed and rises while puffing, and
-false spikes. To try a
+puff, how often the fish sinks while relaxed and rises while puffing, false
+spikes, and how often it would rise while the player just looks around
+(the strain script's "look" step). Like the game, a puff calibration that
+fails its quality check isn't used. The landmark geometry is computed again
+from the recorded landmarks with the current `faceGeometry`, so a new or
+changed geometry feature scores on every recording. To try a
 detection idea, add a variant to `scripts/eval/variants.ts`; the first entry
 is what the game does today. About 1 in 5 participants are held out (picked
 by a hash of their code); score them with `npm run eval -- --holdout` only

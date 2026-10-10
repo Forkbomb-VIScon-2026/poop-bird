@@ -104,7 +104,7 @@ if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.re
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
 /** `calibration` is the default one, fitted to a quick relaxed-face read and never saved. */
 let calibrationIsDefault = false;
-/** Puff calibration (neutral vs. full puff). null = use the fixed cheekPuff fallback range. */
+/** Puff calibration (neutral vs. full puff), on top of the fixed pucker range. null = the pucker range alone. */
 let puffCalibration: Calibration | null = loadCalibration(PUFF_CALIBRATION_KEY, PUFF_FEATURES);
 /** The puff calibration ran (and passed or failed) this session; later dives skip it. Reset by C. */
 let puffCalibrationTried = false;
@@ -1149,7 +1149,7 @@ function frame(now: number): void {
       ? `${game.transition.to === "ocean" ? "city" : "ocean"} → ${game.transition.to}${game.holdTransition ? " (held)" : ""}`
       : game.stage,
     puffCalibration,
-    puffSource: puffCalibration ? `calibrated (${topFeatureLabels(puffCalibration).join(", ")})` : "fallback range",
+    puffSource: puffCalibration ? `calibrated (${topFeatureLabels(puffCalibration).join(", ")}) + pucker range` : "pucker range",
     rawPuff: mode === "face" && faceFresh() ? puffSignal.raw : 0,
     facePuff: facePuff(),
     keyPuff,

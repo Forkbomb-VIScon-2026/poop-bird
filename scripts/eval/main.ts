@@ -92,7 +92,8 @@ for (const variant of STRAIN_VARIANTS) {
 
 console.log("PUFF  median puff level while relaxed / at half puff / at full puff (ideal 0 / ~0.5 / 1);");
 console.log("      sink / rise = relaxed frames below / puff frames above the hover point (ideal 100%);");
-console.log("      spike = frames at or above the spike threshold (ideal 0). Each gesture gets its own calibration,");
+console.log("      spike = frames at or above the spike threshold (ideal 0); look = relaxed frames looking around (strain");
+console.log("      script) above the hover point (ideal 0). Each gesture gets its own calibration,");
 console.log("      from its first hold: plain puff, and the pufferfish face (puffing the cheeks while pursing the lips).\n");
 const GESTURE_TITLES: Record<PuffGesture, string> = { plain: "plain puff", fish: "pufferfish face" };
 for (const gesture of ["plain", "fish"] as const) {
@@ -108,15 +109,17 @@ for (const gesture of ["plain", "fish"] as const) {
     console.log(`## ${variant.name}, ${GESTURE_TITLES[gesture]}`);
     const row = (name: string, s: PuffScore) => [
       name, num(s.relaxed), num(s.half), num(s.full), pct(s.sink), pct(s.rise), pct(s.spikeRelaxed), pct(s.spikeHalf),
+      pct(s.look),
     ];
     const mean = (get: (s: PuffScore) => number) => participantMean(scored, get);
     table(
-      ["recording", "relaxed", "half", "full", "sink", "rise", "spike relaxed", "spike half"],
+      ["recording", "relaxed", "half", "full", "sink", "rise", "spike relaxed", "spike half", "look"],
       [
         ...scored.map(({ rec, score }) => row(rec.id, score)),
         [
           "mean over participants", num(mean((s) => s.relaxed)), num(mean((s) => s.half)), num(mean((s) => s.full)),
           pct(mean((s) => s.sink)), pct(mean((s) => s.rise)), pct(mean((s) => s.spikeRelaxed)), pct(mean((s) => s.spikeHalf)),
+          pct(mean((s) => s.look)),
         ],
       ],
     );

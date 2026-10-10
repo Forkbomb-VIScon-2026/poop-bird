@@ -34,7 +34,7 @@ export interface DebugData {
   /** "city", "ocean", or a transition like "city → ocean". */
   stage: string;
   puffCalibration: Calibration | null;
-  /** "calibrated (cheek width, …)" or "fallback range". */
+  /** "calibrated (cheek width, …) + pucker range" or "pucker range". */
   puffSource: string;
   rawPuff: number;
   facePuff: number;
