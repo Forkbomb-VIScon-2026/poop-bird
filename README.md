@@ -167,7 +167,10 @@ webcam), and the wiring in `src/main.ts`.
    is neutral plus a typical change per feature (`DEFAULT_STRAIN_DELTAS` in
    `src/strain.ts`, scaled by `defaultStrainScale`), only for the features
    that move for most people: brows, eyes, nose, cheeks and pressed lips. A
-   feature that rests near its maximum gets less weight, or none. The default
+   feature that rests near its maximum gets less weight, or none, and so does
+   one that jittered at rest by more than a quarter of its typical change. If
+   more than 25% of the read's own samples would score above `strainOff` (the
+   player fidgeted or grimaced), it reads again, up to 3 times. The default
    is never saved, so each face-mode start re-reads the relaxed face of
    whoever is playing. The deltas are estimates; tune them with real faces.
 3. **Weights.** A feature's weight is `max(0, |Δ| − minFeatureDelta) ×

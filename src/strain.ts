@@ -280,7 +280,8 @@ export function neutralFaceStats(samples: readonly FeatureVector[]): FeatureStat
  * A calibration from a measured relaxed face alone: each feature's strain
  * target is the player's own neutral value plus its typical change (× `scale`),
  * weighted by that change. A feature already near its maximum at rest (say,
- * squinting eyes) gets less weight, or none, since it can barely move further.
+ * squinting eyes) gets less weight, or none, since it can barely move further,
+ * and so does one that jittered at rest by more than a quarter of its change.
  */
 export function defaultCalibration(
   neutral: Pick<FeatureStats, "mean" | "std">,
@@ -295,11 +296,27 @@ export function defaultCalibration(
     const target = Math.min(neutral.mean[f] + delta, MAX_DEFAULT_TARGET);
     const headroom = (target - neutral.mean[f]) / delta;
     if (headroom < MIN_DEFAULT_HEADROOM) continue;
+    const reliability = Math.min(1, delta / (4 * (neutral.std[f] + 1e-3)));
     strain[f] = target;
-    weights[f] = delta * headroom;
+    weights[f] = delta * headroom * reliability;
   }
   return { neutral: { ...neutral.mean }, strain, weights, neutralStd: { ...neutral.std } };
 }
+
+/**
+ * Fraction of relaxed-face samples that the calibration would score above the
+ * off threshold: a high rate means the relaxed read wasn't relaxed or steady.
+ */
+export function neutralFalseRate(
+  calib: Calibration,
+  neutralSamples: readonly FeatureVector[],
+  params: Pick<QualityParams, "featureClampMax" | "strainOff">,
+): number {
+  return fraction(neutralSamples, (s) => rawStrain(s, calib, params.featureClampMax) > params.strainOff);
+}
+
+/** A calibration whose relaxed samples cross the off threshold more often than this is rejected. */
+export const MAX_NEUTRAL_FALSE_RATE = 0.25;
 
 export interface CalibrationQuality {
   ok: boolean;
@@ -350,8 +367,7 @@ export function assessCalibration(
     .slice(0, 3);
   const score = (s: FeatureVector) => rawStrain(s, calib, params.featureClampMax);
   const strainHitRate = fraction(strainSamples, (s) => score(s) >= params.strainOn);
-  const neutralFalseRate = fraction(neutralSamples, (s) => score(s) > params.strainOff);
-  const base = { totalChange, strainHitRate, neutralFalseRate, topFeatures };
+  const base = { totalChange, strainHitRate, neutralFalseRate: neutralFalseRate(calib, neutralSamples, params), topFeatures };
 
   if (
     neutralSamples.length < minSamples ||
@@ -367,7 +383,7 @@ export function assessCalibration(
   if (strainHitRate < 0.6) {
     return { ...base, ok: false, reason: "Your strain wasn't steady. Hold the strain for the whole countdown." };
   }
-  if (neutralFalseRate > 0.25) {
+  if (base.neutralFalseRate > MAX_NEUTRAL_FALSE_RATE) {
     return { ...base, ok: false, reason: "Your relaxed face was too close to your strain face. Relax completely, then strain harder." };
   }
   return { ...base, ok: true };

@@ -32,6 +32,7 @@ import {
 import {
   FEATURE_NAMES,
   PUFF_FEATURES,
+  MAX_NEUTRAL_FALSE_RATE,
   STRAIN_FEATURES,
   assessCalibration,
   buildCalibration,
@@ -39,6 +40,7 @@ import {
   featureStats,
   initialStrainState,
   neutralFaceStats,
+  neutralFalseRate,
   restoreCalibration,
   stepStrain,
   type Calibration,
@@ -364,13 +366,27 @@ async function runDefaultCalibration(): Promise<void> {
   rejectedCalibration = null;
   strain = initialStrainState();
   showCalibrationResult("reading");
-  const neutral = await readRelaxedFace(token);
-  if (token !== flow || !neutral) return;
-  calibration = defaultCalibration(neutralFaceStats(neutral), config.defaultStrainScale);
-  console.info("[default calibration]", { cal: calibration, neutral });
+  // A read whose own samples would trip the meter (fidgeting, blinking,
+  // jittery tracking) is read again. The last try is kept regardless, since
+  // the player can always calibrate.
+  for (let attempt = 1; ; attempt++) {
+    const neutral = await readRelaxedFace(token);
+    if (token !== flow || !neutral) return;
+    const cal = defaultCalibration(neutralFaceStats(neutral), config.defaultStrainScale);
+    const falseRate = neutralFalseRate(cal, neutral, config);
+    console.info("[default calibration]", { cal, falseRate, attempt, neutral });
+    if (falseRate <= MAX_NEUTRAL_FALSE_RATE || attempt >= MAX_RELAXED_READS) {
+      calibration = cal;
+      break;
+    }
+    $("calib-result-text").textContent = "Hold still and relax completely…";
+  }
   strain = initialStrainState();
   showCalibrationResult("default");
 }
+
+/** Relaxed-face reads before the default calibration takes the last one, steady or not. */
+const MAX_RELAXED_READS = 3;
 
 /** Fewest face samples the relaxed-face read takes, so a slow detector just reads for longer. */
 const MIN_RELAXED_SAMPLES = 8;

@@ -6,6 +6,7 @@ import {
   DEFAULT_STRAIN_DELTAS,
   defaultCalibration,
   neutralFaceStats,
+  neutralFalseRate,
   extractFeatures,
   featureStats,
   robustFeatureStats,
@@ -213,6 +214,21 @@ describe("defaultCalibration", () => {
   it("scales the typical changes", () => {
     const easy = defaultCalibration(neutralFaceStats(samples(relaxed, 30)), 0.5);
     expect(easy.strain.browDown - easy.neutral.browDown).toBeCloseTo(DEFAULT_STRAIN_DELTAS.browDown! / 2, 2);
+  });
+
+  it("gives a feature that jittered at rest less weight", () => {
+    const jittery = defaultCalibration(neutralFaceStats(samples({ ...relaxed, browDown: 0.3 }, 30, 0.15)));
+    const still = defaultCalibration(neutralFaceStats(samples({ ...relaxed, browDown: 0.3 }, 30)));
+    expect(jittery.weights.browDown).toBeLessThan(still.weights.browDown * 0.8);
+  });
+
+  it("scores a steady relaxed read as not straining, and a read that moved as straining", () => {
+    const steady = samples(relaxed, 30);
+    expect(neutralFalseRate(defaultCalibration(neutralFaceStats(steady)), steady, PARAMS)).toBe(0);
+    // A third of the read is a full grimace: the median stays relaxed, but the meter would fire.
+    const grimace = { browDown: 0.7, eyeSquint: 0.8, eyeBlink: 0.8, noseSneer: 0.5, cheekSquint: 0.5, mouthPress: 0.5 };
+    const restless = [...samples(relaxed, 20), ...samples(grimace, 10)];
+    expect(neutralFalseRate(defaultCalibration(neutralFaceStats(restless)), restless, PARAMS)).toBeGreaterThan(0.25);
   });
 
   it("keeps the neutral std for the puff calibration, and ignores a blink in the neutral window", () => {
