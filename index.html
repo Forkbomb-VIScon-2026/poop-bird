@@ -8,6 +8,27 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💩</text></svg>" />
   </head>
   <body>
+    <!-- Face sketches: what a relaxed and a strained face look like. Used via <use href="#face-…">. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="face-relaxed" viewBox="0 0 100 100">
+        <circle cx="50" cy="53" r="40" fill="#ffe2bd" stroke="#2b2d42" stroke-width="4" />
+        <path d="M27 34 Q35 29 43 33 M57 33 Q65 29 73 34" fill="none" stroke="#2b2d42" stroke-width="4" stroke-linecap="round" />
+        <circle cx="36" cy="46" r="5" fill="#2b2d42" />
+        <circle cx="64" cy="46" r="5" fill="#2b2d42" />
+        <path d="M48 52 Q50 60 46 61" fill="none" stroke="#2b2d42" stroke-width="3" stroke-linecap="round" />
+        <path d="M39 72 Q50 78 61 72" fill="none" stroke="#2b2d42" stroke-width="4" stroke-linecap="round" />
+      </symbol>
+      <symbol id="face-strained" viewBox="0 0 100 100">
+        <path d="M7 40 Q2 52 7 64 M93 40 Q98 52 93 64" fill="none" stroke="#2b2d42" stroke-width="3" stroke-linecap="round" />
+        <circle cx="50" cy="53" r="40" fill="#ff8f85" stroke="#2b2d42" stroke-width="4" />
+        <path d="M24 31 L44 40 M76 31 L56 40" fill="none" stroke="#2b2d42" stroke-width="6" stroke-linecap="round" />
+        <path d="M27 42 L40 48 L27 54 M73 42 L60 48 L73 54" fill="none" stroke="#2b2d42" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M45 52 Q50 49 55 52 M45 57 Q50 54 55 57" fill="none" stroke="#2b2d42" stroke-width="2.5" stroke-linecap="round" />
+        <path d="M34 72 Q42 68 50 72 T66 72" fill="none" stroke="#2b2d42" stroke-width="6" stroke-linecap="round" />
+        <path d="M84 16 Q91 27 84 30 Q77 27 84 16 Z" fill="#8fd8ff" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round" />
+      </symbol>
+    </svg>
+
     <div id="app">
       <canvas id="game"></canvas>
 
@@ -21,9 +42,14 @@
           <div id="hud-combo" class="hud-combo hidden">combo <b id="hud-combo-n">x1</b></div>
           <div id="hud-message" class="hud-message hidden"></div>
         </div>
-        <div class="hud-keys">
-          <span id="hud-mode">⌨️ keyboard</span> · <span id="hud-mute">🔊</span> · P pause · D debug
-        </div>
+        <div id="hud-toast" class="hud-toast hidden"></div>
+      </div>
+
+      <!-- In-game puff calibration (first dive in face mode; the world is frozen) -->
+      <div id="puff-calib" class="puff-calib hidden">
+        <h2>PUFF YOUR CHEEKS! 🐡</h2>
+        <p class="hint">Blow them up like a pufferfish and hold it.</p>
+        <div class="progress"><div id="puff-calib-progress" class="progress-fill"></div></div>
       </div>
 
       <!-- Webcam preview (also used, enlarged, during calibration) -->
@@ -39,28 +65,18 @@
         </div>
       </div>
 
-      <!-- Start screen -->
-      <section id="screen-start" class="screen">
-        <div class="card wide">
-          <h1>Poop <span class="accent">Bird</span> 💩🐦</h1>
-          <p class="tagline">The only way up is to <b>push</b>.</p>
-          <ul class="howto">
-            <li>Your bird keeps falling. Pooping pushes it <b>up</b>.</li>
-            <li><b>Strain</b> at your webcam (brows down, eyes squeezed, nose wrinkled, lips pressed) to charge. <b>Relax</b> to let go.</li>
-            <li>Longer strain = bigger push. Hold full charge too long and… <i>accident</i>. Let go right before for a <b>perfect push</b>.</li>
-            <li>Dodge buildings and signs. Hit cars, people and statues for bonus points and combos.</li>
-          </ul>
-          <div class="buttons">
-            <button id="btn-face" class="btn primary">😣 Play with face</button>
-            <button id="btn-keyboard" class="btn">⌨️ Play with keyboard</button>
-          </div>
-          <label class="check">
-            <input type="checkbox" id="opt-snapshot" />
-            Save my "finest strain" snapshot at the end of each run
-          </label>
-          <p class="privacy">🔒 Everything runs in your browser. Video and snapshots <b>never leave this device</b>.</p>
-          <p class="keys">Keyboard: hold <kbd>Space</kbd> (or mouse / touch) to strain · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>R</kbd> restart · <kbd>C</kbd> calibrate · <kbd>D</kbd> debug</p>
-          <div id="start-hof" class="hof"></div>
+      <!-- Start screen: no card, just the title over the city with the bird hovering. -->
+      <section id="screen-start" class="screen start">
+        <div class="start-hero">
+          <h1 class="title">Poop <span class="accent">Bird</span></h1>
+          <p class="tagline">Strain your face. Fly the bird. 💩</p>
+          <button id="btn-face" class="btn primary big">😣 Play</button>
+          <button id="btn-keyboard" class="btn small ghost light">or use the keyboard</button>
+          <details class="more">
+            <summary>⚙️ Options</summary>
+            <p class="keys"><kbd>Space</kbd> strain in keyboard mode (or puff underwater) · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>C</kbd> recalibrate<span data-debug-only> · <kbd>D</kbd> debug</span></p>
+          </details>
+          <p class="privacy light">🔒 Your camera never leaves this device.</p>
         </div>
       </section>
 
@@ -85,32 +101,58 @@
         <div class="card calib">
           <div id="calib-step" class="calib-step">Calibration</div>
           <h2 id="calib-prompt">Get ready…</h2>
-          <div id="calib-count" class="calib-count">3</div>
-          <div class="progress"><div id="calib-progress" class="progress-fill"></div></div>
-          <p id="calib-hint" class="hint">Look at the camera.</p>
+          <div id="calib-run">
+            <div class="calib-row">
+              <svg class="face calib-face"><use id="calib-face-use" href="#face-relaxed" /></svg>
+              <div class="calib-count-col">
+                <div id="calib-count" class="calib-count">3</div>
+                <div class="calib-match">Make this face</div>
+              </div>
+            </div>
+            <div class="progress"><div id="calib-progress" class="progress-fill"></div></div>
+            <p id="calib-hint" class="hint">Look at the camera.</p>
+          </div>
           <div id="calib-result" class="hidden">
             <p id="calib-result-text"></p>
-            <div class="calib-test">
-              <div class="calib-test-label">Try it: strain and relax. The bar should cross the lines.</div>
-              <div class="strain-bar big">
+            <div class="meter" title="Your live strain">
+              <div class="meter-end" id="meter-relaxed">
+                <svg class="face"><use href="#face-relaxed" /></svg>
+                <span>relaxed</span>
+              </div>
+              <div class="strain-bar big meter-bar">
                 <div id="calib-strain-fill" class="strain-fill"></div>
                 <div id="calib-strain-on" class="strain-mark on"></div>
                 <div id="calib-strain-off" class="strain-mark off"></div>
               </div>
+              <div class="meter-end" id="meter-strained">
+                <svg class="face"><use href="#face-strained" /></svg>
+                <span>strained</span>
+              </div>
             </div>
+            <ul class="checks">
+              <li id="check-strain">Strain until the bar turns <b class="accent">red</b></li>
+              <li id="check-relax">Relax until it's <b class="green">green</b></li>
+            </ul>
             <div class="buttons">
               <button id="btn-calib-play" class="btn primary">Play! <small>(Enter)</small></button>
               <button id="btn-calib-retry" class="btn">Recalibrate</button>
-              <button id="btn-calib-keyboard" class="btn">⌨️ Keyboard instead</button>
             </div>
           </div>
-          <button id="btn-calib-cancel" class="btn small ghost">Cancel</button>
+          <div class="ghost-row">
+            <button id="btn-calib-keyboard" class="btn small ghost hidden">Use the keyboard instead</button>
+            <button id="btn-calib-cancel" class="btn small ghost">Back to menu</button>
+          </div>
         </div>
       </section>
 
-      <!-- Countdown -->
-      <section id="screen-countdown" class="screen hidden passthrough">
-        <div id="countdown-n" class="countdown">3</div>
+      <!-- Ready: the bird hovers until the first strain starts the run. -->
+      <section id="screen-ready" class="screen hidden passthrough">
+        <div class="ready">
+          <svg id="ready-face" class="face ready-face"><use href="#face-strained" /></svg>
+          <kbd id="ready-key" class="ready-key hidden">Space</kbd>
+          <div class="ready-text" id="ready-text">Strain to take off!</div>
+          <div class="ready-sub" id="ready-sub">then relax to poop 💩</div>
+        </div>
       </section>
 
       <!-- Pause -->
@@ -139,7 +181,20 @@
                 <tr><td>Best combo</td><td id="go-combo">0</td></tr>
                 <tr><td>Distance</td><td id="go-distance">0 m</td></tr>
                 <tr><td>Accidents</td><td id="go-accidents">0</td></tr>
+                <tr><td>Cameras smashed</td><td id="go-smashed">0</td></tr>
+                <tr><td>Front pages</td><td id="go-scandals">0</td></tr>
+                <tr><td>Brats foiled</td><td id="go-kids">0</td></tr>
+                <tr><td>Weddings ruined</td><td id="go-weddings">0</td></tr>
+                <tr><td>Balloons popped</td><td id="go-balloons">0</td></tr>
               </table>
+            </div>
+            <div id="go-frontpage" class="go-snapshot hidden">
+              <div class="go-snapshot-title">Tomorrow's front page</div>
+              <canvas id="go-frontpage-canvas" class="go-frontpage" width="400" height="480"></canvas>
+            </div>
+            <div id="go-wedding" class="go-snapshot hidden">
+              <div class="go-snapshot-title">The official wedding photo</div>
+              <canvas id="go-wedding-canvas" class="go-wedding" width="500" height="470"></canvas>
             </div>
             <div id="go-snapshot" class="go-snapshot hidden">
               <div class="go-snapshot-title">Your finest strain</div>

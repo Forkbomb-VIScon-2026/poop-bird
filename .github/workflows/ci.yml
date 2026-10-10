@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -19,9 +22,12 @@ jobs:
       - run: npm test
       # Includes the typecheck
       - run: npm run build
+      # The debug variant must keep compiling too, but is never deployed
+      - run: npm run build:debug
 
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t poop-bird:ci .
+      - run: docker build -f collector/Dockerfile -t poop-bird-collector:ci .

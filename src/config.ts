@@ -7,6 +7,7 @@
 // Units: distances in logical pixels (the playfield is 600 px tall), times in
 // seconds, speeds in px/s, accelerations in px/s².
 
+import { DEBUG } from "./env";
 import { storageGet, storageRemove, storageSet } from "./storage";
 
 export interface TunableSpec {
@@ -58,6 +59,14 @@ export const CONFIG_SPEC = {
   minCalibrationChange: { value: 0.25, min: 0, max: 2, step: 0.01, group: "Strain", label: "Min total change", hint: "calibration quality: summed weights must exceed this" },
   calibrationSeconds: { value: 3, min: 1, max: 8, step: 0.5, group: "Strain", label: "Calibration phase", hint: "s per phase" },
   calibrationSettle: { value: 0.7, min: 0, max: 2, step: 0.1, group: "Strain", label: "Calibration settle", hint: "s ignored at the start of each phase" },
+  defaultNeutralSeconds: {
+    value: 1.5, min: 0.5, max: 5, step: 0.1, group: "Strain", label: "Default: relaxed read",
+    hint: "s of relaxed face read on the strain check when the player skips calibration",
+  },
+  defaultStrainScale: {
+    value: 1, min: 0.3, max: 2.5, step: 0.05, group: "Strain", label: "Default: strain scale",
+    hint: "× the typical strain change of the default calibration (<1 = easier to strain); applies on the next relaxed read",
+  },
 
   // --- World ---------------------------------------------------------------
   scrollSpeed: { value: 170, min: 50, max: 600, step: 5, group: "World", label: "Scroll speed (start)", hint: "px/s" },
@@ -69,6 +78,25 @@ export const CONFIG_SPEC = {
   difficultyRamp: { value: 6000, min: 500, max: 30000, step: 100, group: "World", label: "Difficulty ramp", hint: "px of distance to reach max difficulty" },
   firstObstacleDelay: { value: 700, min: 0, max: 3000, step: 50, group: "World", label: "First obstacle after", hint: "px" },
 
+  // --- Power lines ---------------------------------------------------------
+  powerLineChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Power lines", label: "Chance", hint: "chance a city obstacle is a power line instead of a building" },
+  powerLineSpan: { value: 340, min: 150, max: 700, step: 10, group: "Power lines", label: "Pole spacing", hint: "px between poles" },
+  powerLineSag: { value: 36, min: 0, max: 120, step: 2, group: "Power lines", label: "Wire sag", hint: "px a wire hangs down mid-span (±30%)" },
+  powerLineWireGap: { value: 130, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (start)", hint: "px between stacked wires" },
+  powerLineWireGapMin: { value: 100, min: 60, max: 250, step: 5, group: "Power lines", label: "Wire gap (hardest)", hint: "px" },
+  pigeonsPerSpan: { value: 1.3, min: 0, max: 4, step: 0.1, group: "Power lines", label: "Pigeons per span", hint: "average pigeons sitting on the wires between two poles" },
+  pigeonMultiplier: { value: 2, min: 0, max: 10, step: 0.5, group: "Power lines", label: "Pigeon points", hint: "× points per hit (× combo)" },
+
+  // --- Balloons ------------------------------------------------------------
+  balloonChance: { value: 0.2, min: 0, max: 1, step: 0.05, group: "Balloons", label: "Chance", hint: "chance a city obstacle is a hot-air balloon (rolled after the power line chance)" },
+  balloonDrift: { value: 20, min: 0, max: 120, step: 5, group: "Balloons", label: "Wind drift", hint: "px/s the balloon drifts forward" },
+  balloonPopMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Balloons", label: "Pop points", hint: "× points for popping the envelope (× combo)" },
+  balloonLift: { value: 340, min: 0, max: 1000, step: 10, group: "Balloons", label: "Hot-air lift", hint: "upward px/s the bird gets when it pops the envelope itself" },
+  balloonPassengerMultiplier: { value: 2, min: 0, max: 10, step: 0.5, group: "Balloons", label: "Parachutist points", hint: "× points per hit on a bailed-out passenger (× combo)" },
+  balloonChuteWind: { value: 0.8, min: 0, max: 1.2, step: 0.05, group: "Balloons", label: "Parachute wind", hint: "× scroll speed the parachutists are carried forward at (1 = they stay put on screen)" },
+  balloonChuteFall: { value: 55, min: 10, max: 300, step: 5, group: "Balloons", label: "Parachute fall", hint: "px/s under an open canopy" },
+  balloonThreadMultiplier: { value: 6, min: 0, max: 20, step: 0.5, group: "Balloons", label: "Thread bonus", hint: "× points for slipping between envelope and basket untouched" },
+
   // --- Targets & score -----------------------------------------------------
   poopGravity: { value: 1000, min: 100, max: 3000, step: 50, group: "Targets", label: "Poop gravity", hint: "px/s² (separate from the bird so aiming stays the same)" },
   targetSpawnRate: { value: 0.55, min: 0, max: 3, step: 0.05, group: "Targets", label: "Spawn rate", hint: "targets per second" },
@@ -76,6 +104,79 @@ export const CONFIG_SPEC = {
   comboStep: { value: 0.5, min: 0, max: 2, step: 0.05, group: "Targets", label: "Combo step", hint: "multiplier added per consecutive hit" },
   comboMax: { value: 5, min: 1, max: 20, step: 0.5, group: "Targets", label: "Combo max", hint: "multiplier cap" },
   distancePerPoint: { value: 10, min: 1, max: 100, step: 1, group: "Targets", label: "Distance per point", hint: "px of travel per score point" },
+
+  // --- Paparazzi -----------------------------------------------------------
+  paparazziChance: { value: 0.18, min: 0, max: 1, step: 0.01, group: "Paparazzi", label: "Spawn chance", hint: "chance that a target spawn is a paparazzo instead" },
+  paparazziMinDistance: { value: 1500, min: 0, max: 10000, step: 50, group: "Paparazzi", label: "First after", hint: "px of distance before the first paparazzo" },
+  paparazziMinGap: { value: 2200, min: 0, max: 10000, step: 50, group: "Paparazzi", label: "Min gap", hint: "px of distance between paparazzi" },
+  paparazziShotOffset: { value: 50, min: -200, max: 300, step: 5, group: "Paparazzi", label: "Shot point", hint: "px past the bird where his timer runs out and he takes the shot" },
+  paparazziTutorialWalk: { value: 60, min: 0, max: 200, step: 5, group: "Paparazzi", label: "First one walks", hint: "px/s the run's first paparazzo walks along (more time to react)" },
+  paparazziMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Paparazzi", label: "Points", hint: "× points for splatting him before the shot (× combo)" },
+
+  // --- Slingshot kids -----------------------------------------------------
+  kidChance: { value: 0.3, min: 0, max: 1, step: 0.01, group: "Slingshot kids", label: "Spawn chance", hint: "chance that a target spawn is a slingshot kid instead" },
+  kidMinDistance: { value: 1100, min: 0, max: 10000, step: 50, group: "Slingshot kids", label: "First after", hint: "px of distance before the first kid" },
+  kidMinGap: { value: 1500, min: 0, max: 10000, step: 50, group: "Slingshot kids", label: "Min gap", hint: "px of distance between kids" },
+  kidWalkSpeed: { value: 35, min: 0, max: 200, step: 5, group: "Slingshot kids", label: "Walk speed", hint: "px/s he trots toward the bird before taking aim" },
+  kidRange: { value: 560, min: 150, max: 1200, step: 10, group: "Slingshot kids", label: "Aim range", hint: "px ahead of the bird where he plants his feet and aims" },
+  kidWindup: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Slingshot kids", label: "Wind-up (start)", hint: "s of pulling back (the warning) before the shot" },
+  kidWindupMin: { value: 0.65, min: 0.2, max: 3, step: 0.05, group: "Slingshot kids", label: "Wind-up (hardest)", hint: "s" },
+  kidFlightTime: { value: 0.85, min: 0.2, max: 2, step: 0.05, group: "Slingshot kids", label: "Flight time (start)", hint: "s a pebble takes to reach the bird (time to dodge)" },
+  kidFlightTimeMin: { value: 0.65, min: 0.2, max: 2, step: 0.05, group: "Slingshot kids", label: "Flight time (hardest)", hint: "s" },
+  kidLead: { value: 0.3, min: 0, max: 1, step: 0.05, group: "Slingshot kids", label: "Lead", hint: "how much he aims ahead of the bird's vertical speed (0 = at the bird)" },
+  kidPebbleGravity: { value: 700, min: 0, max: 2000, step: 50, group: "Slingshot kids", label: "Pebble gravity", hint: "px/s² (more = loftier arcs)" },
+  kidShotsMax: { value: 2, min: 1, max: 5, step: 1, group: "Slingshot kids", label: "Max shots", hint: "pebbles per kid at full difficulty (1 at the start)" },
+  kidBonkStun: { value: 0.6, min: 0, max: 3, step: 0.05, group: "Slingshot kids", label: "Bonk stun", hint: "s the bird tumbles without push after a hit" },
+  kidKnockback: { value: 300, min: 0, max: 1000, step: 10, group: "Slingshot kids", label: "Knockback", hint: "px/s downward speed after a hit" },
+  kidMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Disarm points", hint: "× points for splatting him while he can still shoot (× combo)" },
+  kidParryMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Slingshot kids", label: "Intercept points", hint: "× points for shooting a pebble down with a poop (× combo)" },
+
+  // --- Wedding -------------------------------------------------------------
+  weddingChance: { value: 0.25, min: 0, max: 1, step: 0.05, group: "Wedding", label: "Chance", hint: "chance a city stage has a wedding" },
+  weddingSlot: { value: 2, min: 0, max: 10, step: 1, group: "Wedding", label: "Church slot", hint: "city obstacles before the church (it waits if a paparazzo or kid is busy)" },
+  weddingKissLead: { value: 90, min: 0, max: 400, step: 5, group: "Wedding", label: "Kiss point", hint: "px ahead of the bird where the couple starts kissing (a poop takes a moment to fall)" },
+  weddingKissTime: { value: 1.0, min: 0.2, max: 3, step: 0.05, group: "Wedding", label: "Kiss length", hint: "s the kiss lasts (the jackpot window)" },
+  weddingBeat: { value: 0.55, min: 0.2, max: 1.5, step: 0.05, group: "Wedding", label: "Countdown beat", hint: "s per 3… 2… 1… beat before the kiss" },
+  weddingKissMultiplier: { value: 10, min: 0, max: 30, step: 0.5, group: "Wedding", label: "Ruined kiss points", hint: "× points for splatting the couple mid-kiss (× combo)" },
+  weddingCoupleMultiplier: { value: 3, min: 0, max: 10, step: 0.5, group: "Wedding", label: "Couple points", hint: "× points for splatting the couple outside the kiss" },
+  weddingBouquetMultiplier: { value: 4, min: 0, max: 10, step: 0.5, group: "Wedding", label: "Bouquet catch", hint: "× points for catching the bride's bouquet" },
+  weddingBouquetGravity: { value: 600, min: 100, max: 2000, step: 50, group: "Wedding", label: "Bouquet gravity", hint: "px/s²" },
+  weddingThrowTime: { value: 0.8, min: 0.3, max: 2, step: 0.05, group: "Wedding", label: "Angry throw time", hint: "s the furious bride's bouquet takes to reach the bird" },
+  weddingBouquetKnock: { value: 260, min: 0, max: 800, step: 10, group: "Wedding", label: "Bouquet knock", hint: "px/s downward speed when her bouquet hits the bird" },
+
+  // --- Ocean stage ---------------------------------------------------------
+  cityObstaclesBeforeGate: { value: 6, min: 0, max: 40, step: 1, group: "Ocean", label: "City obstacles before harbour", hint: "then the street ends at the harbour" },
+  oceanObstacles: { value: 8, min: 0, max: 40, step: 1, group: "Ocean", label: "Ocean obstacles", hint: "then the far quay comes up and the surface opens" },
+  oceanTransformTime: { value: 0.8, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Transform time", hint: "s the new fish takes to inflate after the dive (without calibration)" },
+  oceanScrollScale: { value: 0.85, min: 0.3, max: 1.5, step: 0.05, group: "Ocean", label: "Scroll speed scale", hint: "× the city scroll speed" },
+  oceanMaxSink: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max sink speed", hint: "px/s at puff 0" },
+  oceanMaxRise: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max rise speed", hint: "px/s at puff 1" },
+  oceanHoverPuff: { value: 0.4, min: 0.05, max: 0.95, step: 0.01, group: "Ocean", label: "Hover puff", hint: "puff level that neither sinks nor rises" },
+  oceanDragTime: { value: 0.35, min: 0.02, max: 2, step: 0.01, group: "Ocean", label: "Water drag time", hint: "s for speed to cover ~63% of the way to its target" },
+  oceanSurfaceBump: { value: 60, min: 0, max: 300, step: 5, group: "Ocean", label: "Surface bump", hint: "px/s pushed back down when hitting the surface" },
+  oceanHitboxMin: { value: 0.75, min: 0.3, max: 2, step: 0.05, group: "Ocean", label: "Hitbox (deflated)", hint: "× bird hit radius at puff 0 (drawn size follows)" },
+  oceanHitboxMax: { value: 1.6, min: 0.3, max: 3, step: 0.05, group: "Ocean", label: "Hitbox (puffed)", hint: "× bird hit radius at puff 1" },
+  oceanGap: { value: 280, min: 100, max: 500, step: 5, group: "Ocean", label: "Gap (start)", hint: "px" },
+  oceanGapMin: { value: 205, min: 80, max: 500, step: 5, group: "Ocean", label: "Gap (hardest)", hint: "px" },
+  oceanSpacing: { value: 540, min: 150, max: 1200, step: 10, group: "Ocean", label: "Spacing (start)", hint: "px between obstacles" },
+  oceanSpacingMin: { value: 400, min: 150, max: 1200, step: 10, group: "Ocean", label: "Spacing (hardest)", hint: "px" },
+  oceanGapJump: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max gap jump", hint: "px the gap centre may move between obstacles" },
+  oceanFirstObstacleDelay: { value: 600, min: 0, max: 3000, step: 50, group: "Ocean", label: "First obstacle after", hint: "px after each stage change" },
+  oceanSpikeThreshold: { value: 0.85, min: 0.3, max: 1, step: 0.01, group: "Ocean", label: "Spike threshold", hint: "puff level that spikes the fish out" },
+  oceanSpikeRelease: { value: 0.05, min: 0, max: 0.3, step: 0.01, group: "Ocean", label: "Spike release margin", hint: "spikes retract below threshold − this (no flicker)" },
+  oceanSpikeMaxHold: { value: 1.5, min: 0.2, max: 5, step: 0.05, group: "Ocean", label: "Max spiked time", hint: "s spiked before a pop accident" },
+  oceanPopWarnTime: { value: 0.3, min: 0, max: 2, step: 0.05, group: "Ocean", label: "Pop warning", hint: "s of flashing warning before the pop" },
+  oceanJellyRate: { value: 0.35, min: 0, max: 3, step: 0.05, group: "Ocean", label: "Jellyfish rate", hint: "jellyfish per second, in open water" },
+  oceanJellyMultiplier: { value: 1.5, min: 0, max: 5, step: 0.1, group: "Ocean", label: "Jellyfish points", hint: "× points per hit (× combo)" },
+  oceanKeyInflateRate: { value: 1.1, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key inflate rate", hint: "puff/s while holding Space / pointer" },
+  oceanKeyDeflateRate: { value: 0.9, min: 0.1, max: 5, step: 0.05, group: "Ocean", label: "Key deflate rate", hint: "puff/s after letting go" },
+
+  // --- Ocean puff detection ------------------------------------------------
+  oceanCalibrationSeconds: { value: 3, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Puff calibration", hint: "s of the puff phase at the first dive (first calibrationSettle s ignored)" },
+  oceanPuffMinSeparation: { value: 1.5, min: 0.2, max: 6, step: 0.1, group: "Ocean puff", label: "Min separation", hint: "a puff feature counts once its change exceeds this many noise units (full weight at 2×)" },
+  oceanMinPuffChange: { value: 0.5, min: 0, max: 5, step: 0.05, group: "Ocean puff", label: "Min puff change", hint: "calibration quality: summed puff weights must exceed this (1 = one clearly separated feature)" },
+  oceanFallbackMin: { value: 0.06, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: relaxed", hint: "max(mouthPress, cheekPuff) mapped to puff 0 without a calibration" },
+  oceanFallbackMax: { value: 0.22, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: full puff", hint: "max(mouthPress, cheekPuff) mapped to puff 1 without a calibration" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;
@@ -91,6 +192,8 @@ export function defaultConfig(): Config {
 
 function loadConfig(): Config {
   const cfg = defaultConfig();
+  // Tuning overrides come from the debug panel, so without it they are ignored.
+  if (!DEBUG) return cfg;
   const raw = storageGet(STORAGE_KEY);
   if (!raw) return cfg;
   try {

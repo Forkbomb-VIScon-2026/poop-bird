@@ -10,7 +10,10 @@ COPY scripts ./scripts
 RUN npm ci
 COPY . .
 # Uses the model from the build context if present, otherwise downloads it once.
-RUN npm run fetch-model && npm run build
+# Plain build on purpose: the image must not ship the debug tooling.
+# APP_COMMIT is stored with face dataset sessions (the context has no .git).
+ARG APP_COMMIT=unknown
+RUN npm run fetch-model && APP_COMMIT=$APP_COMMIT npm run build
 
 # --- Serve -----------------------------------------------------------------------
 FROM mirror.gcr.io/library/caddy:2-alpine

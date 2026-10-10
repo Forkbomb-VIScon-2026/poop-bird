@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#5ec8f2" />
+    <title>Poop Bird face recordings</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💩</text></svg>" />
+  </head>
+  <body>
+    <main id="collect">
+      <header class="masthead">
+        <h1>Poop Bird face recordings</h1>
+        <p>Help tune how the game reads straining and cheek puffing. About 3 minutes.</p>
+      </header>
+
+      <!-- 1. Consent -->
+      <section id="screen-consent" class="card">
+        <h2>Before we start</h2>
+        <div id="consent-text" class="consent">
+          <p><b>What we record.</b> While you follow on-screen prompts (relax, strain, puff your cheeks), your browser measures your facial expression: 52 expression scores and 478 face-mesh points per video frame, plus your device type, browser and camera name. We never record video or images.</p>
+          <p><b>Why.</b> To tune how Poop Bird detects straining and puffing on different faces, in different light and on different devices.</p>
+          <p><b>Who sees it.</b> Only the Poop Bird team. It is stored on our team server for the VIScon 2026 hackathon and copied to team members' laptops for analysis.</p>
+          <p><b>How long.</b> Until the team server is deleted after the project. Copies on team laptops are deleted at the same time.</p>
+          <p><b>Deleting it.</b> You get a participant code, no name. You can delete a session right after recording it, or send us your code and we delete everything recorded under it.</p>
+        </div>
+        <label class="check"><input id="consent-agree" type="checkbox" /> I agree to this recording and storage.</label>
+        <label class="field" id="collection-code-field">
+          <span>Collection code</span>
+          <input id="collection-code" type="text" autocomplete="off" spellcheck="false" />
+          <small>The upload password in the link the team shares (<code>?code=…</code>). Team: it's <code>COLLECTION_CODE</code> in <code>~/poopbird-collector.env</code> on the VM; a local <code>npm run collector</code> uses whatever you set.</small>
+        </label>
+        <div class="actions"><button id="btn-consent" class="primary" disabled>Continue</button></div>
+      </section>
+
+      <!-- 2. Profile -->
+      <section id="screen-profile" class="card" hidden>
+        <h2>About this recording</h2>
+        <label class="field">
+          <span>Your participant code</span>
+          <input id="participant-code" type="text" autocomplete="off" spellcheck="false" />
+          <small>Recorded before on another device? Enter that code instead, so your sessions stay together.</small>
+        </label>
+        <fieldset>
+          <legend>Glasses</legend>
+          <label><input type="radio" name="glasses" value="none" checked /> None</label>
+          <label><input type="radio" name="glasses" value="glasses" /> Glasses on</label>
+        </fieldset>
+        <fieldset>
+          <legend>Facial hair</legend>
+          <label><input type="radio" name="facialHair" value="none" checked /> None</label>
+          <label><input type="radio" name="facialHair" value="stubble" /> Stubble</label>
+          <label><input type="radio" name="facialHair" value="beard" /> Beard</label>
+        </fieldset>
+        <fieldset>
+          <legend>Light</legend>
+          <label><input type="radio" name="lighting" value="bright" checked /> Bright</label>
+          <label><input type="radio" name="lighting" value="dim" /> Dim</label>
+          <label><input type="radio" name="lighting" value="backlit" /> Light behind me</label>
+          <label><input type="radio" name="lighting" value="outdoor" /> Outdoors</label>
+        </fieldset>
+        <fieldset>
+          <legend>Record</legend>
+          <label><input type="checkbox" name="segments" value="strain" checked /> Straining</label>
+          <label><input type="checkbox" name="segments" value="puff" checked /> Puffing cheeks</label>
+        </fieldset>
+        <p class="muted">The calibration from the game is always recorded first.</p>
+        <div class="actions"><button id="btn-profile" class="primary">Start camera</button></div>
+      </section>
+
+      <!-- 3. Camera check -->
+      <section id="screen-camera" class="card" hidden>
+        <h2>Camera check</h2>
+        <div class="preview"><video id="video" playsinline muted></video></div>
+        <ul class="checks">
+          <li id="check-face">Looking for your face…</li>
+          <li id="check-size">Distance</li>
+          <li id="check-light">Light</li>
+          <li id="check-rate">Detection speed</li>
+        </ul>
+        <p class="muted">Turn your sound on: a high beep means strain or puff, a low beep means relax. You'll often have your eyes shut.</p>
+        <p id="camera-error" class="error" hidden></p>
+        <div class="actions"><button id="btn-record" class="primary" disabled>Start recording</button></div>
+      </section>
+
+      <!-- 4. Recording -->
+      <section id="screen-record" hidden>
+        <div class="record">
+          <div class="record-meta"><span id="record-part"></span><span id="record-left"></span></div>
+          <div id="record-prompt" class="prompt"></div>
+          <div id="record-hint" class="hint"></div>
+          <div class="progress"><div id="record-progress"></div></div>
+          <div class="record-foot">
+            <div class="preview small"><video id="video-small" playsinline muted autoplay></video></div>
+            <span id="record-face" class="face-badge">Face found</span>
+            <button id="btn-abort">Stop and discard</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Upload -->
+      <section id="screen-upload" class="card" hidden>
+        <h2 id="upload-title">Uploading…</h2>
+        <div class="progress"><div id="upload-progress"></div></div>
+        <p id="upload-status" class="muted"></p>
+        <p id="upload-error" class="error" hidden></p>
+        <div id="upload-done" hidden>
+          <p>Thank you! Your participant code is <b id="done-code" class="code"></b>. Keep it (a photo is fine) if you might want your recordings deleted later.</p>
+          <ul id="upload-flags" class="flags"></ul>
+        </div>
+        <div class="actions">
+          <button id="btn-retry" hidden>Try again</button>
+          <button id="btn-save" hidden>Save the file instead</button>
+          <button id="btn-delete" hidden>Delete this session</button>
+          <button id="btn-again" hidden>Same person again</button>
+          <button id="btn-next" class="primary" hidden>Next person</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/collect.ts"></script>
+  </body>
+</html>

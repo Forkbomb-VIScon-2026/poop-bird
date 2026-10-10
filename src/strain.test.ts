@@ -3,12 +3,20 @@ import {
   FEATURE_NAMES,
   assessCalibration,
   buildCalibration,
+  DEFAULT_STRAIN_DELTAS,
+  defaultCalibration,
+  neutralFaceStats,
+  neutralFalseRate,
   extractFeatures,
   featureStats,
+  robustFeatureStats,
   featureWeight,
   initialStrainState,
   normalizeFeature,
   rawStrain,
+  separationWeight,
+  restoreCalibration,
+  STRAIN_FEATURES,
   smoothStrain,
   stepStrain,
   updateHysteresis,
@@ -58,6 +66,13 @@ describe("extractFeatures", () => {
     expect(f.mouthRollLower).toBeCloseTo(0.5);
   });
 
+  it("passes landmark geometry through, and treats missing geometry as 0", () => {
+    const f = extractFeatures({}, { cheekWidth: 0.7, mouthWidth: 0.55, eyeMouth: 0.8 });
+    expect(f.cheekWidth).toBe(0.7);
+    expect(f.mouthWidth).toBe(0.55);
+    expect(extractFeatures({}, null).eyeMouth).toBe(0);
+  });
+
   it("treats missing blendshapes as 0", () => {
     const f = extractFeatures({});
     for (const name of FEATURE_NAMES) expect(f[name]).toBe(0);
@@ -102,6 +117,41 @@ describe("featureWeight", () => {
     expect(featureWeight(0.3, 0.3, 0.04)).toBeLessThan(
       featureWeight(0.3, 0.01, 0.04),
     );
+  });
+});
+
+describe("robustFeatureStats", () => {
+  it("uses the median and MAD, so a short spike moves neither", () => {
+    const steady = [0.2, 0.21, 0.19, 0.2, 0.22, 0.18, 0.2, 0.2];
+    const spiked = [...steady, 0.95, 0.9];
+    const s = robustFeatureStats(spiked.map((v) => fv({ mouthPucker: v })));
+    expect(s.mean.mouthPucker).toBeCloseTo(0.2, 2);
+    expect(s.std.mouthPucker).toBeLessThan(0.03);
+    expect(featureStats(spiked.map((v) => fv({ mouthPucker: v }))).std.mouthPucker).toBeGreaterThan(0.2);
+    expect(s.count).toBe(10);
+  });
+
+  it("matches the std for normally distributed noise and handles empty input", () => {
+    const s = robustFeatureStats([0.4, 0.5, 0.6].map((v) => fv({ browDown: v })));
+    expect(s.mean.browDown).toBeCloseTo(0.5);
+    expect(s.std.browDown).toBeCloseTo(0.14826);
+    expect(robustFeatureStats([]).count).toBe(0);
+  });
+});
+
+describe("separationWeight", () => {
+  it("only cares about change relative to noise, not its size", () => {
+    expect(separationWeight(0.03, 0.002, 1.5)).toBeCloseTo(separationWeight(0.3, 0.056, 1.5));
+  });
+
+  it("is 0 below the minimum separation and 1 from twice it", () => {
+    expect(separationWeight(0.01, 0.01, 1.5)).toBe(0);
+    expect(separationWeight(0.5, 0.01, 1.5)).toBe(1);
+    expect(separationWeight(-0.5, 0.01, 1.5)).toBe(1);
+  });
+
+  it("can't be fooled by a feature with zero noise", () => {
+    expect(separationWeight(0.001, 0, 1.5)).toBe(0);
   });
 });
 
@@ -161,6 +211,67 @@ describe("calibration weighting", () => {
       weights: zeroFeatures(),
     };
     expect(rawStrain(fv({ browDown: 1 }), flat, 1.3)).toBe(0);
+  });
+});
+
+describe("defaultCalibration", () => {
+  const relaxed = { browDown: 0.05, eyeSquint: 0.2, eyeBlink: 0.1, noseSneer: 0.02, cheekSquint: 0.05, mouthPress: 0.1 };
+  const calib = defaultCalibration(neutralFaceStats(samples(relaxed, 30)));
+
+  it("scores the player's own relaxed face ~0", () => {
+    expect(rawStrain(fv(relaxed), calib, 1.3)).toBeCloseTo(0, 1);
+  });
+
+  it("scores the relaxed face plus the typical changes ~1", () => {
+    const strained = fv(relaxed);
+    for (const [f, d] of Object.entries(DEFAULT_STRAIN_DELTAS)) strained[f as keyof FeatureVector] += d;
+    expect(rawStrain(strained, calib, 1.3)).toBeCloseTo(1, 1);
+  });
+
+  it("turns on for a strong brow-and-eye strain alone", () => {
+    const face = fv({ ...relaxed, browDown: 0.6, eyeSquint: 0.7, eyeBlink: 0.6 });
+    expect(rawStrain(face, calib, 1.3)).toBeGreaterThan(PARAMS.strainOn);
+  });
+
+  it("only weights the default features", () => {
+    expect(calib.weights.mouthRollLower).toBe(0);
+    expect(calib.weights.eyeMouth).toBe(0);
+  });
+
+  it("gives a feature with no headroom at rest no weight, and less headroom less weight", () => {
+    const squinter = defaultCalibration(neutralFaceStats(samples({ ...relaxed, eyeSquint: 0.9, browDown: 0.8 }, 30)));
+    expect(squinter.weights.eyeSquint).toBe(0);
+    expect(squinter.weights.browDown).toBeGreaterThan(0);
+    expect(squinter.weights.browDown).toBeLessThan(calib.weights.browDown);
+    expect(squinter.strain.browDown).toBeLessThanOrEqual(1);
+  });
+
+  it("scales the typical changes", () => {
+    const easy = defaultCalibration(neutralFaceStats(samples(relaxed, 30)), 0.5);
+    expect(easy.strain.browDown - easy.neutral.browDown).toBeCloseTo(DEFAULT_STRAIN_DELTAS.browDown! / 2, 2);
+  });
+
+  it("gives a feature that jittered at rest less weight", () => {
+    const jittery = defaultCalibration(neutralFaceStats(samples({ ...relaxed, browDown: 0.3 }, 30, 0.15)));
+    const still = defaultCalibration(neutralFaceStats(samples({ ...relaxed, browDown: 0.3 }, 30)));
+    expect(jittery.weights.browDown).toBeLessThan(still.weights.browDown * 0.8);
+  });
+
+  it("scores a steady relaxed read as not straining, and a read that moved as straining", () => {
+    const steady = samples(relaxed, 30);
+    expect(neutralFalseRate(defaultCalibration(neutralFaceStats(steady)), steady, PARAMS)).toBe(0);
+    // A third of the read is a full grimace: the median stays relaxed, but the meter would fire.
+    const grimace = { browDown: 0.7, eyeSquint: 0.8, eyeBlink: 0.8, noseSneer: 0.5, cheekSquint: 0.5, mouthPress: 0.5 };
+    const restless = [...samples(relaxed, 20), ...samples(grimace, 10)];
+    expect(neutralFalseRate(defaultCalibration(neutralFaceStats(restless)), restless, PARAMS)).toBeGreaterThan(0.25);
+  });
+
+  it("keeps the neutral std for the puff calibration, and ignores a blink in the neutral window", () => {
+    const window = samples(relaxed, 30);
+    window[10] = fv({ ...relaxed, eyeBlink: 0.95 });
+    const stats = neutralFaceStats(window);
+    expect(stats.mean.eyeBlink).toBeCloseTo(relaxed.eyeBlink, 1);
+    expect(defaultCalibration(stats).neutralStd?.eyeBlink).toBeGreaterThan(0.1);
   });
 });
 
@@ -369,5 +480,44 @@ describe("stepStrain", () => {
       p,
     );
     expect(s.smoothed).toBe(0);
+  });
+});
+
+describe("restoreCalibration", () => {
+  // Features added after the first saved calibrations.
+  const NEW_FEATURES = FEATURE_NAMES.filter((f) => !STRAIN_FEATURES.includes(f));
+
+  const neutral = samples({ browDown: 0.05, eyeSquint: 0.1 }, 20);
+  const strain = samples({ browDown: 0.8, eyeSquint: 0.6 }, 20);
+  const calib = buildCalibration(featureStats(neutral), featureStats(strain), PARAMS);
+
+  it("round-trips a current calibration, including the neutral std", () => {
+    const back = restoreCalibration(JSON.parse(JSON.stringify(calib)), STRAIN_FEATURES);
+    expect(back).toEqual(calib);
+    expect(back?.neutralStd).toBeDefined();
+  });
+
+  it("loads a calibration saved before the puff features existed, scoring strain identically", () => {
+    const strip = (v: FeatureVector) => {
+      const out: Partial<FeatureVector> = { ...v };
+      for (const f of NEW_FEATURES) delete out[f];
+      return out;
+    };
+    const legacy = { neutral: strip(calib.neutral), strain: strip(calib.strain), weights: strip(calib.weights) };
+    const back = restoreCalibration(legacy, STRAIN_FEATURES);
+    expect(back).not.toBeNull();
+    expect(back!.neutralStd).toBeUndefined();
+    for (const f of NEW_FEATURES) expect(back!.weights[f]).toBe(0);
+    const face = fv({ browDown: 0.5, eyeSquint: 0.4, cheekPuff: 0.9, mouthPucker: 0.7, cheekWidth: 0.8 });
+    expect(rawStrain(face, back!, 1.3)).toBeCloseTo(rawStrain(face, calib, 1.3));
+  });
+
+  it("rejects missing required features and junk", () => {
+    const noBrow: Partial<FeatureVector> = { ...calib.neutral };
+    delete noBrow.browDown;
+    expect(restoreCalibration({ ...calib, neutral: noBrow }, STRAIN_FEATURES)).toBeNull();
+    expect(restoreCalibration(null, STRAIN_FEATURES)).toBeNull();
+    expect(restoreCalibration("nope", STRAIN_FEATURES)).toBeNull();
+    expect(restoreCalibration({ ...calib, weights: { ...calib.weights, browDown: "x" } }, STRAIN_FEATURES)).toBeNull();
   });
 });

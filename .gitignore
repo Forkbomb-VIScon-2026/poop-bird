@@ -6,3 +6,8 @@ public/mediapipe/wasm/
 public/mediapipe/face_landmarker.task
 *.log
 .DS_Store
+# Face recordings (personal face data): old debug-recorder clips, saved
+# sessions, and the local dataset copy from `npm run data:pull`
+poopbird-face-*.json
+poopbird-face-*.json.gz
+data/

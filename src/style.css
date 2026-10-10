@@ -110,13 +110,59 @@ canvas#game {
   animation: wobble 0.5s ease-out;
 }
 
-.hud-keys {
+.hud-toast {
   position: absolute;
-  left: 16px;
-  bottom: 8px;
-  font-size: 12px;
+  /* Centred without transform, so the pop animation's scale doesn't fight it. */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  bottom: 44px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-weight: 800;
+  font-size: 16px;
+  white-space: nowrap;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: pop 0.25s ease-out;
+}
+
+/* In-game overlay while the world is frozen for the puff calibration. */
+.puff-calib {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 32px));
+  text-align: center;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.puff-calib h2 {
+  font-size: clamp(30px, 6vw, 52px);
+  font-weight: 900;
   color: #fff;
-  opacity: 0.85;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 5px 0 var(--ink);
+  margin: 0 0 6px;
+  animation: wobble 0.5s ease-out;
+}
+
+.puff-calib .hint {
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 2px 0 var(--ink);
+  margin: 0 0 8px;
+}
+
+.puff-calib .progress-fill {
+  background: #4cc9f0;
 }
 
 @keyframes pop {
@@ -154,7 +200,7 @@ canvas#game {
 }
 
 #cam.large {
-  width: min(360px, 70vw);
+  width: min(92vw, 56vh);
   right: 50%;
   top: 24px;
   transform: translateX(50%);
@@ -167,6 +213,11 @@ canvas#game {
   overflow: hidden;
   background: #111;
   aspect-ratio: 4 / 3;
+}
+
+/* The calibration card has its own big strain meter. */
+#cam.large .strain-bar {
+  display: none;
 }
 
 #cam video {
@@ -291,15 +342,118 @@ h2 {
   margin: 8px 0 14px;
 }
 
-.howto {
-  text-align: left;
-  margin: 0 auto 16px;
-  padding-left: 22px;
-  line-height: 1.45;
+/* --- Face sketches & start screen ------------------------------------------- */
+
+svg.face {
+  width: 64px;
+  height: 64px;
+  display: block;
+  flex: none;
 }
 
-.howto li {
-  margin-bottom: 4px;
+/* Start screen: title over the live city, no card. */
+.screen.start {
+  background: none;
+}
+
+.start-hero {
+  margin-left: 16vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  color: #fff;
+}
+
+.title {
+  font-size: clamp(56px, 12vw, 120px);
+  font-weight: 900;
+  color: #fff;
+  -webkit-text-stroke: 4px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 8px 0 var(--ink);
+  animation: float 3s ease-in-out infinite;
+}
+
+.title .accent {
+  color: var(--gold);
+}
+
+.start-hero .tagline {
+  font-size: clamp(18px, 3vw, 26px);
+  font-weight: 800;
+  margin: 6px 0 14px;
+  -webkit-text-stroke: 1px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 0 var(--ink);
+}
+
+.light {
+  color: #fff;
+  text-shadow: 0 0 3px var(--ink), 0 1px 2px var(--ink);
+}
+
+.btn.ghost.light {
+  color: #fff;
+}
+
+.start-hero .more {
+  background: rgba(255, 250, 240, 0.9);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  padding: 4px 12px;
+  color: var(--ink);
+}
+
+.start-hero .more:not([open]) {
+  background: none;
+  border-color: transparent;
+  color: #fff;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(1deg);
+  }
+}
+
+.btn.big {
+  font-size: 30px;
+  padding: 14px 54px;
+  border-radius: 18px;
+}
+
+.more {
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.more summary {
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.green {
+  color: #5a8f12;
+}
+
+.pulse {
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
 }
 
 .buttons {
@@ -354,20 +508,6 @@ h2 {
 .btn small {
   font-weight: 400;
   opacity: 0.7;
-}
-
-.check {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  cursor: pointer;
-}
-
-.check input {
-  width: 18px;
-  height: 18px;
 }
 
 .privacy {
@@ -429,7 +569,22 @@ kbd {
 }
 
 .calib {
-  max-width: 560px;
+  max-width: 900px;
+  padding: 14px 28px 8px;
+}
+
+#calib-result-text:empty {
+  display: none;
+}
+
+#calib-result-text {
+  margin: 0 0 4px;
+}
+
+.ghost-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .calib-step {
@@ -478,26 +633,134 @@ kbd {
   }
 }
 
-.calib-test {
-  margin: 12px 0;
-  text-align: left;
+.calib-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
 }
 
-.calib-test-label {
+svg.face.calib-face {
+  width: clamp(72px, 15vh, 130px);
+  height: clamp(72px, 15vh, 130px);
+}
+
+.calib.strain .calib-face {
+  animation: shake 0.15s infinite;
+}
+
+.calib-match {
   font-size: 13px;
-  opacity: 0.8;
+  font-weight: 700;
+  opacity: 0.7;
 }
 
-/* --- Countdown --------------------------------------------------------------- */
+/* Live strain meter between a relaxed and a strained face sketch. */
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 6px 0;
+}
 
-.countdown {
-  font-size: 160px;
+.meter .strain-bar.big {
+  height: clamp(30px, 6vh, 56px);
+  border-width: 4px;
+}
+
+.meter-bar {
+  flex: 1;
+  margin-top: 0;
+}
+
+.meter-end {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  opacity: 0.45;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.meter-end svg.face {
+  width: clamp(64px, 14vh, 120px);
+  height: clamp(64px, 14vh, 120px);
+}
+
+.meter-end.lit {
+  opacity: 1;
+  transform: scale(1.12);
+}
+
+.checks {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 28px;
+  font-size: 19px;
+}
+
+.checks li::before {
+  content: "○";
+  display: inline-block;
+  width: 1.4em;
+  font-weight: 900;
+}
+
+.checks li.done::before {
+  content: "✔";
+  color: #5a8f12;
+}
+
+.checks li.done {
+  opacity: 0.7;
+}
+
+/* --- Ready ------------------------------------------------------------------- */
+
+.ready {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-left: 18vw;
+  text-align: center;
+}
+
+svg.face.ready-face {
+  width: clamp(80px, 16vh, 140px);
+  height: clamp(80px, 16vh, 140px);
+  animation: shake 0.3s infinite;
+}
+
+.ready-key {
+  font-size: 36px;
+  padding: 6px 40px;
+  border-width: 3px 3px 6px;
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+.ready-text {
+  font-size: clamp(32px, 6vw, 64px);
   font-weight: 900;
   color: #fff;
-  -webkit-text-stroke: 5px var(--ink);
+  -webkit-text-stroke: 3px var(--ink);
   paint-order: stroke fill;
-  text-shadow: 0 10px 0 var(--ink);
-  animation: pop 0.4s ease-out;
+  text-shadow: 0 6px 0 var(--ink);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.ready-sub {
+  font-size: clamp(18px, 2.5vw, 26px);
+  font-weight: 800;
+  color: #fff;
+  -webkit-text-stroke: 1px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 0 var(--ink);
 }
 
 /* --- Game over ----------------------------------------------------------------- */
@@ -568,6 +831,19 @@ kbd {
   transform: rotate(-2deg);
   box-shadow: 0 5px 0 var(--ink);
   background: #000;
+}
+
+.go-frontpage {
+  width: 200px;
+  height: 240px;
+  transform: rotate(2deg);
+  filter: drop-shadow(0 5px 0 var(--ink));
+}
+
+.go-wedding {
+  width: 250px;
+  height: 235px;
+  transform: rotate(-1.5deg);
 }
 
 .go-hof-form {
@@ -737,7 +1013,7 @@ body.debug-open #cam {
 
 .dbg-feature {
   display: grid;
-  grid-template-columns: 112px 1fr 40px;
+  grid-template-columns: 112px 1fr 78px;
   gap: 6px;
   align-items: center;
   margin: 2px 0;
@@ -846,10 +1122,36 @@ body.debug-open #cam {
   #cam {
     width: 110px;
   }
+  /* Keep the ready prompt clear of the bird and the webcam preview. */
+  .ready {
+    margin-left: 0;
+    margin-top: 30vh;
+  }
+  .start-hero {
+    margin-left: 0;
+    margin-top: 22vh;
+  }
+  #cam.large {
+    width: min(70vw, 40vh);
+  }
+  .calib {
+    padding: 10px 14px 6px;
+  }
+  .calib-step {
+    display: none;
+  }
+  .meter {
+    gap: 8px;
+  }
+  .meter-end svg.face {
+    width: 52px;
+    height: 52px;
+  }
+  .checks {
+    font-size: 15px;
+  }
+
   .hud-score {
     font-size: 34px;
-  }
-  .hud-keys {
-    display: none;
   }
 }

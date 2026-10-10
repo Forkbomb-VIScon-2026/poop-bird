@@ -1,0 +1,11 @@
+{
+  // Code that runs in Node: the collector (types stripped by Node itself, so
+  // only erasable syntax), the data and eval scripts, and src/session.ts,
+  // which the collector imports.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"],
+    "erasableSyntaxOnly": true
+  },
+  "include": ["collector", "scripts/**/*.ts", "src/session.ts"]
+}
