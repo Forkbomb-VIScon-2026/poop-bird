@@ -111,8 +111,8 @@ let puffCalibrationTried = false;
 let lastPuffAttempt: { cal: Calibration; quality: ReturnType<typeof assessPuffCalibration> } | null = null;
 /** Flow token of the puff calibration in progress, if any. */
 let activePuffCalibration: number | null = null;
-/** Set when a different face got locked mid puff calibration: its phase starts over. */
-let restartPuffPhase = false;
+/** Set when a different face got locked mid puff calibration: there's no relaxed read of them to compare with, so it's abandoned. */
+let abortPuffCalibration = false;
 /** A calibration that failed the quality check; used only if the player picks "Play anyway". */
 let rejectedCalibration: Calibration | null = null;
 /** Whether the calibration result screen is showing a failed calibration. */
@@ -204,7 +204,7 @@ function onNewFace(): void {
   if (state === "calibrating") void runCalibration();
   // The default calibration was fitted to the previous face's relaxed read.
   else if (state === "calibrated" && calibrationIsDefault) void runDefaultCalibration();
-  if (activePuffCalibration !== null) restartPuffPhase = true;
+  if (activePuffCalibration !== null) abortPuffCalibration = true;
 }
 
 /**
@@ -447,28 +447,41 @@ const MIN_RELAXED_SAMPLES = 8;
 async function readRelaxedFace(token: number): Promise<FeatureVector[] | null> {
   const total = config.defaultNeutralSeconds * 1000;
   let start = performance.now();
-  calibSamples = [];
-  calibFrames = [];
+  let mine = startSampling();
   for (;;) {
     await wait(50);
-    if (token !== flow || !calibSamples || !calibFrames) {
-      calibSamples = null;
-      calibFrames = null;
+    if (token !== flow || calibSamples !== mine.samples || !calibFrames) {
+      stopSampling(mine.samples);
       return null;
     }
     if (performance.now() - start < total) continue;
-    if (calibSamples.length < calibFrames.length * config.minFaceCoverage) {
+    if (mine.samples.length < mine.frames.length * config.minFaceCoverage) {
       start = performance.now();
-      calibSamples = [];
-      calibFrames = [];
-    } else if (calibSamples.length >= MIN_RELAXED_SAMPLES) {
+      mine = startSampling();
+    } else if (mine.samples.length >= MIN_RELAXED_SAMPLES) {
       break;
     }
   }
-  const samples = calibSamples.map((s) => s.f);
+  stopSampling(mine.samples);
+  return mine.samples.map((s) => s.f);
+}
+
+/** Starts collecting face samples into fresh shared arrays (filled by the tracker callback). */
+function startSampling(): { samples: { t: number; f: FeatureVector }[]; frames: number[] } {
+  const mine = { samples: [] as { t: number; f: FeatureVector }[], frames: [] as number[] };
+  calibSamples = mine.samples;
+  calibFrames = mine.frames;
+  return mine;
+}
+
+/**
+ * Stops collecting into `samples`, unless a newer sampling run has already
+ * replaced them (an abandoned run must not cut off the one that replaced it).
+ */
+function stopSampling(samples: readonly unknown[] | null): void {
+  if (samples && calibSamples !== samples) return;
   calibSamples = null;
   calibFrames = null;
-  return samples;
 }
 
 interface PhaseResult {
@@ -502,12 +515,10 @@ async function calibrationPhase(
   const total = config.calibrationSeconds * 1000;
   const settle = config.calibrationSettle * 1000;
   const start = performance.now();
-  calibSamples = [];
-  calibFrames = [];
+  const mine = startSampling();
   while (performance.now() - start < total) {
     if (token !== flow) {
-      calibSamples = null;
-      calibFrames = null;
+      stopSampling(mine.samples);
       sound.setGroan(-1, false);
       return { samples: [], coverage: 0 };
     }
@@ -519,10 +530,9 @@ async function calibrationPhase(
   }
   if (strainPhase) sound.setGroan(-1, false);
   progress.style.width = "100%";
-  const samples = calibSamples.filter((s) => s.t - start >= settle).map((s) => s.f);
-  const frames = calibFrames.filter((t) => t - start >= settle).length;
-  calibSamples = null;
-  calibFrames = null;
+  const samples = mine.samples.filter((s) => s.t - start >= settle).map((s) => s.f);
+  const frames = mine.frames.filter((t) => t - start >= settle).length;
+  stopSampling(mine.samples);
   card.classList.remove("strain");
   return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
@@ -671,7 +681,15 @@ async function runPuffCalibration(): Promise<void> {
     show($("puff-calib"), false);
     sound.setBurble(-1);
   }
-  if (token !== flow || !phase) return;
+  if (token !== flow) return;
+  if (!phase) {
+    // A different face got locked mid-puff: this run uses the default puff.
+    puffCalibrationTried = true;
+    puffSignal = initialPuffState();
+    game.holdTransition = false;
+    showToast("New face: using default puff. Recalibrate (C) to tune it.", 3500);
+    return;
+  }
 
   puffCalibrationTried = true;
   const cal = buildPuffCalibration(main, phase.samples, config);
@@ -695,23 +713,19 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
   const total = config.oceanCalibrationSeconds * 1000;
   const settle = config.calibrationSettle * 1000;
   let start = -1;
-  restartPuffPhase = false;
+  let mine: ReturnType<typeof startSampling> | null = null;
+  abortPuffCalibration = false;
   for (;;) {
-    if (restartPuffPhase) {
-      // A different face got locked: start the puff over for them.
-      restartPuffPhase = false;
-      start = -1;
-    }
-    if (token !== flow) {
-      calibSamples = null;
-      calibFrames = null;
+    if (token !== flow || abortPuffCalibration) {
+      abortPuffCalibration = false;
+      stopSampling(mine?.samples ?? null);
       return null;
     }
     if (state !== "playing") {
       // Paused: start over after resuming, so the samples are one continuous puff.
       start = -1;
-      calibSamples = null;
-      calibFrames = null;
+      stopSampling(mine?.samples ?? null);
+      mine = null;
       progress.style.width = "0%";
       await wait(50);
       continue;
@@ -719,8 +733,7 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
     const now = performance.now();
     if (start < 0) {
       start = now;
-      calibSamples = [];
-      calibFrames = [];
+      mine = startSampling();
     }
     const elapsed = now - start;
     if (elapsed >= total) break;
@@ -729,10 +742,9 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
     await wait(50);
   }
   progress.style.width = "100%";
-  const samples = (calibSamples ?? []).filter((s) => s.t - start >= settle).map((s) => s.f);
-  const frames = (calibFrames ?? []).filter((t) => t - start >= settle).length;
-  calibSamples = null;
-  calibFrames = null;
+  const samples = (mine?.samples ?? []).filter((s) => s.t - start >= settle).map((s) => s.f);
+  const frames = (mine?.frames ?? []).filter((t) => t - start >= settle).length;
+  stopSampling(mine?.samples ?? null);
   return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
 
