@@ -23,12 +23,13 @@ export class Sound {
         return await ctx.decodeAudioData(await response.arrayBuffer());
       } catch { return null; }
     };
-    const real = await fetchAudio(`${name}.mp3`);
+    // Prefer MP3, but accept WAV assets too (including the poop recordings).
+    const real = await fetchAudio(`${name}.mp3`) ?? await fetchAudio(`${name}.wav`);
     if (real) {
       this.buffers.set(name, real);
       return;
     }
-    console.warn(`[audio] missing ${name}.mp3; using tmp_${name}.mp3`);
+    console.warn(`[audio] missing ${name}.mp3/.wav; using tmp_${name}.mp3`);
     const fallback = await fetchAudio(`tmp_${name}.mp3`);
     if (fallback) this.buffers.set(name, fallback);
     else console.warn(`[audio] missing placeholder tmp_${name}.mp3`);
@@ -112,7 +113,15 @@ export class Sound {
   spike(): void { this.play("spike"); }
   jellyPop(_combo: number): void { this.play("jelly_pop"); }
   deflate(): void { this.play("deflate"); }
-  release(_charge: number, _sweet: boolean): void { this.play("release"); }
+  /** Use the normalized charge (0..1) to choose the matching poop recording. */
+  release(charge: number, _sweet: boolean): void {
+    const sound: SoundName = charge < 1 / 3
+      ? "poop_weak"
+      : charge < 2 / 3
+        ? "poop_middle"
+        : "poop_large";
+    this.play(sound);
+  }
   accident(): void { this.play("accident"); }
   zap(): void { this.play("zap"); }
   balloonPop(): void { this.play("balloon_pop"); }
