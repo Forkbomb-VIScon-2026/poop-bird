@@ -319,8 +319,13 @@ separated their puffs from their relaxed face), while pursed lips light up
 
 - the **pucker range**: `max(mouthPucker, cheekPuff)` mapped from
   `oceanFallbackMin` (0.1, puff 0) to `oceanFallbackMax` (0.5, puff 1). It
-  needs no calibration, so it works from the first frame and whenever the
-  puff calibration is missing or failed.
+  needs no puff calibration, so it works from the first frame and whenever
+  the puff calibration is missing or failed. A few people rest with slightly
+  pursed lips (0.2 in the calibration, 0.5 between puffs for one participant,
+  whose fish floated all the time), so the range starts above the player's
+  resting pucker from the main calibration when that's higher: resting +
+  `oceanFallbackRestSds` (3) SDs + `oceanFallbackRestMargin` (0.05), same
+  width.
 - the **puff calibration** below, which learns the player's own scale: some
   people purse their lips much less than others and wouldn't get far up the
   pucker range alone.
@@ -361,9 +366,15 @@ separated their puffs from their relaxed face), while pursed lips light up
    fish needs the analog value.
 5. **Quality check.** It fails on low face coverage, summed puff weights below
    `oceanMinPuffChange` (0.5, i.e. at least half a feature that clearly moved),
-   or fewer than 60% of puff samples scoring above the hover point. A failure
-   never blocks the game: the fish then follows the pucker range alone, with a
-   toast. A calibration saved before these features existed has no neutral
+   or fewer than 60% of puff samples scoring above the hover point. After a
+   failure the overlay says "Not quite!", lets the player relax for 1.5 s and
+   asks **once more** (`oceanPuffCalibrationAttempts`, 2 tries in all). Some
+   faces have a single usable feature: for one bearded participant MediaPipe
+   barely saw the pursed lips (`mouthPucker` ~0.25, mouth width unchanged)
+   and only `eyeMouth` moved, so one weaker hold in five failed the check and
+   left them with the pucker range, which hardly moved their fish. A failure
+   never blocks the game: after the last try the fish follows the pucker range
+   alone, with a toast. A calibration saved before these features existed has no neutral
    stats for them, so the fish uses the pucker range until you recalibrate
    with **C**.
 6. A passing puff calibration is saved like the main one, and the toast says
@@ -524,11 +535,12 @@ strain, and press and release latency. For puff it scores the plain puff
 and the pufferfish face separately, each with a calibration fitted from its
 own first hold: the median puff level while relaxed, at half and at full
 puff, how often the fish sinks while relaxed and rises while puffing, false
-spikes, and how often it would rise while the player just looks around
-(the strain script's "look" step). Like the game, a puff calibration that
-fails its quality check isn't used. The landmark geometry is computed again
-from the recorded landmarks with the current `faceGeometry`, so a new or
-changed geometry feature scores on every recording. To try a
+spikes, and how often it would rise while the player just looks around or
+laughs (the strain script's "look" and "laugh" steps). Like the game, a puff
+calibration that fails its quality check isn't used; the second try is fitted
+from the gesture's next hold. The features are computed again from the
+recorded blendshapes and landmarks with the current `extractFeatures` and
+`faceGeometry`, so a new or changed feature scores on every recording. To try a
 detection idea, add a variant to `scripts/eval/variants.ts`; the first entry
 is what the game does today. About 1 in 5 participants are held out (picked
 by a hash of their code); score them with `npm run eval -- --holdout` only

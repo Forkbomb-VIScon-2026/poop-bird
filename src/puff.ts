@@ -12,8 +12,9 @@
 //
 // The gesture is the "pufferfish face": cheeks puffed with the lips pursed.
 // A plain puff barely moves what MediaPipe reports for some people, while
-// pursed lips light up mouthPucker, so mouthPucker through a fixed range
-// (the fallback) counts too, with or without a calibration.
+// pursed lips light up mouthPucker, so mouthPucker through a range (the
+// fallback) counts too, with or without a calibration. The range starts above
+// the player's resting pucker: a few people rest with slightly pursed lips.
 //
 // Unlike strain there is no hysteresis: the fish needs the analog value.
 //   features → rawPuff (max of weighted/normalized and the fallback range)
@@ -174,16 +175,44 @@ export interface RawPuffParams {
   featureClampMax: number;
   oceanFallbackMin: number;
   oceanFallbackMax: number;
+  oceanFallbackRestSds: number;
+  oceanFallbackRestMargin: number;
+}
+
+/** The player's relaxed face: a calibration's neutral phase. */
+export type RestingFace = Pick<Calibration, "neutral" | "neutralStd">;
+
+/**
+ * The fallback's range, [oceanFallbackMin, oceanFallbackMax], moved up when
+ * the player's resting pucker sits near it: someone who rests at 0.2 with
+ * lips that relax "less" between puffs (0.5 in the dataset) would otherwise
+ * float all the time. Its width stays the same.
+ */
+export function puckerRange(rest: RestingFace | null, p: RawPuffParams): { min: number; max: number } {
+  const width = p.oceanFallbackMax - p.oceanFallbackMin;
+  if (!rest?.neutralStd) return { min: p.oceanFallbackMin, max: p.oceanFallbackMax };
+  const resting = fallbackPuffScore(rest.neutral);
+  const noise = Math.max(rest.neutralStd.cheekPuff, rest.neutralStd.mouthPucker);
+  const min = Math.max(p.oceanFallbackMin, resting + p.oceanFallbackRestSds * noise + p.oceanFallbackRestMargin);
+  return { min, max: min + width };
 }
 
 /**
  * Unsmoothed puff 0..1: the fallback range, or with a puff calibration the
  * higher of the two. The calibration learns the player's own scale, but its
  * hold may have been a weak or plain puff; a full pufferfish face then still
- * reaches the top through the fallback.
+ * reaches the top through the fallback. `rest` (default: the puff
+ * calibration, which carries the main calibration's relaxed face) places the
+ * fallback range.
  */
-export function rawPuff(features: FeatureVector, calib: Calibration | null, p: RawPuffParams): number {
-  const fallback = fallbackPuff(fallbackPuffScore(features), p.oceanFallbackMin, p.oceanFallbackMax);
+export function rawPuff(
+  features: FeatureVector,
+  calib: Calibration | null,
+  p: RawPuffParams,
+  rest: RestingFace | null = calib,
+): number {
+  const range = puckerRange(rest, p);
+  const fallback = fallbackPuff(fallbackPuffScore(features), range.min, range.max);
   return calib ? Math.max(rawStrain(features, calib, p.featureClampMax), fallback) : fallback;
 }
 
@@ -214,13 +243,14 @@ export function stepPuff(
   calib: Calibration | null,
   dtSeconds: number,
   p: PuffStepParams,
+  rest: RestingFace | null = calib,
 ): PuffState {
   if (features === null) {
     const missingFor = state.missingFor + Math.max(0, dtSeconds);
     if (missingFor <= p.faceLossGrace) return { ...state, faceVisible: false, missingFor };
     return { raw: 0, smoothed: 0, faceVisible: false, missingFor };
   }
-  const raw = rawPuff(features, calib, p);
+  const raw = rawPuff(features, calib, p, rest);
   const smoothed = smoothStrain(state.smoothed, raw, p.emaAlpha, dtSeconds);
   return { raw, smoothed, faceVisible: true, missingFor: 0 };
 }

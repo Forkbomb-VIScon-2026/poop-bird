@@ -194,7 +194,7 @@ tracker.onFrame((frame) => {
   calibFrames?.push(frame.time);
   if (calibSamples && frame.features) calibSamples.push({ t: frame.time, f: frame.features });
   strain = stepStrain(strain, frame.features, calibration, dt, config);
-  puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config);
+  puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config, puffCalibration ?? calibration);
   if (debug) {
     // Debug panel toggle: outline the locked face and the crop detection runs on.
     placeCamBox($("cam-lock"), debug.showFaceLock ? frame.box : null);
@@ -668,7 +668,11 @@ function needsPuffCalibration(): boolean {
  * deflated fish: the world holds still, an overlay asks for a full puff and
  * the fish inflates as the player puffs. Belongs to the current run's flow token, so going to
  * the menu or recalibrating mid-dive abandons it (the next run resets the
- * game). Never blocks the game: a failed check falls back to the fixed range.
+ * game). Never blocks the game: a failed check asks for another pufferfish
+ * face (oceanPuffCalibrationAttempts in all), then falls back to the pucker range.
+ * One hold can miss for faces with a single usable feature (in the dataset, a
+ * beard hid the pursed lips and only the eye–mouth distance moved), and a second
+ * try is usually fine.
  */
 async function runPuffCalibration(): Promise<void> {
   const token = flow;
@@ -680,38 +684,67 @@ async function runPuffCalibration(): Promise<void> {
     return;
   }
   activePuffCalibration = token;
+  // Cleared once per calibration, not per try: a new face during the pause between tries still aborts.
+  abortPuffCalibration = false;
   game.holdTransition = true;
-  show($("puff-calib"), true);
-  const phase = await puffCalibrationPhase(token);
-  if (activePuffCalibration === token) {
-    activePuffCalibration = null;
-    show($("puff-calib"), false);
-    sound.setBurble(-1);
-  }
-  if (token !== flow) return;
-  if (!phase) {
-    // A different face got locked mid-puff: this run uses the default puff.
-    puffCalibrationTried = true;
-    puffSignal = initialPuffState();
-    game.holdTransition = false;
-    showToast("New face: using default puff. Recalibrate (C) to tune it.", 3500);
-    return;
-  }
+  const title = $("puff-calib-title");
+  const hint = $("puff-calib-hint");
+  const attempts = Math.max(1, Math.round(config.oceanPuffCalibrationAttempts));
+  for (let attempt = 1; ; attempt++) {
+    title.textContent = attempt === 1 ? "PUFFERFISH FACE! 🐡" : "ONCE MORE! 🐡";
+    hint.textContent =
+      attempt === 1
+        ? "Puff your cheeks and purse your lips, like a kiss. Hold it."
+        : "A bigger pufferfish face: cheeks full, lips pursed. Hold it.";
+    show($("puff-calib"), true);
+    const phase = await puffCalibrationPhase(token);
+    if (token !== flow) return endPuffCalibrationOverlay(token);
+    if (!phase) {
+      // A different face got locked mid-puff: this run uses the default puff.
+      endPuffCalibrationOverlay(token);
+      puffCalibrationTried = true;
+      puffSignal = initialPuffState();
+      game.holdTransition = false;
+      showToast("New face: using default puff. Recalibrate (C) to tune it.", 3500);
+      return;
+    }
 
-  puffCalibrationTried = true;
-  const cal = buildPuffCalibration(main, phase.samples, config);
-  const quality = cal ? assessPuffCalibration(cal, phase.samples, { strain: phase.coverage }, config) : null;
-  console.info("[puff calibration]", { cal, quality, phase });
-  lastPuffAttempt = cal && quality ? { cal, quality } : null;
-  if (cal && quality?.ok) {
-    puffCalibration = cal;
-    saveCalibration(PUFF_CALIBRATION_KEY, cal);
-    showToast(`Puff calibrated! 🐡 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
-  } else {
-    showToast(`Couldn't calibrate puff (${quality?.reason ?? "no data"}), using defaults`, 3500);
+    const cal = buildPuffCalibration(main, phase.samples, config);
+    const quality = cal ? assessPuffCalibration(cal, phase.samples, { strain: phase.coverage }, config) : null;
+    console.info("[puff calibration]", { attempt, cal, quality, phase });
+    lastPuffAttempt = cal && quality ? { cal, quality } : null;
+    if (cal && quality?.ok) {
+      endPuffCalibrationOverlay(token);
+      puffCalibrationTried = true;
+      puffCalibration = cal;
+      saveCalibration(PUFF_CALIBRATION_KEY, cal);
+      showToast(`Puff calibrated! 🐡 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
+      break;
+    }
+    if (attempt >= attempts) {
+      endPuffCalibrationOverlay(token);
+      puffCalibrationTried = true;
+      showToast(`Couldn't calibrate puff (${quality?.reason ?? "no data"}), using defaults`, 3500);
+      break;
+    }
+    // Let the air out before the next try, so it's a fresh puff.
+    title.textContent = "NOT QUITE! 🐡";
+    hint.textContent = "Let the air out and relax…";
+    sound.setBurble(-1);
+    $("puff-calib-progress").style.width = "0%";
+    await wait(1500);
+    if (token !== flow) return endPuffCalibrationOverlay(token);
   }
   puffSignal = initialPuffState();
   game.holdTransition = false;
+}
+
+/** Hides the puff calibration overlay if `token`'s calibration still owns it. */
+function endPuffCalibrationOverlay(token: number): void {
+  if (activePuffCalibration !== token) return;
+  activePuffCalibration = null;
+  show($("puff-calib"), false);
+  sound.setBurble(-1);
 }
 
 /** Collects puff samples, dropping the settle time. Pausing restarts it after resume. null = abandoned. */
@@ -721,7 +754,6 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
   const settle = config.calibrationSettle * 1000;
   let start = -1;
   let mine: ReturnType<typeof startSampling> | null = null;
-  abortPuffCalibration = false;
   for (;;) {
     if (token !== flow || abortPuffCalibration) {
       abortPuffCalibration = false;

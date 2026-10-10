@@ -5,6 +5,7 @@ import {
   faceGeometry,
   fallbackPuff,
   initialPuffState,
+  puckerRange,
   rawPuff,
   stepKeyPuff,
   stepPuff,
@@ -28,6 +29,8 @@ const PARAMS = {
   oceanMinPuffChange: 0.5,
   oceanFallbackMin: 0.1,
   oceanFallbackMax: 0.5,
+  oceanFallbackRestSds: 3,
+  oceanFallbackRestMargin: 0.05,
   emaAlpha: 1,
   faceLossGrace: 0.25,
 };
@@ -256,6 +259,32 @@ describe("fallbackPuff", () => {
     // The calibration hold had no pucker; a pufferfish face still reaches the top.
     expect(rawPuff(fv({ ...RELAXED, mouthPucker: 0.6 }), cal, PARAMS)).toBe(1);
     expect(rawPuff(fv({ ...RELAXED, mouthPucker: 0.3 }), cal, PARAMS)).toBeCloseTo(0.5);
+  });
+});
+
+describe("puckerRange", () => {
+  const rest = (pucker: number, std: number) => ({
+    neutral: fv({ mouthPucker: pucker }),
+    neutralStd: fv({ mouthPucker: std }),
+  });
+
+  it("is the configured range for a relaxed face without pursed lips, or without one at all", () => {
+    expect(puckerRange(rest(0.01, 0.005), PARAMS)).toEqual({ min: 0.1, max: 0.5 });
+    expect(puckerRange(null, PARAMS)).toEqual({ min: 0.1, max: 0.5 });
+  });
+
+  it("starts above a resting pucker and keeps its width", () => {
+    // Rests at 0.2 (± 0.05): starts at 0.2 + 3 × 0.05 + 0.05.
+    const r = puckerRange(rest(0.2, 0.05), PARAMS);
+    expect(r.min).toBeCloseTo(0.4);
+    expect(r.max).toBeCloseTo(0.8);
+  });
+
+  it("keeps such a face's half-pursed rest out of the fallback, with or without a puff calibration", () => {
+    const face = fv({ mouthPucker: 0.35 });
+    expect(rawPuff(face, null, PARAMS)).toBeCloseTo(0.625);
+    expect(rawPuff(face, null, PARAMS, rest(0.2, 0.05))).toBe(0);
+    expect(rawPuff(fv({ mouthPucker: 0.8 }), null, PARAMS, rest(0.2, 0.05))).toBe(1);
   });
 });
 

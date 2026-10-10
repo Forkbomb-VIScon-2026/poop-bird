@@ -20,7 +20,7 @@ import {
   type FeatureStats,
   type FeatureVector,
 } from "../../src/strain";
-import type { PuffVariant } from "./puff";
+import type { PuffCalibrationInput, PuffVariant } from "./puff";
 import type { StrainVariant } from "./strain";
 
 function strainDetector(): StrainVariant["detector"] {
@@ -72,6 +72,13 @@ function gamePuffCalibration(neutral: FeatureVector[], puff: FeatureVector[], co
   return checked(buildPuffCalibration(main, puff, config), puff, config);
 }
 
+/** Like the game: if the first hold fails the check, the second try's hold. */
+function gamePuffCalibrationWithRetry(c: PuffCalibrationInput, config: Config): Calibration | null {
+  const first = gamePuffCalibration(c.neutral, c.puff, config);
+  if (first || config.oceanPuffCalibrationAttempts < 2 || !c.retry.length) return first;
+  return gamePuffCalibration(c.neutral, c.retry, config);
+}
+
 /** The puff calibration fitted against another relaxed face. */
 function puffCalibrationFrom(neutral: Pick<FeatureStats, "mean" | "std">, puff: FeatureVector[], config: Config): Calibration | null {
   const cal = buildCalibration(neutral, robustFeatureStats(puff), { minFeatureDelta: 0 }, PUFF_FEATURES, (delta, noise) =>
@@ -80,9 +87,17 @@ function puffCalibrationFrom(neutral: Pick<FeatureStats, "mean" | "std">, puff: 
   return checked(cal, puff, config);
 }
 
-const puffDetector: PuffVariant["detector"] = (calibration, config) => {
+/** The game's detector; like the game, the pucker range sits above the relaxed face of the calibration. */
+const puffDetector: PuffVariant["detector"] = (calibration, config, rest) => {
   let state = initialPuffState();
-  return (f, dt) => (state = stepPuff(state, f, calibration, dt, config)).smoothed;
+  return (f, dt) => (state = stepPuff(state, f, calibration, dt, config, calibration ?? rest)).smoothed;
+};
+
+/** The pucker range fixed at [oceanFallbackMin, oceanFallbackMax], whatever the relaxed face. */
+const fixedRangePuffDetector: PuffVariant["detector"] = (calibration, config) => {
+  const p = { ...config, oceanFallbackRestSds: 0, oceanFallbackRestMargin: 0 };
+  let state = initialPuffState();
+  return (f, dt) => (state = stepPuff(state, f, calibration, dt, p, null)).smoothed;
 };
 
 /**
@@ -110,8 +125,15 @@ const previousPuffDetector: PuffVariant["detector"] = (calibration, config) => {
 export const PUFF_VARIANTS: PuffVariant[] = [
   {
     name: "game",
-    calibrate: (c, config) => gamePuffCalibration(c.neutral, c.puff, config),
+    calibrate: gamePuffCalibrationWithRetry,
     detector: puffDetector,
+  },
+  {
+    // Before the retry and the pucker range above the relaxed face (for faces with
+    // a single usable feature, and people who rest with slightly pursed lips).
+    name: "one try, fixed pucker range",
+    calibrate: (c, config) => gamePuffCalibration(c.neutral, c.puff, config),
+    detector: fixedRangePuffDetector,
   },
   {
     name: "previous game: calibration alone, mouthPress fallback",
