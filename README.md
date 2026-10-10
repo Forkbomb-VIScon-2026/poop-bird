@@ -221,13 +221,14 @@ total distance.
   - **The hook always catches**, spiked or not. The world holds still while
     he reels the fish up, the reel ratcheting, and yanks it out of the water.
     That ends the run with **his trophy photo**: him in his boat, grinning,
-    holding up the puffed-up fish. In face mode the fish has the player's
-    face, grabbed when the hook went in. It pops up in-game and goes on the
+    holding up the puffed-up fish. It pops up in-game and goes on the
     game-over card ("Catch of the day").
-  - **The line above the hook can be cut**: cross it spiked (×4). He was
-    hauling on it, so he goes over backwards into his boat, boots in the air,
-    and his hat flies off into the water. A moment later he sits up again,
-    bald and shaking his fist. Unspiked, the fish just slips past the line.
+  - **The line above the hook can be cut**: cross it spiked (×4). It snags on
+    the spines and he leans back hauling on it until it parts. The end on his
+    rod whips back up, the cut-off end sinks away with the hook, and with the
+    pull suddenly gone he goes over backwards into his boat, boots in the air,
+    his hat flying off into the water. A moment later he sits up again, bald
+    and shaking his fist. Unspiked, the fish just slips past the line.
   Tunables are in the debug panel's "Fisherman" group.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
 - **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's

@@ -46,12 +46,17 @@ describe("the fisherman", () => {
     expect(game.angler?.state).toBe("hooked");
   });
 
-  it("gets his line cut by a spiked fish passing above the hook", () => {
+  it("hauls on a line snagged on a spiked fish until it parts", () => {
     const game = fishing(0, 120, 1);
     expect(game.spike.spiked).toBe(true);
     const bonus = game.bonus;
     game.step(1 / 120);
+    expect(game.angler?.state).toBe("tugging");
+    stepFor(game, 0.5);
     expect(game.angler?.state).toBe("snapped");
+    const hookY = game.angler!.hookY;
+    stepFor(game, 0.5);
+    expect(game.angler!.hookY).toBeGreaterThan(hookY);
     expect(game.anglersSnapped).toBe(1);
     expect(game.bonus).toBeGreaterThan(bonus);
     expect(game.phase).toBe("playing");

@@ -1234,8 +1234,6 @@ function takePhoto(photoId: number): void {
 
 /** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
 let weddingFace: Photo | null = null;
-/** The player's face when the fisherman's hook went in (face mode): it ends up on the fish in his trophy photo. */
-let anglerFace: Photo | null = null;
 
 function handleGameEvents(): void {
   for (const e of game.events) {
@@ -1379,8 +1377,6 @@ function handleGameEvents(): void {
       case "anglerHooked":
         sound.anglerHooked();
         buzz([40, 30, 40]);
-        // The face mid-struggle ends up on the fish in his trophy photo.
-        anglerFace = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
         break;
       case "anglerReel":
         sound.reelClick();
@@ -1388,9 +1384,8 @@ function handleGameEvents(): void {
       case "anglerLanded": {
         sound.splash();
         buzz(200);
-        const photo = renderer.captureTrophy(game, anglerFace);
+        const photo = renderer.captureTrophy(game);
         if (photo) renderer.photos.set(e.photoId, photo);
-        anglerFace = null;
         break;
       }
       case "anglerPhoto":

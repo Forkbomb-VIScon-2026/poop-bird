@@ -40,7 +40,8 @@
 // Now and then a fisherman rows across the ocean's surface and casts his hook
 // down to the fish's depth. The hook always catches: he reels the fish in and
 // the run ends with his trophy photo. Crossing his line above the hook while
-// spiked cuts it, and he topples backwards into his boat.
+// spiked snags it on the spines: he hauls on it until it parts, and with the
+// pull suddenly gone he topples backwards into his boat.
 
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -186,10 +187,11 @@ export interface Jelly {
  * a "!" and the bobber plops in. Fishing: the hook sinks to the depth the fish
  * was at when he cast, and he jigs it gently there. Leaving: the hook went
  * past and he reels in. Hooked: the fish bit and he's reeling it up. Landed: he
- * got it (the run is over). Snapped: spines cut his line; he tumbled
- * backwards into his boat and his hat flew off.
+ * got it (the run is over). Tugging: the line snagged on the spines and he's
+ * hauling on it. Snapped: it parted; he tumbled backwards into his boat, his
+ * hat flew off, and the cut-off end sinks away with the hook.
  */
-export type AnglerState = "rowing" | "casting" | "fishing" | "leaving" | "hooked" | "landed" | "snapped";
+export type AnglerState = "rowing" | "casting" | "fishing" | "leaving" | "hooked" | "landed" | "tugging" | "snapped";
 
 export interface Angler {
   state: AnglerState;
@@ -210,6 +212,11 @@ export interface Angler {
   fromY: number;
   /** 0..1 how far the hooked fish has been reeled in. */
   reel: number;
+  /** Tugging: where the line is snagged on the fish. Snapped: the cut-off end, sinking away with the hook. */
+  cutX: number;
+  cutY: number;
+  /** Snapped: the cut end of the line still on his rod, whipping back up (ocean y). */
+  stubY: number;
   /** His sou'wester once it's flown off into the water, drifting on the surface (screen x). */
   hatX: number;
   /** Seconds until the next click of the reel's ratchet. */
@@ -607,6 +614,8 @@ const KID_MIN_AHEAD = 70;
 export const ANGLER_TIP_DX = 117;
 /** Hook radius for collisions. */
 export const HOOK_R = 7;
+/** Seconds he hauls on a line snagged on the spines before it parts. */
+export const ANGLER_TUG_TIME = 0.35;
 /** Seconds the fisherman lies on his back in the boat after the line snaps, before he sits up again. */
 export const ANGLER_TOPPLE_TIME = 1.4;
 /** How far behind (right of) the boat's centre his hat lands in the water. */
@@ -1341,7 +1350,7 @@ export class Game {
   /** True while the fisherman is a threat: no jellyfish crowd his hook. */
   private get anglerBusy(): boolean {
     const s = this.angler?.state;
-    return s === "rowing" || s === "casting" || s === "fishing" || s === "hooked";
+    return s === "rowing" || s === "casting" || s === "fishing" || s === "tugging" || s === "hooked";
   }
 
   private anglerDue(before: number): boolean {
@@ -1359,7 +1368,7 @@ export class Game {
     this.angler = {
       state: "rowing", t: 0, x: this.width + ANGLER_TIP_DX + 60,
       hookX: 0, hookY: SURFACE_Y, hookVy: 0, target: SURFACE_Y,
-      closest: Infinity, dodged: false, fromY: 0, reel: 0,
+      closest: Infinity, dodged: false, fromY: 0, reel: 0, cutX: 0, cutY: 0, stubY: 0,
       hatX: 0, click: 0, seed: Math.random() * 1000,
     };
     return ANGLER_ROOM;
@@ -1422,10 +1431,13 @@ export class Game {
           this.hookFish(a);
           break;
         }
-        // Spines cut the line above it.
+        // Spines snag the line above it.
         const reach = r * config.oceanJellyPopReach * 0.8;
         if (this.spike.spiked && Math.abs(a.hookX - b.x) < reach && b.y < a.hookY - 14 && b.y + reach > SURFACE_Y) {
-          this.snapLine(a);
+          this.setAnglerState(a, "tugging");
+          a.cutX = b.x;
+          a.cutY = b.y;
+          a.click = 0;
           break;
         }
         a.closest = Math.min(a.closest, dist);
@@ -1465,19 +1477,34 @@ export class Game {
           this.events.push({ type: "anglerPhoto" });
         }
         break;
-      case "snapped": {
-        // The cut end of the line, hook and all, drifts down and away.
-        if (a.hookY < GROUND_Y + 40) {
-          a.hookVy = Math.min(70, a.hookVy + 120 * dt);
-          a.hookY += a.hookVy * dt;
+      case "tugging": {
+        // The line's snagged on the fish: he hauls on it, the hook dangling below, until it parts.
+        a.cutX = b.x;
+        a.cutY = b.y;
+        a.hookX += (b.x - a.hookX) * Math.min(1, dt * 6);
+        a.hookY = Math.max(a.hookY, b.y + 30);
+        a.click -= dt;
+        if (a.click <= 0) {
+          a.click = 0.05;
+          this.events.push({ type: "anglerReel" });
         }
+        if (a.t >= ANGLER_TUG_TIME) this.snapLine(a);
+        break;
+      }
+      case "snapped": {
+        // The end on his rod whips back up; the cut-off end, hook and all, sinks and drifts away.
+        a.stubY = Math.max(SURFACE_Y, a.stubY - 900 * dt);
+        a.hookVy = Math.min(110, a.hookVy + 200 * dt);
+        a.hookY = Math.min(GROUND_Y + 60, a.hookY + a.hookVy * dt);
+        a.cutY = Math.min(a.hookY - 20, a.cutY + a.hookVy * 0.8 * dt);
         a.hookX -= speed * dt;
+        a.cutX += (a.hookX - a.cutX) * Math.min(1, dt * 1.5) - speed * dt;
         a.hatX -= (speed - 14) * dt;
         if (a.t - dt < 0.5 && a.t >= 0.5) this.ripple(a.hatX + ANGLER_HAT_DX, 6);
         break;
       }
     }
-    if (a.x < -220 && a.hatX + ANGLER_HAT_DX < -60 && a.hookX < -40) this.angler = null;
+    if (a.x < -220 && a.hatX + ANGLER_HAT_DX < -60 && a.hookX < -40 && a.cutX < -40) this.angler = null;
   }
 
   /** Bubbles and spray where the bobber or something small hits the surface. */
@@ -1546,12 +1573,13 @@ export class Game {
   }
 
   /**
-   * Spines cut the line. He was hauling on it, so he topples backwards into
-   * his boat, and his hat flies off into the water.
+   * The snagged line parts. He was hauling on it, so with the pull suddenly
+   * gone he topples backwards into his boat, and his hat flies off.
    */
   private snapLine(a: Angler): void {
     this.setAnglerState(a, "snapped");
-    a.hookVy = -40;
+    a.hookVy = 0;
+    a.stubY = a.cutY;
     a.hatX = a.x;
     this.anglersSnapped++;
     this.combo++;

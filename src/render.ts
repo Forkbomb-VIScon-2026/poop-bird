@@ -29,6 +29,7 @@ import {
   slingshotPos,
   ANGLER_HAT_DX,
   ANGLER_TOPPLE_TIME,
+  ANGLER_TUG_TIME,
   ANGLER_TIP_DX,
   type Angler,
   type Balloon,
@@ -1772,12 +1773,23 @@ export class Renderer {
       const dy = y - hy;
       x = hx + dx * Math.cos(ang) - dy * Math.sin(ang);
       y = hy + dx * Math.sin(ang) + dy * Math.cos(ang);
-    } else if (a.state === "hooked" || a.state === "landed") {
-      const pull = a.state === "landed" ? 1 : 0.5 + a.reel * 0.5;
+    } else if (a.state === "hooked" || a.state === "landed" || a.state === "tugging") {
+      const pull = a.state === "hooked" ? 0.5 + a.reel * 0.5 : 1;
       x += 12 * pull;
       y += 12 * pull;
     }
     return { x: a.x + x * ANGLER_SCALE, y: oy + y * ANGLER_SCALE };
+  }
+
+  /** Where the rod tip actually is while he leans back by `lean` (he and his rod turn about his seat, see drawFisherman). */
+  private leanTip(a: Angler, oy: number, tip: { x: number; y: number }, lean: number): { x: number; y: number } {
+    const px = a.x + ANGLER_PIVOT.x * ANGLER_SCALE;
+    const py = oy + ANGLER_PIVOT.y * ANGLER_SCALE;
+    const dx = tip.x - px;
+    const dy = tip.y - py;
+    const c = Math.cos(lean);
+    const sn = Math.sin(lean);
+    return { x: px + dx * c - dy * sn, y: py + dx * sn + dy * c };
   }
 
   /**
@@ -1792,28 +1804,56 @@ export class Renderer {
     const oy = SURFACE_Y + ANGLER_DRAFT + Math.sin(time * 2.2 + a.seed) * 1.5;
     const tip = this.anglerTip(a, oy);
     const snapped = a.state === "snapped";
+    const tugging = a.state === "tugging";
     const reeling = a.state === "hooked" || a.state === "landed";
-    // Snapped: he goes over backwards into the boat, lies there kicking, then sits up again, furious.
+    // How far he leans back: hauling on a snagged line, then, when it parts, over backwards into
+    // the boat; a while on his back, then up again, furious.
     const topple = snapped ? toppleAmount(a.t) : 0;
-    const hatOff = snapped;
+    const lean = snapped
+      ? topple * 1.45
+      : tugging
+        ? 0.15 + 0.3 * Math.min(1, a.t / ANGLER_TUG_TIME) + Math.sin(time * 40) * 0.03
+        : reeling
+          ? 0.22 + Math.sin(time * 22) * 0.05 + (a.state === "landed" ? 0.12 : 0)
+          : 0;
+    const realTip = this.leanTip(a, oy, tip, lean);
 
     // The line.
     ctx.strokeStyle = "rgba(255,255,255,0.85)";
     ctx.lineWidth = 1.3;
     const hookDown = a.hookY > SURFACE_Y + 1;
     if (reeling) {
-      line(ctx, tip.x, tip.y, a.hookX, a.hookY);
+      line(ctx, realTip.x, realTip.y, a.hookX, a.hookY);
+    } else if (tugging) {
+      // Taut from the rod through the bobber to the spines it's snagged on; the hook dangles below.
+      const bx = realTip.x + (a.cutX - realTip.x) * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(realTip.x, realTip.y);
+      ctx.lineTo(bx, SURFACE_Y + 2);
+      ctx.lineTo(a.cutX, a.cutY);
+      ctx.lineTo(a.hookX, a.hookY - 12);
+      ctx.stroke();
+      drawBobber(ctx, bx, SURFACE_Y + 2);
     } else if (snapped) {
-      // The cut-off end floats away with the bobber and the hook; once he's up, a stub dangles from his rod.
-      if (topple === 0) {
+      // The end on his rod whips back up out of the water, then the bobber dangles from the tip.
+      if (a.stubY > SURFACE_Y + 1) {
         ctx.beginPath();
-        ctx.moveTo(tip.x, tip.y);
-        ctx.quadraticCurveTo(tip.x - 6, tip.y + 8, tip.x + 2 + Math.sin(time * 6) * 3, tip.y + 14);
+        ctx.moveTo(realTip.x, realTip.y);
+        ctx.lineTo(tip.x, SURFACE_Y);
+        ctx.lineTo(tip.x + Math.sin(time * 40) * 3, a.stubY);
         ctx.stroke();
+        drawBobber(ctx, tip.x, SURFACE_Y);
+      } else {
+        line(ctx, realTip.x, realTip.y, realTip.x, realTip.y + 10);
+        drawBobber(ctx, realTip.x, realTip.y + 10);
       }
-      if (a.hookY < SURFACE_Y + 400) {
-        line(ctx, a.hookX + 3, SURFACE_Y + 2, a.hookX, a.hookY - 12);
-        drawBobber(ctx, a.hookX + 3, SURFACE_Y + Math.sin(time * 3) * 1.5);
+      // The cut-off end sinks away with the hook, frayed where the spines parted it.
+      if (a.hookY < GROUND_Y + 50) {
+        ctx.beginPath();
+        ctx.moveTo(a.cutX - 3, a.cutY - 4);
+        ctx.quadraticCurveTo(a.cutX + 3, a.cutY, a.cutX, a.cutY + 4);
+        ctx.lineTo(a.hookX, a.hookY - 12);
+        ctx.stroke();
       }
     } else if (a.state === "casting") {
       const k = Math.min(1, a.t / 0.5);
@@ -1837,11 +1877,10 @@ export class Renderer {
     const tx = (tip.x - a.x) / ANGLER_SCALE;
     const ty = (tip.y - oy) / ANGLER_SCALE;
     if (snapped) {
-      const mood = topple > 0.05 ? "shock" : "angry";
-      drawFisherman(ctx, tx, ty, 0, topple * 1.45, time, mood, !hatOff);
+      drawFisherman(ctx, tx, ty, 0, lean, time, topple > 0.05 ? "shock" : "angry", false);
     } else {
-      const lean = reeling ? 0.22 + Math.sin(time * 22) * 0.05 + (a.state === "landed" ? 0.12 : 0) : 0;
-      drawFisherman(ctx, tx, ty, reeling ? 1 : 0, lean, time, a.state === "landed" ? "proud" : reeling ? "strain" : "calm");
+      const mood = a.state === "landed" ? "proud" : reeling || tugging ? "strain" : "calm";
+      drawFisherman(ctx, tx, ty, reeling || tugging ? 1 : 0, lean, time, mood);
     }
     drawBoatHull(ctx, a.seed, (SURFACE_Y - oy) / ANGLER_SCALE);
     // Lying on his back in the boat: his boots kick up over the gunwale.
@@ -1849,7 +1888,7 @@ export class Renderer {
     ctx.restore();
 
     // His hat flies off in an arc and lands in the water behind the boat.
-    if (hatOff) {
+    if (snapped) {
       const k = Math.min(1, a.t / 0.5);
       const hx0 = a.x + 21;
       const hy0 = oy - 44;
@@ -1859,7 +1898,7 @@ export class Renderer {
     }
 
     // The hook, with its worm until something bites.
-    if (!reeling && hookDown) drawHook(ctx, a.hookX, a.hookY, !snapped, time);
+    if (!reeling && hookDown && a.hookY < GROUND_Y + 50) drawHook(ctx, a.hookX, a.hookY, true, time);
 
     // The warning: he's casting.
     if (a.state === "casting" || (a.state === "fishing" && a.t < 0.6)) {
@@ -1875,10 +1914,9 @@ export class Renderer {
 
   /**
    * The fisherman's trophy photo: him in his boat, grinning, holding up the
-   * pufferfish he just landed. In face mode `face` (the player's face when
-   * the hook went in) is stuck on the fish. Kept in memory for this run only.
+   * pufferfish he just landed. Kept in memory for this run only.
    */
-  captureTrophy(game: Game, face: Photo | null): Photo | null {
+  captureTrophy(game: Game): Photo | null {
     const W = 320;
     const H = 240;
     const out = document.createElement("canvas");
@@ -1966,24 +2004,6 @@ export class Renderer {
       game.stage = savedStage;
     }
 
-    if (face && face.width > 0 && face.height > 0) {
-      // The player's face on the fish's belly, upright.
-      const fr = BIRD_RADIUS * config.oceanHitboxMax * fs * 0.62;
-      const cx = fishAt.x + 2;
-      const cy = fishAt.y + 4;
-      octx.save();
-      octx.beginPath();
-      octx.arc(cx, cy, fr, 0, Math.PI * 2);
-      octx.clip();
-      const k = Math.max((fr * 2) / face.width, (fr * 2) / face.height);
-      octx.drawImage(face, cx - (face.width * k) / 2, cy - (face.height * k) / 2, face.width * k, face.height * k);
-      octx.restore();
-      octx.strokeStyle = OUTLINE;
-      octx.lineWidth = 3;
-      octx.beginPath();
-      octx.arc(cx, cy, fr, 0, Math.PI * 2);
-      octx.stroke();
-    }
     // Soft vignette
     const v = octx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
     v.addColorStop(0, "rgba(20,40,60,0)");
@@ -4888,6 +4908,8 @@ const ANGLER_SCALE = 1.5;
 const ANGLER_DRAFT = 16;
 /** His rod tip's height over the boat's waterline centre (boat coordinates). */
 const ANGLER_TIP_Y = -30;
+/** He leans back (and topples over) about his seat, relative to the boat's waterline centre. */
+const ANGLER_PIVOT = { x: 16, y: -4 };
 /** Where he holds the rod, relative to the boat's waterline centre. */
 const ANGLER_HANDS = { x: 2, y: -10 };
 
@@ -5043,9 +5065,9 @@ function drawFisherman(
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.translate(16, -4);
+  ctx.translate(ANGLER_PIVOT.x, ANGLER_PIVOT.y);
   ctx.rotate(lean);
-  ctx.translate(-16, 4);
+  ctx.translate(-ANGLER_PIVOT.x, -ANGLER_PIVOT.y);
   const hx = ANGLER_HANDS.x;
   const hy = ANGLER_HANDS.y;
 
@@ -5232,9 +5254,12 @@ function drawFisherman(
   ctx.restore();
 }
 
-/** 0..1 how far over he is, `t` s after his line snapped: over fast, a while on his back, then up again. */
+/**
+ * 0..1 how far over he is, `t` s after his line snapped: over fast from where
+ * he was leaning back hauling on it, a while on his back, then up again.
+ */
 function toppleAmount(t: number): number {
-  if (t < 0.22) return 1 - (1 - t / 0.22) ** 2;
+  if (t < 0.22) return 0.31 + 0.69 * (1 - (1 - t / 0.22) ** 2);
   if (t < ANGLER_TOPPLE_TIME) return 1;
   return Math.max(0, 1 - (t - ANGLER_TOPPLE_TIME) / 0.4);
 }
