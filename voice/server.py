@@ -168,7 +168,6 @@ class Voice:
     def __init__(self) -> None:
         self.model = None
         self.cloning = False
-        self.error: str | None = None
         self.lock = threading.Lock()
         self.waiting = 0
         self.waiting_lock = threading.Lock()
@@ -189,16 +188,25 @@ class Voice:
             log.info("model ready in %.1fs (voice cloning: %s)", time.time() - t0, self.cloning)
             if not self.cloning:
                 log.warning("no voice cloning weights: accept the terms on huggingface.co/kyutai/pocket-tts and set HF_TOKEN")
-        except Exception as e:  # noqa: BLE001 - reported on /health
-            self.error = f"{type(e).__name__}: {e}"
-            log.exception("model failed to load")
+        except Exception:  # noqa: BLE001
+            # A failed download or warm-up is usually transient: exit, and
+            # Docker's restart policy tries again.
+            log.exception("model failed to load; exiting so the container restarts")
+            logging.shutdown()
+            os._exit(1)
 
     @property
     def usable(self) -> bool:
         return self.model is not None and (self.cloning or bool(FALLBACK_VOICE))
 
     def health(self) -> dict:
-        return {"ready": self.model is not None, "cloning": self.usable, "busy": self.lock.locked()}
+        # "full": a new request would be turned away, so the game doesn't ask for a recording.
+        return {
+            "ready": self.model is not None,
+            "cloning": self.usable,
+            "busy": self.lock.locked(),
+            "full": self.waiting > MAX_WAITING,
+        }
 
     def speak(self, samples: np.ndarray, rate: int, lines: list[dict[str, str]]):
         """Yields (id, wav bytes) per line, in order. Call with the lock held."""
@@ -265,10 +273,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": str(e)})
         del body
         if not VOICE.usable:
-            return self.send_json(503, {"error": VOICE.error or ("loading" if VOICE.model is None else "no voice cloning")})
+            return self.send_json(503, {"error": "loading" if VOICE.model is None else "no voice cloning"})
         with VOICE.waiting_lock:
             if VOICE.waiting > MAX_WAITING:
-                return self.send_json(429, {"error": "busy, try again in a moment"})
+                self.send_response(429)
+                body = b'{"error": "busy, try again in a moment"}'
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Retry-After", "10")
+                self.end_headers()
+                self.wfile.write(body)
+                return
             VOICE.waiting += 1
         try:
             with VOICE.lock:

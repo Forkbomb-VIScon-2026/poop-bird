@@ -865,8 +865,8 @@ function hideToast(): void {
 // (voice.ts) makes the bird's lines in their voice, and game events (say())
 // play them during the run.
 
-/** Whether the voice server can clone voices. Checked at boot, and again when the last check failed. */
-let voiceServer = voiceAvailable();
+/** Whether the voice server can clone voices. Checked fresh for every player (at the menu) and after a failure. */
+let voiceServer: Promise<boolean> = Promise.resolve(false);
 /** The player recorded or skipped since the menu, so "Play again" doesn't ask again. */
 let voiceAsked = false;
 /** This player's lines, in generation order, and the ones that have arrived (decoded). */
@@ -888,7 +888,7 @@ async function offerVoice(): Promise<void> {
   const up = !voiceAsked && await Promise.race([voiceServer, wait(1500).then(() => false)]);
   if (token !== flow) return;
   if (!up) {
-    // Down or slow: play without it, and look again for the next player.
+    // Down, busy or slow: play without it, and look again for the next player.
     if (!voiceAsked) voiceServer = voiceAvailable();
     return startReady();
   }
@@ -990,6 +990,7 @@ function requestVoiceLines(samples: Float32Array): void {
   }, request.signal).catch((err) => {
     if (request.signal.aborted) return;
     console.warn("[voice]", err);
+    voiceServer = voiceAvailable();
     if (voiceBuffers.size === 0) showToast("🦜 The bird couldn't learn your voice this time", 3000);
   });
 }
@@ -1005,6 +1006,8 @@ function forgetVoice(): void {
   voiceAsked = false;
   voiceDirector.reset();
   stopSpeaking();
+  // The next player gets a fresh look at the server.
+  voiceServer = voiceAvailable();
 }
 
 /** The bird says a line for this moment, if it has one and isn't too chatty (VoiceDirector). */

@@ -282,8 +282,8 @@ export async function voiceAvailable(timeoutMs = 3000): Promise<boolean> {
   try {
     const res = await fetch(`${API}/health`, { signal: AbortSignal.timeout(timeoutMs), cache: "no-store" });
     if (!res.ok) return false;
-    const h = (await res.json()) as { ready?: boolean; cloning?: boolean };
-    return h.ready === true && h.cloning === true;
+    const h = (await res.json()) as { ready?: boolean; cloning?: boolean; full?: boolean };
+    return h.ready === true && h.cloning === true && h.full !== true;
   } catch {
     return false;
   }
@@ -303,7 +303,16 @@ export async function fetchLines(
     voice: toBase64(encodeWav(recording, VOICE_RATE)),
     lines: lines.map((l) => l.id),
   });
-  const res = await fetch(`${API}/lines`, { method: "POST", body, signal, headers: { "Content-Type": "application/json" } });
+  const post = () => fetch(`${API}/lines`, { method: "POST", body, signal, headers: { "Content-Type": "application/json" } });
+  let res = await post();
+  // Busy with another player: wait for their lines (they take ~30 s), then try once more.
+  if (res.status === 429) {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, Number(res.headers.get("Retry-After") ?? 10) * 1000);
+      signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+    });
+    res = await post();
+  }
   if (!res.ok || !res.body) {
     const detail = await res.json().then((j: { error?: string }) => j.error).catch(() => null);
     throw new Error(`voice server: ${res.status}${detail ? ` ${detail}` : ""}`);
