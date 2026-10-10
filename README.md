@@ -73,7 +73,7 @@ starts the face dataset collector (local credentials `local` /
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
-| **Enter** | Play after calibration |
+| **Enter** | Play after calibration; close the ocean tutorial |
 
 ## How it plays
 
@@ -174,6 +174,13 @@ total distance.
   and the fish puffs up as you do (see below). Otherwise it inflates by itself
   over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
   shows "Hold SPACE to puff up".
+- **Ocean tutorial.** A new player's first dive stops right after the bird
+  becomes a fish: the world holds still and a "You're a pufferfish!" card
+  explains puffing, the meter, spikes and jellyfish, popping and the way out.
+  The fish follows your puff meanwhile, so in keyboard mode you can try Space.
+  **Got it** (or Enter) carries on, then the puff calibration if one is due.
+  It shows once per browser; **⚙️ Options → "I'm new here: show tips"** in the
+  menu turns it back on (or off) for the next player.
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea

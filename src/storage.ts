@@ -44,6 +44,28 @@ export const CALIBRATION_KEY = "poopbird.calibration.v1";
 // v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
 export const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v2";
 
+// --- Tutorials (new-player tips) -----------------------------------------------
+
+const TUTORIALS_KEY = "poopbird.tutorialsSeen.v1";
+export const TUTORIALS = ["ocean"] as const;
+export type Tutorial = (typeof TUTORIALS)[number];
+
+/** Tutorials this browser has already shown (and the player dismissed). */
+export function loadSeenTutorials(): Set<Tutorial> {
+  try {
+    const parsed: unknown = JSON.parse(storageGet(TUTORIALS_KEY) ?? "[]");
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(TUTORIALS.filter((t) => parsed.includes(t)));
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveSeenTutorials(seen: ReadonlySet<Tutorial>): void {
+  if (seen.size === 0) storageRemove(TUTORIALS_KEY);
+  else storageSet(TUTORIALS_KEY, JSON.stringify([...seen]));
+}
+
 // --- Best score & Hall of Fame ----------------------------------------------
 
 const BEST_KEY = "poopbird.best.v1";

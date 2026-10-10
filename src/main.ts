@@ -23,12 +23,16 @@ import {
   addToHallOfFame,
   loadBest,
   loadHallOfFame,
+  loadSeenTutorials,
   qualifiesForHallOfFame,
   saveBest,
+  saveSeenTutorials,
   storageGet,
   storageRemove,
   storageSet,
+  TUTORIALS,
   type HallOfFameEntry,
+  type Tutorial,
 } from "./storage";
 import {
   FEATURE_NAMES,
@@ -132,6 +136,10 @@ let pointerHeld = false;
 let best = loadBest();
 let lastGameOverEntryDate: string | null = null;
 let currentSnapshotUrl: string | null = null;
+/** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
+const seenTutorials = loadSeenTutorials();
+/** Dismisses the tutorial on screen (button / Enter); null when none is showing. */
+let dismissTutorial: (() => void) | null = null;
 
 sound.setMuted(storageGet("poopbird.muted.v1") === "1");
 
@@ -718,6 +726,66 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
   return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
 
+// --- Tutorials (new-player tips) ---------------------------------------------------------
+
+/** "I'm new here" in the menu: some tutorial hasn't been shown yet. */
+function isNewPlayer(): boolean {
+  return TUTORIALS.some((t) => !seenTutorials.has(t));
+}
+
+/** The menu toggle: on shows every tutorial again, off skips them all. */
+function setNewPlayer(isNew: boolean): void {
+  seenTutorials.clear();
+  if (!isNew) for (const t of TUTORIALS) seenTutorials.add(t);
+  saveSeenTutorials(seenTutorials);
+}
+
+function markTutorialSeen(t: Tutorial): void {
+  seenTutorials.add(t);
+  saveSeenTutorials(seenTutorials);
+}
+
+/**
+ * The bird just turned into a deflated fish. A new player first gets the
+ * ocean tutorial; then puffing up is the rest of the transformation (the
+ * puff calibration on the first face-mode dive).
+ */
+async function onSubmerged(): Promise<void> {
+  const token = flow;
+  const tutorial = !seenTutorials.has("ocean");
+  if (tutorial) {
+    await runOceanTutorial(token);
+    if (token !== flow) return;
+  }
+  if (needsPuffCalibration()) void runPuffCalibration();
+  else if (mode === "keyboard" && !tutorial) showToast("Hold SPACE to puff up 🐡");
+}
+
+/**
+ * Holds the dive with the tutorial card up until the player dismisses it. The
+ * fish follows the puff meanwhile, so keyboard players can try Space. Going to
+ * the menu or restarting (a new flow token) abandons it unseen.
+ */
+async function runOceanTutorial(token: number): Promise<void> {
+  const face = mode === "face";
+  const overlay = $("ocean-tutorial");
+  overlay.querySelectorAll<HTMLElement>("[data-face]").forEach((el) => show(el, face));
+  overlay.querySelectorAll<HTMLElement>("[data-keys]").forEach((el) => show(el, !face));
+  show($("tutorial-next"), needsPuffCalibration());
+  game.holdTransition = true;
+  show(overlay, true);
+  let done = false;
+  dismissTutorial = () => (done = true);
+  while (!done && token === flow) await wait(50);
+  dismissTutorial = null;
+  show(overlay, false);
+  if (token !== flow) return;
+  markTutorialSeen("ocean");
+  game.holdTransition = false;
+  // Keyboard players start at the hover point, whatever they tried out.
+  if (mode === "keyboard") keyPuff = config.oceanHoverPuff;
+}
+
 let toastTimer = 0;
 
 function showToast(text: string, ms = 2600): void {
@@ -837,6 +905,7 @@ function goToMenu(): void {
   show(cam, false);
   show(hud, false);
   game.reset();
+  $<HTMLInputElement>("opt-tips").checked = isNewPlayer();
   showScreen("start");
 }
 
@@ -1029,7 +1098,8 @@ function frame(now: number): void {
     accumulator += dt;
     while (accumulator >= STEP) {
       game.straining = straining();
-      if (game.swimming) {
+      // Also while the dive is held, so Space puffs the fish during the tutorial.
+      if (game.swimming || game.holdTransition) {
         // A pop deflates the fish: key puff stays empty while stunned.
         keyPuff = game.stunned
           ? 0
@@ -1140,9 +1210,7 @@ function handleGameEvents(): void {
         }
         break;
       case "submerged":
-        // The bird just turned into a deflated fish: puffing up is the rest of the transformation.
-        if (needsPuffCalibration()) void runPuffCalibration();
-        else if (mode === "keyboard") showToast("Hold SPACE to puff up 🐡");
+        void onSubmerged();
         break;
       case "breached":
         sound.splash();
@@ -1309,6 +1377,7 @@ window.addEventListener("keydown", (e) => {
       break;
     case "enter":
       if (state === "calibrated") playAfterCalibration();
+      else if (state === "playing") dismissTutorial?.();
       break;
   }
 });
@@ -1353,6 +1422,10 @@ on("btn-pause-menu", goToMenu);
 on("btn-again", () => startReady());
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
+on("btn-tutorial-ok", () => dismissTutorial?.());
+$<HTMLInputElement>("opt-tips").addEventListener("change", (e) => {
+  setNewPlayer((e.target as HTMLInputElement).checked);
+});
 on("btn-download", () => {
   if (!currentSnapshotUrl) return;
   const a = document.createElement("a");
@@ -1364,9 +1437,10 @@ $<HTMLFormElement>("go-hof-form").addEventListener("submit", (e) => {
   e.preventDefault();
   saveHallOfFameEntry();
 });
-// Buttons shouldn't keep focus, or Space would "click" them while straining.
+// Buttons and option toggles shouldn't keep focus, or Space would "click" them while straining
+// (and a focused checkbox counts as typing, which mutes the shortcuts).
 document.addEventListener("click", (e) => {
-  if ((e.target as HTMLElement).closest("button")) (document.activeElement as HTMLElement | null)?.blur();
+  if ((e.target as HTMLElement).closest("button, .opt")) (document.activeElement as HTMLElement | null)?.blur();
 });
 
 // --- Boot ----------------------------------------------------------------------------------

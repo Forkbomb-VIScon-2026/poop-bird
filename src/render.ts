@@ -195,6 +195,8 @@ export class Renderer {
     if (game.wedding && !game.transition) this.drawWeddingCue(game.wedding, game);
     if (game.transition) {
       this.drawParticles(game);
+      // A held dive (tutorial, puff calibration) shows the meter, so the player sees their puff.
+      if (ocean && game.holdTransition) this.drawPuffMeter(game);
     } else if (game.phase === "playing") {
       if (ocean) this.drawPuffMeter(game);
       else this.drawChargeMeter(game);
