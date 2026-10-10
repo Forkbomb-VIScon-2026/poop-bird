@@ -735,6 +735,7 @@ function onGameOver(): void {
   $("go-accidents").textContent = String(game.accidents);
   $("go-smashed").textContent = String(game.camerasSmashed);
   $("go-scandals").textContent = String(game.frontPages.length);
+  $("go-kids").textContent = String(game.kidsDisarmed + game.pebblesShot);
 
   // The last photo that got away makes tomorrow's paper.
   const front = game.frontPages.at(-1) ?? null;
@@ -1020,6 +1021,24 @@ function handleGameEvents(): void {
       case "cameraSmashed":
         sound.smash();
         break;
+      case "slingshotDraw":
+        sound.slingshotDraw(e.windup);
+        break;
+      case "slingshotFire":
+        sound.slingshotFire();
+        break;
+      case "bonk":
+        sound.bonk();
+        break;
+      case "pebbleShot":
+        sound.pebbleShot(e.combo);
+        break;
+      case "ricochet":
+        sound.ricochet();
+        break;
+      case "kidCried":
+        sound.kidCry();
+        break;
     }
   }
   game.events.length = 0;
@@ -1067,6 +1086,10 @@ window.addEventListener("keydown", (e) => {
     case "f":
       // Debug shortcut: a paparazzo walks on.
       if (debug?.visible && state === "playing") game.spawnPaparazzoNow();
+      break;
+    case "k":
+      // Debug shortcut: a slingshot kid walks on.
+      if (debug?.visible && state === "playing") game.spawnKidNow();
       break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.

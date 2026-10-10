@@ -63,6 +63,7 @@ access on anything other than localhost, put it behind HTTPS.
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
 | **G** | With the debug panel open: spawn the next gate now |
 | **L** | With the debug panel open: spawn a power line now |
+| **K** | With the debug panel open: a slingshot kid walks on |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 | **Enter** | Play after calibration |
 
@@ -97,6 +98,17 @@ there's no countdown.
   billboard as the next obstacle, always before the harbour gate (and on the
   game-over screen). The run's first paparazzo walks slower and has a
   "SPLAT HIM!" arrow.
+- **Slingshot kids:** a kid in a propeller beanie trots along the sidewalk,
+  plants his feet and winds up his slingshot at you. A "!" pops over his head
+  and a dotted arc reaches out toward the bird, ending in a crosshair. When
+  the band is fully back he lets go, aimed at where you are (with a little
+  lead). A pebble that hits bonks the bird: it tumbles stunned, gets knocked
+  down, and loses its charge and combo, which is deadly near the ground.
+  Ways out: change height once he fires (a near miss pays a "CLOSE ONE!"
+  bonus), put a building or pole between you (pebbles ping off them), shoot
+  the pebble down with a falling poop ("INTERCEPTED!", ×4), or splat the kid
+  while he's still armed ("DISARMED!", ×3) and he runs off crying. Later
+  kids fire twice. Tunables are in the debug panel's "Slingshot kids" group.
 - **Score** = distance + target bonuses. It carries straight across stages.
 
 ### The ocean stage
@@ -255,6 +267,7 @@ build is always the plain one:
 - **G** spawns the next gate right away, so you can test the ocean without
   flying through the city first
 - **L** spawns a power line right away (city only)
+- **K** sends a slingshot kid on right away (city only)
 - **🐡 Start as pufferfish** (or **O**) starts a fresh run that dives straight
   into the ocean, skipping the ready screen and the city. In face mode the dive runs
   the puff calibration if one is due, so **C** followed by this button is a

@@ -437,6 +437,157 @@ export class Sound {
     for (let i = 0; i < 5; i++) this.blip(t + 0.05 + i * 0.045 + Math.random() * 0.03, 2400 + Math.random() * 2400, 0.04);
   }
 
+  /** Rubber band creaking tighter over the kid's wind-up. */
+  slingshotDraw(windup: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(70, t);
+    o.frequency.exponentialRampToValueAtTime(260, t + windup);
+    // A fast wobble makes it creak instead of hum.
+    lfo.frequency.setValueAtTime(18, t);
+    lfo.frequency.linearRampToValueAtTime(45, t + windup);
+    lfoGain.gain.value = 25;
+    lfo.connect(lfoGain).connect(o.frequency);
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(600, t);
+    filter.frequency.exponentialRampToValueAtTime(1800, t + windup);
+    filter.Q.value = 3;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + windup * 0.8);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + windup);
+    o.connect(filter).connect(g).connect(this.master);
+    o.start(t);
+    lfo.start(t);
+    o.stop(t + windup + 0.02);
+    lfo.stop(t + windup + 0.02);
+  }
+
+  /** The band snapping forward and the pebble whooshing off. */
+  slingshotFire(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(320, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.18);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.22);
+    this.noiseSweep(t + 0.02, 0.35, 900, 3500, 0.12, "bandpass");
+  }
+
+  /** Cartoon bonk on the head, then the kid's "nyah nyah". */
+  bonk(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(900, t);
+    o.frequency.exponentialRampToValueAtTime(160, t + 0.22);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.4, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.3);
+    this.noiseBurst(t, 0.05, 1800, 0.35, "bandpass");
+    // Nyah nyah nyah-nyah nyah (G E A G E)
+    const notes = [784, 659, 880, 784, 659];
+    const lens = [0.14, 0.14, 0.1, 0.1, 0.22];
+    let st = t + 0.35;
+    notes.forEach((freq, i) => {
+      const n = ctx.createOscillator();
+      const ng = ctx.createGain();
+      n.type = "square";
+      n.frequency.value = freq;
+      ng.gain.setValueAtTime(0.0001, st);
+      ng.gain.exponentialRampToValueAtTime(0.045, st + 0.01);
+      ng.gain.exponentialRampToValueAtTime(0.0001, st + lens[i] * 0.9);
+      n.connect(ng).connect(this.master!);
+      n.start(st);
+      n.stop(st + lens[i]);
+      st += lens[i];
+    });
+  }
+
+  /** A poop shot a pebble down: crunchy splat and a bright ding. */
+  pebbleShot(combo: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(t, 0.2, 1100, 0.35, "bandpass");
+    this.noiseBurst(t, 0.06, 4000, 0.25, "highpass");
+    this.blip(t + 0.03, 1320, 0.12);
+    this.blip(t + 0.1, 1760, 0.12);
+    this.hit(combo);
+  }
+
+  /** A pebble pinging off a wall or pole. */
+  ricochet(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(2600, t);
+    o.frequency.exponentialRampToValueAtTime(1500, t + 0.3);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.08, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.34);
+    this.noiseBurst(t, 0.03, 5000, 0.2, "highpass");
+  }
+
+  /** The disarmed kid wailing: "waaah". */
+  kidCry(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime + 0.05;
+    const dur = 0.9;
+    const o = ctx.createOscillator();
+    const vib = ctx.createOscillator();
+    const vibGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(520, t);
+    o.frequency.linearRampToValueAtTime(700, t + 0.15);
+    o.frequency.exponentialRampToValueAtTime(380, t + dur);
+    vib.frequency.value = 7;
+    vibGain.gain.value = 30;
+    vib.connect(vibGain).connect(o.frequency);
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(900, t);
+    filter.frequency.linearRampToValueAtTime(2200, t + 0.15);
+    filter.frequency.exponentialRampToValueAtTime(700, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.06);
+    g.gain.setValueAtTime(0.09, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(filter).connect(g).connect(this.master);
+    o.start(t);
+    vib.start(t);
+    o.stop(t + dur + 0.02);
+    vib.stop(t + dur + 0.02);
+  }
+
   beep(high = false): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
