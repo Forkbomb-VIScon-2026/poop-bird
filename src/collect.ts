@@ -1,7 +1,7 @@
 // Face dataset recorder (collect.html): consent, profile and a camera check,
 // then the scripted calibration, strain and puff segments from session.ts,
-// gzipped and uploaded to the collector (collector/server.ts). Built only in
-// dev and debug mode for now (see vite.config.ts).
+// gzipped and uploaded to the collector (collector/server.ts). Served at
+// /collect.html in every build (see vite.config.ts).
 
 import "./collect.css";
 import { Sound } from "./audio";
