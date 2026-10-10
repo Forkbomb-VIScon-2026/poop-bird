@@ -3,6 +3,9 @@ import {
   FEATURE_NAMES,
   assessCalibration,
   buildCalibration,
+  DEFAULT_STRAIN_DELTAS,
+  defaultCalibration,
+  neutralFaceStats,
   extractFeatures,
   featureStats,
   robustFeatureStats,
@@ -172,6 +175,52 @@ describe("calibration weighting", () => {
   it("returns 0 when no feature has weight", () => {
     const flat: Calibration = { neutral: zeroFeatures(), strain: zeroFeatures(), weights: zeroFeatures() };
     expect(rawStrain(fv({ browDown: 1 }), flat, 1.3)).toBe(0);
+  });
+});
+
+describe("defaultCalibration", () => {
+  const relaxed = { browDown: 0.05, eyeSquint: 0.2, eyeBlink: 0.1, noseSneer: 0.02, cheekSquint: 0.05, mouthPress: 0.1 };
+  const calib = defaultCalibration(neutralFaceStats(samples(relaxed, 30)));
+
+  it("scores the player's own relaxed face ~0", () => {
+    expect(rawStrain(fv(relaxed), calib, 1.3)).toBeCloseTo(0, 1);
+  });
+
+  it("scores the relaxed face plus the typical changes ~1", () => {
+    const strained = fv(relaxed);
+    for (const [f, d] of Object.entries(DEFAULT_STRAIN_DELTAS)) strained[f as keyof FeatureVector] += d;
+    expect(rawStrain(strained, calib, 1.3)).toBeCloseTo(1, 1);
+  });
+
+  it("turns on for a strong brow-and-eye strain alone", () => {
+    const face = fv({ ...relaxed, browDown: 0.6, eyeSquint: 0.7, eyeBlink: 0.6 });
+    expect(rawStrain(face, calib, 1.3)).toBeGreaterThan(PARAMS.strainOn);
+  });
+
+  it("only weights the default features", () => {
+    expect(calib.weights.mouthRollLower).toBe(0);
+    expect(calib.weights.eyeMouth).toBe(0);
+  });
+
+  it("gives a feature with no headroom at rest no weight, and less headroom less weight", () => {
+    const squinter = defaultCalibration(neutralFaceStats(samples({ ...relaxed, eyeSquint: 0.9, browDown: 0.8 }, 30)));
+    expect(squinter.weights.eyeSquint).toBe(0);
+    expect(squinter.weights.browDown).toBeGreaterThan(0);
+    expect(squinter.weights.browDown).toBeLessThan(calib.weights.browDown);
+    expect(squinter.strain.browDown).toBeLessThanOrEqual(1);
+  });
+
+  it("scales the typical changes", () => {
+    const easy = defaultCalibration(neutralFaceStats(samples(relaxed, 30)), 0.5);
+    expect(easy.strain.browDown - easy.neutral.browDown).toBeCloseTo(DEFAULT_STRAIN_DELTAS.browDown! / 2, 2);
+  });
+
+  it("keeps the neutral std for the puff calibration, and ignores a blink in the neutral window", () => {
+    const window = samples(relaxed, 30);
+    window[10] = fv({ ...relaxed, eyeBlink: 0.95 });
+    const stats = neutralFaceStats(window);
+    expect(stats.mean.eyeBlink).toBeCloseTo(relaxed.eyeBlink, 1);
+    expect(defaultCalibration(stats).neutralStd?.eyeBlink).toBeGreaterThan(0.1);
   });
 });
 

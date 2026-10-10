@@ -244,6 +244,63 @@ export function rawStrain(features: FeatureVector, calib: Calibration, featureCl
   return clamp(sum / weightSum, 0, 1);
 }
 
+// --- Default calibration -------------------------------------------------------
+
+/**
+ * How far each feature typically moves on a strain face, for players who
+ * skip the calibration. Only features that move for most people: brows, eyes,
+ * nose, cheeks and pressed lips. The lip rolls and shrugs vary too much
+ * between players to count by default.
+ */
+export const DEFAULT_STRAIN_DELTAS: Readonly<Partial<Record<FeatureName, number>>> = {
+  browDown: 0.3,
+  eyeSquint: 0.3,
+  eyeBlink: 0.35,
+  noseSneer: 0.25,
+  cheekSquint: 0.2,
+  mouthPress: 0.2,
+};
+
+/** Blendshape scores top out at 1; the default strain target stays just below. */
+const MAX_DEFAULT_TARGET = 0.98;
+/** A feature whose relaxed value leaves less than this fraction of its typical change as headroom gets no weight. */
+const MIN_DEFAULT_HEADROOM = 0.3;
+
+/**
+ * Neutral-face stats for the default calibration: the median (one blink in the
+ * window doesn't shift it) and the plain std (so the puff calibration, which
+ * reuses `neutralStd`, sees the same noise as after a full calibration).
+ */
+export function neutralFaceStats(samples: readonly FeatureVector[]): FeatureStats {
+  const robust = robustFeatureStats(samples);
+  return { mean: robust.mean, std: featureStats(samples).std, count: samples.length };
+}
+
+/**
+ * A calibration from a measured relaxed face alone: each feature's strain
+ * target is the player's own neutral value plus its typical change (× `scale`),
+ * weighted by that change. A feature already near its maximum at rest (say,
+ * squinting eyes) gets less weight, or none, since it can barely move further.
+ */
+export function defaultCalibration(
+  neutral: Pick<FeatureStats, "mean" | "std">,
+  scale = 1,
+  deltas: Readonly<Partial<Record<FeatureName, number>>> = DEFAULT_STRAIN_DELTAS,
+): Calibration {
+  const strain = { ...neutral.mean };
+  const weights = zeroFeatures();
+  for (const f of FEATURE_NAMES) {
+    const delta = (deltas[f] ?? 0) * scale;
+    if (delta <= 0) continue;
+    const target = Math.min(neutral.mean[f] + delta, MAX_DEFAULT_TARGET);
+    const headroom = (target - neutral.mean[f]) / delta;
+    if (headroom < MIN_DEFAULT_HEADROOM) continue;
+    strain[f] = target;
+    weights[f] = delta * headroom;
+  }
+  return { neutral: { ...neutral.mean }, strain, weights, neutralStd: { ...neutral.std } };
+}
+
 export interface CalibrationQuality {
   ok: boolean;
   /** Sum of feature weights; ~how many "units" of face movement we can see. */

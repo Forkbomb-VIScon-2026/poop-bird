@@ -69,8 +69,11 @@ access on anything other than localhost, put it behind HTTPS.
 
 ## How it plays
 
-After calibration (each phase shows a sketch of the face to make), a strain
-check shows a live meter between a relaxed and a strained face sketch. Then the
+Calibration is optional. Face mode opens straight on a strain check: a live
+meter between a relaxed and a strained face sketch, running on a default
+calibration fitted to a quick read of the player's relaxed face. If the meter
+doesn't follow their face, the player clicks "Calibrate" for the full two-phase
+calibration (each phase shows a sketch of the face to make). Then the
 bird hovers until the player strains for the first time, which starts the run;
 there's no countdown.
 
@@ -153,10 +156,20 @@ webcam), and the wiring in `src/main.ts`.
    `noseSneer`, `cheekSquint` and `mouthPress` (each the mean of left and
    right), plus `mouthRollLower`, `mouthRollUpper`, `mouthShrugUpper` and
    `mouthShrugLower`.
-2. **Calibration** (per player, about 3 s per phase): "Relax your face", then
+2. **Calibration** (optional, per player, about 3 s per phase): "Relax your face", then
    "STRAIN!". The first 0.7 s of each phase is ignored so reaction time doesn't
    pollute the data. We store the mean and standard deviation of each feature
    for both phases.
+
+   **Default calibration.** Without a saved calibration, the strain check reads the
+   relaxed face for `defaultNeutralSeconds` (1.5 s; it retries until a face
+   stays in view) and takes each feature's median as neutral. The strain target
+   is neutral plus a typical change per feature (`DEFAULT_STRAIN_DELTAS` in
+   `src/strain.ts`, scaled by `defaultStrainScale`), only for the features
+   that move for most people: brows, eyes, nose, cheeks and pressed lips. A
+   feature that rests near its maximum gets less weight, or none. The default
+   is never saved, so each face-mode start re-reads the relaxed face of
+   whoever is playing. The deltas are estimates; tune them with real faces.
 3. **Weights.** A feature's weight is `max(0, |Δ| − minFeatureDelta) ×
    reliability`, where `Δ = strainMean − neutralMean` and reliability is
    `min(1, |Δ| / (σ_neutral + σ_strain) / 2)`. Features that didn't move get
@@ -183,8 +196,9 @@ webcam), and the wiring in `src/main.ts`.
    with a `currentTime` check), so only when there's a new video frame. Physics
    runs on a fixed 120 Hz timestep in the render loop.
 
-The last calibration is saved in `localStorage`. Press **C** (or click
-"Recalibrate") when a new player sits down.
+A full calibration is saved in `localStorage` and greets the player with
+"Welcome back!" next time. Press **C** (or click "Recalibrate") when a new
+player sits down.
 
 ### Puff detection (ocean)
 
@@ -208,8 +222,9 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
    case a future model fixes it). The strain calibration only weights its own
    features, so the new ones get strain weight 0 and strain detection is
    unchanged.
-2. **Neutral** comes from the main calibration's relaxed phase, which also
-   stores each feature's standard deviation.
+2. **Neutral** comes from the main calibration's relaxed phase (or the
+   default calibration's relaxed read), which also stores each feature's
+   standard deviation.
 3. **Puff phase.** On the first dive in face mode, with the world frozen, we
    collect `oceanCalibrationSeconds` (3 s) of full puff and drop the first
    `calibrationSettle`. Pausing restarts the phase; going to the menu or
