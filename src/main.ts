@@ -454,7 +454,7 @@ async function readRelaxedFace(token: number): Promise<FeatureVector[] | null> {
   const total = config.defaultNeutralSeconds * 1000;
   let start = performance.now();
   let mine = startSampling();
-  for (;;) {
+  for (; ;) {
     await wait(50);
     if (token !== flow || calibSamples !== mine.samples || !calibFrames) {
       stopSampling(mine.samples);
@@ -510,14 +510,12 @@ async function calibrationPhase(
   progress.style.width = "0%";
   for (let i = 2; i > 0; i--) {
     count.textContent = String(i);
-    sound.beep();
     await wait(600);
     if (token !== flow) return { samples: [], coverage: 0 };
   }
 
   $("calib-prompt").textContent = prompt;
   card.classList.toggle("strain", strainPhase);
-  sound.beep(true);
   const total = config.calibrationSeconds * 1000;
   const settle = config.calibrationSettle * 1000;
   const start = performance.now();
@@ -708,7 +706,7 @@ async function runSwimLesson(): Promise<void> {
   let steps = LESSON_STEPS;
   let calibrationRuns = 0;
   let why = "";
-  for (;;) {
+  for (; ;) {
     const lesson = steps === LESSON_STEPS;
     if (!lesson) {
       calibrationRuns++;
@@ -919,7 +917,7 @@ async function puffCalibrationPhase(token: number, seconds: number, burble: bool
   const settle = config.calibrationSettle * 1000;
   let start = -1;
   let mine: ReturnType<typeof startSampling> | null = null;
-  for (;;) {
+  for (; ;) {
     if (token !== flow || abortPuffCalibration) {
       abortPuffCalibration = false;
       stopSampling(mine?.samples ?? null);
@@ -1685,7 +1683,7 @@ function handleGameEvents(): void {
         break;
       case "transformed":
       case "surfaced":
-        sound.beep(true);
+        sound.splash();
         break;
       case "spike":
         sound.spike();
@@ -1803,6 +1801,7 @@ function handleGameEvents(): void {
         buzz(60);
         break;
       case "anchorWarn":
+        // aaron removed this we dont want no fucking beep
         sound.beep();
         break;
       case "anchorRattle":
@@ -2003,7 +2002,7 @@ function goLandscape(): void {
   document.documentElement
     .requestFullscreen({ navigationUI: "hide" })
     .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape"))
-    .catch(() => {});
+    .catch(() => { });
 }
 
 const portraitQuery = window.matchMedia("(orientation: portrait)");
