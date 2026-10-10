@@ -117,8 +117,6 @@ let mode: Mode = "keyboard";
 
 const renderer = new Renderer(canvas);
 renderer.graphics = loadGraphics();
-/** Reused canvas for the player's face crop that rides on the bird. */
-const birdFace = document.createElement("canvas");
 const game = new Game(renderer.resize());
 const sound = new Sound();
 const tracker = new FaceTracker(video);
@@ -1762,9 +1760,6 @@ function frame(now: number): void {
     accumulator = 0;
   }
 
-  // The player's face on the bird, while the webcam sees it.
-  const faceBox = mode === "face" && faceFresh() ? (lastFace?.box ?? null) : null;
-  renderer.face = faceBox && cropFace(video, faceBox, birdFace, 120) ? birdFace : null;
   renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
   const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;

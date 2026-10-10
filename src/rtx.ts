@@ -6,7 +6,6 @@
 // The photos only load the first time RTX is turned on.
 
 import { BIRD_RADIUS, GROUND_Y, SURFACE_Y, poleX, type Game, type PowerLine } from "./game";
-import { drawFaceDisc } from "./faceDisc";
 
 import asphaltUrl from "./assets/asphalt.jpg";
 import balloonUrl from "./assets/balloon.png";
@@ -635,10 +634,10 @@ export class RtxPlayer {
 
   /**
    * The pigeon: flaps through up, glide and down photos (holding each and cross-fading into the
-   * next), squashes and trembles while it strains, stretches with relief, sweats. Googly eyes,
-   * or the player's face as its head. False until the photos have loaded.
+   * next), squashes and trembles while it strains, stretches with relief, sweats. Googly eyes.
+   * False until the photos have loaded.
    */
-  drawBird(ctx: CanvasRenderingContext2D, game: BirdState, face: HTMLCanvasElement | null): boolean {
+  drawBird(ctx: CanvasRenderingContext2D, game: BirdState): boolean {
     const s = sprites();
     const flap = [s.birdUp, s.birdGlide, s.birdDown, s.birdGlide];
     if (!flap.every(spriteReady)) return false;
@@ -675,22 +674,18 @@ export class RtxPlayer {
       const ex = a.x + (n.x - a.x) * blend;
       const ey = a.y + (n.y - a.y) * blend;
       const er = 6.5 * (1 + c * 0.35);
-      if (face) {
-        drawFaceDisc(ctx, face, ex - Math.cos(rot) * er * 0.5, ey - Math.sin(rot) * er * 0.5, er * 2, rot, c);
+      const pupil = c > 0.75 ? 0.32 : 0.55;
+      const far = { x: ex - Math.cos(rot) * er * 0.9 + Math.sin(rot) * er * 0.5, y: ey - Math.sin(rot) * er * 0.9 - Math.cos(rot) * er * 0.5 };
+      const [near, back] = this.birdEyes;
+      if (game.stunned) {
+        near.spin(game.time);
+        back.spin(game.time + 0.4);
       } else {
-        const pupil = c > 0.75 ? 0.32 : 0.55;
-        const far = { x: ex - Math.cos(rot) * er * 0.9 + Math.sin(rot) * er * 0.5, y: ey - Math.sin(rot) * er * 0.9 - Math.cos(rot) * er * 0.5 };
-        const [near, back] = this.birdEyes;
-        if (game.stunned) {
-          near.spin(game.time);
-          back.spin(game.time + 0.4);
-        } else {
-          near.update(ex, ey, er, this.frameDt);
-          back.update(far.x, far.y, er * 0.85, this.frameDt);
-        }
-        back.draw(ctx, far.x, far.y, er * 0.85, pupil);
-        near.draw(ctx, ex, ey, er, pupil);
+        near.update(ex, ey, er, this.frameDt);
+        back.update(far.x, far.y, er * 0.85, this.frameDt);
       }
+      back.draw(ctx, far.x, far.y, er * 0.85, pupil);
+      near.draw(ctx, ex, ey, er, pupil);
       // Sweat flying off its head while it strains.
       if (c > 0.55 && !game.stunned) {
         for (let k = 0; k < 3; k++) {

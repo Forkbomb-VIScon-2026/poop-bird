@@ -1,7 +1,6 @@
 // Canvas rendering. Simple shapes, chunky outlines, no image assets.
 
 import { config } from "./config";
-import { drawFaceDisc } from "./faceDisc";
 import {
   RTX,
   RtxPlayer,
@@ -156,8 +155,6 @@ export class Renderer {
   readonly photos = new Map<number, Photo>();
   /** "rtx": draw with real photos where we have them (rtx.ts); "classic" (the default): all drawn. */
   graphics: "classic" | "rtx" = "classic";
-  /** The player's live face crop, drawn as the bird's head; null when there's none (or in keyboard mode). */
-  face: HTMLCanvasElement | null = null;
   /** The photo bird and fish, with their own animation state. */
   private readonly rtxPlayer = new RtxPlayer();
 
@@ -1245,7 +1242,7 @@ export class Renderer {
 
   private drawBird(game: BirdLook): void {
     if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) return this.drawZappedBird(game);
-    if (RTX.on && this.rtxPlayer.drawBird(this.ctx, game, this.face)) {
+    if (RTX.on && this.rtxPlayer.drawBird(this.ctx, game)) {
       if (game.stunned) {
         for (let i = 0; i < 3; i++) {
           const a = game.time * 5 + (i * Math.PI * 2) / 3;
@@ -1419,15 +1416,6 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.restore();
-
-    // The player's face as the head, when the webcam sees them.
-    if (this.face) {
-      const hx = r * 0.3;
-      const hy = -r * 0.22;
-      const cos = Math.cos(b.rot);
-      const sin = Math.sin(b.rot);
-      drawFaceDisc(ctx, this.face, b.x + shakeX + hx * cos - hy * sin, b.y + shakeY + hx * sin + hy * cos, r * 0.78, b.rot, c);
-    }
 
     // Sweat drops (not rotated, they fall off)
     if (c > 0.55 && !stunned) {
