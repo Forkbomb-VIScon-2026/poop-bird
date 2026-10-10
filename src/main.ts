@@ -24,8 +24,10 @@ import {
   CALIBRATION_KEY,
   PUFF_CALIBRATION_KEY,
   loadBest,
+  loadGraphics,
   loadSeenTutorials,
   saveBest,
+  saveGraphics,
   saveSeenTutorials,
   storageGet,
   storageRemove,
@@ -114,6 +116,9 @@ let state: AppState = "menu";
 let mode: Mode = "keyboard";
 
 const renderer = new Renderer(canvas);
+renderer.graphics = loadGraphics();
+/** Reused canvas for the player's face crop that rides on the bird. */
+const birdFace = document.createElement("canvas");
 const game = new Game(renderer.resize());
 const sound = new Sound();
 const tracker = new FaceTracker(video);
@@ -1757,6 +1762,9 @@ function frame(now: number): void {
     accumulator = 0;
   }
 
+  // The player's face on the bird, while the webcam sees it.
+  const faceBox = mode === "face" && faceFresh() ? (lastFace?.box ?? null) : null;
+  renderer.face = faceBox && cropFace(video, faceBox, birdFace, 120) ? birdFace : null;
   renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
   const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
@@ -2175,6 +2183,23 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 
 decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
+
+// Settings (the gear, top right): the graphics style. Opening it mid-run pauses the game.
+const settingsPanel = $("screen-settings");
+const rtxSwitch = $<HTMLInputElement>("opt-rtx");
+function openSettings(): void {
+  if (state === "playing") togglePause();
+  rtxSwitch.checked = renderer.graphics === "rtx";
+  show(settingsPanel, true);
+  armButtonKeys(300);
+}
+on("btn-settings", openSettings);
+on("btn-hud-settings", openSettings);
+on("btn-settings-done", () => show(settingsPanel, false));
+rtxSwitch.addEventListener("change", () => {
+  renderer.graphics = rtxSwitch.checked ? "rtx" : "classic";
+  saveGraphics(renderer.graphics);
+});
 on("btn-face", () => {
   goLandscape();
   void startFaceMode();
