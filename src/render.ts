@@ -248,7 +248,7 @@ export class Renderer {
     // Over the buildings, so a paparazzo's timer is never hidden.
     for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
     for (const d of game.doves) drawDove(ctx, d, game.time);
-    for (const j of game.jellies) this.drawJelly(j, game.time, game.spike.spiked);
+    for (const j of game.jellies) this.drawJelly(j, game.time);
     if (game.angler) this.drawAngler(game.angler, game);
     this.drawPoops(game);
     for (const p of game.pebbles) drawPebble(this.ctx, p);
@@ -2559,7 +2559,7 @@ export class Renderer {
     ctx.fill();
   }
 
-  private drawJelly(j: Jelly, time: number, poppable: boolean): void {
+  private drawJelly(j: Jelly, time: number): void {
     const ctx = this.ctx;
     const pulse = 1 + Math.sin(time * 3 + j.phase) * 0.08;
     const r = j.r;
@@ -2602,16 +2602,6 @@ export class Renderer {
       ctx.fill();
     }
     ctx.restore();
-    // Spiked fish can pop it: a pulsing gold ring says so.
-    if (poppable) {
-      ctx.strokeStyle = `rgba(255,214,0,${0.5 + 0.4 * Math.sin(time * 10)})`;
-      ctx.lineWidth = 3;
-      ctx.setLineDash([6, 5]);
-      ctx.beginPath();
-      ctx.arc(j.x, j.y, r * 1.45, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
   }
 
   /**
