@@ -98,10 +98,14 @@ function interactivePuffCalibration(fresh: FeatureVector[], look: FeatureVector[
   return cal && assessPuffCalibration(cal, puffs, { strain: 1 }, p, relaxed).ok ? cal : null;
 }
 
-/** Like the game: if the first sequence fails the check, a second one (the script's next two cycles). */
+/**
+ * Like the game: the swim lesson (a relaxed moment, two puff/relax cycles);
+ * if its reading isn't clear, the calibration, which adds a look-around (the
+ * script's next two cycles).
+ */
 function gameInteractiveCalibration(c: PuffCalibrationInput, config: Config): Calibration | null {
-  const first = interactivePuffCalibration(c.fresh, c.look, c.cycles, config);
-  if (first || config.oceanPuffCalibrationAttempts < 2 || c.retry.length < 2) return first;
+  const lesson = interactivePuffCalibration(c.fresh, [], c.cycles, config);
+  if (lesson || c.retry.length < 2) return lesson;
   return interactivePuffCalibration(c.cycles[1].relax, c.look, c.retry, config);
 }
 

@@ -212,6 +212,42 @@ canvas#game {
   min-height: 1.2em;
 }
 
+/* Calibration timeline: what's coming, so a switch never comes as a surprise. */
+.puff-timeline {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.puff-timeline li {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.55;
+}
+
+.puff-timeline li.puff {
+  background: #ffd6de;
+}
+
+.puff-timeline li.done {
+  opacity: 0.3;
+}
+
+.puff-timeline li.now {
+  opacity: 1;
+  transform: scale(1.12);
+  box-shadow: 0 2px 0 var(--ink);
+}
+
 /* Practice step: the checks tick green as the fish floats up, then sinks. */
 .puff-check {
   list-style: none;

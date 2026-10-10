@@ -187,19 +187,31 @@ total distance.
   the controls: a little hop, and it plunges through the surface while the
   camera follows it down past the quay wall into the sea. Under water it
   gulps, loses its feathers in a burst of bubbles and becomes a deflated
-  pufferfish, which then inflates. On the first dive in face mode, inflating
-  *is* the puff calibration: the world holds still with "PUFFERFISH FACE!"
-  (puff your cheeks and purse your lips) and the fish puffs up as you do (see
-  below). Otherwise it inflates by itself
-  over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
-  shows "Hold SPACE to puff up".
-- **Ocean tutorial.** A new player's first dive stops right after the bird
+  pufferfish, which inflates by itself over `oceanTransformTime`. Then the
+  controls are yours again. Keyboard mode shows "Hold SPACE to puff up". On
+  the first dive in face mode the fish swims on right away into the **swim
+  lesson** (see below).
+- **Swim lesson** (face mode, first dive). The fish swims on in **calm
+  water** (`Game.calmWater`: no obstacles or jellyfish, no spiking, the sea
+  floor doesn't kill) while banners walk you through it: relax, "PUCKER &
+  PUFF!", "LET IT OUT", once more. The fish shows each step, puffing up and
+  floating, then shrinking and sinking, whatever your face does, and a
+  countdown ("LET IT OUT IN 2…") warns before each switch. Meanwhile your face
+  is sampled; if the reading is clear, the fish switches to your face for
+  "YOUR TURN!" (float up, then sink). If not, a slower **calibration** runs,
+  with a timeline of its steps, a look-around and a 3 s countdown before every
+  switch. New players then get the ocean tips as two banners. The obstacles
+  start once the fish swims ("PUFF UP TO START!" if it lies on the sand, up
+  to 8 s), and the sea floor spares it for `oceanCalmFloorGrace` (2 s) more.
+  Details below.
+- **Ocean tutorial** (keyboard mode, or face mode with a saved puff
+  calibration). A new player's first dive stops right after the bird
   becomes a fish: the world holds still and a "You're a pufferfish!" card
   explains puffing (in face mode: cheeks puffed *and* lips pursed, since the
   lips are what the camera picks up), the meter, spikes and jellyfish, popping
   and the way out.
   The fish follows your puff meanwhile, so in keyboard mode you can try Space.
-  **Got it** (or Enter) carries on, then the puff calibration if one is due.
+  **Got it** (or Enter) carries on.
   It shows once per browser; **⚙️ Options → "I'm new here: show tips"** in the
   menu turns it back on (or off) for the next player.
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
@@ -348,13 +360,20 @@ separated their puffs from their relaxed face), while pursed lips light up
    case a future model fixes it). The strain calibration only weights its own
    features, so the new ones get strain weight 0 and strain detection is
    unchanged.
-2. **Interactive calibration.** On the first dive in face mode, with the
-   world frozen and the fish puffing along, an overlay walks the player
-   through six steps: relax, look around (relaxed), pufferfish face, let it out
-   and relax the lips, pufferfish face again, relax. Puff steps last
-   `oceanCalibrationSeconds` (3 s), relax steps `oceanRelaxSeconds` (3 s); the
-   first `calibrationSettle` of each is dropped. Pausing restarts the step;
-   going to the menu or recalibrating abandons it. The relax steps right
+2. **Swim lesson and calibration** (`main.ts` `runSwimLesson`). On the first
+   dive in face mode the world swims on in calm water and banners walk the
+   player through `LESSON_STEPS`: relax, pucker & puff, let it out, again. The
+   fish is driven by the script meanwhile (puff 0.75 on puff steps, 0.05
+   otherwise), so the player sees what each step does whatever the camera
+   reads, and a countdown (`oceanLessonHeadsUp`, 2 s) comes before each switch
+   between puffing and relaxing. If the reading isn't clear (the quality check
+   below), `CALIBRATION_STEPS` run: relax, look around, then the same two
+   cycles, with a timeline of the steps and a longer countdown
+   (`oceanCalibrationHeadsUp`, 3 s); the playtesters found the quick switches
+   overwhelming. Puff steps last `oceanCalibrationSeconds` (3.5 s), the others
+   `oceanRelaxSeconds` (3.5 s); the first `calibrationSettle` of each is
+   dropped. Pausing restarts the step; going to the menu or recalibrating
+   abandons it. The relax steps right
    **after** each puff matter most: a face just after a puff doesn't go back
    to the relaxed face from before it (the mouth stays narrower, the lips
    pressed or a bit pursed, the mouth corners up). When the calibration only
@@ -378,16 +397,15 @@ separated their puffs from their relaxed face), while pursed lips light up
    `oceanMinPuffChange` (0.5, i.e. at least half a feature that clearly moved),
    fewer than 60% of puff samples scoring above the hover point, or fewer than
    `oceanPuffMinSinkRate` (80%) of the relaxed samples scoring below it, the
-   pucker range included ("your face didn't relax between puffs"). After a
-   failure the overlay says why and runs the steps again
-   (`oceanPuffCalibrationAttempts`, 2 runs in all). A failure never blocks the
-   game: after the last run the fish follows the pucker range alone, with a
-   toast.
-5. **Try it.** A passing calibration is tried out before the run goes on:
-   "float up, then sink", with a ✓ for each (~0.4 s on its side of the hover
-   point). With both, the run continues by itself; **Enter** / "Play!" goes on
-   anyway, **R** / "Redo" runs the calibration again. Players whose fish won't
-   sink see it here, not in the middle of the sea.
+   pucker range included ("your face didn't relax between puffs"). After an
+   unclear lesson the banner says why and the calibration runs
+   (`oceanPuffCalibrationAttempts`, 1 run). A failure never blocks the game:
+   after the last run the fish follows the pucker range alone, with a toast.
+5. **Your turn.** With a clear reading the fish follows the face, still in
+   calm water: "float up, then sink", with a ✓ for each (~0.4 s on its side of
+   the hover point). With both, the lesson goes on by itself; **Enter** /
+   "Play!" goes on anyway, **R** / "Calibrate" runs the calibration. Players
+   whose fish won't sink see it here, not among the coral.
 6. The calibration is saved like the main one (`poopbird.puffCalibration.v3`;
    older single-hold ones are ignored), and the toast says which features it
    watches. **C** clears it, so the next dive calibrates again. After the
@@ -546,14 +564,15 @@ while relaxed, looking around and laughing, releases in the middle of a
 strain, and press and release latency. For puff it scores the plain puff
 and the pufferfish face separately. Like the game's interactive calibration,
 each script's first two hold → relax cycles (plus the relaxed step before
-them and the start of the strain script's look-around) are the calibration,
-and every variant is scored only on what comes after: the median puff level
+them) are the swim lesson, and every variant is scored only on what comes
+after: the median puff level
 while relaxed, at half and at full puff, how often the fish sinks while
 relaxed and rises while puffing, false spikes, and how often it would rise
 while the player looks around (the look frames no calibration saw) or laughs
 (the strain script's "look" and "laugh" steps). Like the game, a puff
-calibration that fails its quality check isn't used; the second run is fitted
-from the script's next two cycles. The features are computed again from the
+calibration that fails its quality check isn't used; after an unclear lesson,
+the calibration is fitted from the script's next two cycles plus the start of
+the strain script's look-around. The features are computed again from the
 recorded blendshapes and landmarks with the current `extractFeatures` and
 `faceGeometry`, so a new or changed feature scores on every recording. To try a
 detection idea, add a variant to `scripts/eval/variants.ts`; the first entry

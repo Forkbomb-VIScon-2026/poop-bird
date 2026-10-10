@@ -578,8 +578,19 @@ export class Game {
 
   stage: Stage = "city";
   transition: StageTransition | null = null;
-  /** Set by main.ts while the ocean tutorial or the puff calibration runs: the dive doesn't finish, and the world holds still. */
+  /** Set by main.ts while the ocean tutorial card is up: the dive doesn't finish, and the world holds still. */
   holdTransition = false;
+  /**
+   * Set by main.ts while the swim lesson / puff calibration runs in the ocean:
+   * the world scrolls on, but no obstacles or jellyfish spawn, the fish can't
+   * spike out, and the sea floor doesn't kill. The first obstacle comes
+   * oceanFirstObstacleDelay after it's cleared.
+   */
+  calmWater = false;
+  /** Was calmWater set last step (to start the floor grace when it's cleared). */
+  private wasCalm = false;
+  /** Seconds left in which the sea floor still doesn't kill, after calm water (oceanCalmFloorGrace). */
+  private floorGrace = 0;
   /** The waterfront at the end (or just behind the start) of the stage. */
   shore: Shore | null = null;
   /** Top of the view in city coordinates: 0 in the city, OCEAN_DEPTH in the ocean, in between while diving or leaping. */
@@ -686,6 +697,9 @@ export class Game {
     this.stage = "city";
     this.transition = null;
     this.holdTransition = false;
+    this.calmWater = false;
+    this.wasCalm = false;
+    this.floorGrace = 0;
     this.shore = null;
     this.cameraY = 0;
     this.puffInput = 0;
@@ -772,6 +786,11 @@ export class Game {
     return this.stage === "ocean" && !this.transition && this.phase === "playing";
   }
 
+  /** The fish lies on (or just above) the sea floor. */
+  get onSeaFloor(): boolean {
+    return this.stage === "ocean" && this.bird.y + this.bodyRadius >= GROUND_Y - 30;
+  }
+
   /** Radius of the drawn bird or fish. */
   get bodyRadius(): number {
     if (this.stage === "city") return BIRD_RADIUS;
@@ -840,6 +859,10 @@ export class Game {
       this.updateEffects(dt, this.speed);
       return;
     }
+    // Calm water just ended: the fish may be lying on the sea floor, so it gets a moment to swim off it.
+    if (this.wasCalm && !this.calmWater) this.floorGrace = config.oceanCalmFloorGrace;
+    this.wasCalm = this.calmWater;
+    this.floorGrace = Math.max(0, this.floorGrace - dt);
     const alive = this.phase === "playing";
     const ocean = this.stage === "ocean";
     const speed = alive ? this.scrollSpeed * (ocean ? config.oceanScrollScale : 1) : 0;
@@ -850,7 +873,7 @@ export class Game {
     }
 
     if (ocean) {
-      if (alive) this.updateSpike(dt);
+      if (alive && !this.calmWater) this.updateSpike(dt);
       this.updateFish(dt);
     } else {
       if (alive) this.updateCharge(dt);
@@ -1171,7 +1194,7 @@ export class Game {
     if (b.y + r >= GROUND_Y) {
       b.y = GROUND_Y - r;
       if (b.vy > 0) b.vy = 0;
-      if (this.phase === "playing") this.crash();
+      if (this.phase === "playing" && !this.calmWater && this.floorGrace <= 0) this.crash();
     }
     if (this.phase === "playing" && this.hitsObstacle()) this.crash();
   }
@@ -1212,6 +1235,7 @@ export class Game {
       }
     }
     this.jellies = this.jellies.filter((j) => j.r > 0);
+    if (this.calmWater) return;
 
     this.jellySpawnAcc += dt * config.oceanJellyRate;
     if (this.jellySpawnAcc >= 1) {
@@ -1523,6 +1547,11 @@ export class Game {
     }
 
     if (this.phase !== "playing") return;
+    if (this.calmWater && this.stage === "ocean") {
+      // Nothing spawns; the first obstacle stays a full delay ahead.
+      this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + config.oceanFirstObstacleDelay);
+      return;
+    }
 
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
