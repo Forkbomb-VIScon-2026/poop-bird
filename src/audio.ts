@@ -169,8 +169,6 @@ export class Sound {
   kidCry(): void { this.play("kid_cry"); }
   beep(_high = false): void { this.play("beep"); }
   sadTrombone(): void { this.play("sad_trombone"); }
-  weddingArrived(): void { this.play("wedding_arrived"); }
-  weddingBeat(_count: number): void { this.play("wedding_beat"); }
   weddingKiss(): void { this.play("wedding_kiss"); }
   weddingRuined(): void { this.play("wedding_ruined"); }
   weddingMarried(): void { this.play("wedding_married"); }

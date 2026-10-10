@@ -463,7 +463,7 @@ async function readRelaxedFace(token: number): Promise<FeatureVector[] | null> {
   const total = config.defaultNeutralSeconds * 1000;
   let start = performance.now();
   let mine = startSampling();
-  for (;;) {
+  for (; ;) {
     await wait(50);
     if (token !== flow || calibSamples !== mine.samples || !calibFrames) {
       stopSampling(mine.samples);
@@ -735,7 +735,7 @@ async function puffCalibrationPhase(token: number): Promise<PhaseResult | null> 
   let start = -1;
   let mine: ReturnType<typeof startSampling> | null = null;
   abortPuffCalibration = false;
-  for (;;) {
+  for (; ;) {
     if (token !== flow || abortPuffCalibration) {
       abortPuffCalibration = false;
       stopSampling(mine?.samples ?? null);
@@ -1378,12 +1378,6 @@ function handleGameEvents(): void {
       case "kidCried":
         sound.kidCry();
         break;
-      case "weddingArrived":
-        sound.weddingArrived();
-        break;
-      case "weddingBeat":
-        sound.weddingBeat(e.count);
-        break;
       case "weddingKiss":
         sound.weddingKiss();
         // Grab the face now: a player who's on it is straining hardest right at "KISS!".
@@ -1631,7 +1625,7 @@ function goLandscape(): void {
   document.documentElement
     .requestFullscreen({ navigationUI: "hide" })
     .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape"))
-    .catch(() => {});
+    .catch(() => { });
 }
 
 const portraitQuery = window.matchMedia("(orientation: portrait)");

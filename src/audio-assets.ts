@@ -33,8 +33,6 @@ export const SOUND_NAMES = [
   "kid_cry",
   "beep",
   "sad_trombone",
-  "wedding_arrived",
-  "wedding_beat",
   "wedding_kiss",
   "wedding_ruined",
   "wedding_married",
