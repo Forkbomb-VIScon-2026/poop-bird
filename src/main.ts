@@ -1307,9 +1307,6 @@ function handleGameEvents(): void {
         sound.zap();
         buzz([30, 20, 30, 20, 120]);
         break;
-      case "droneDown":
-        sound.powerDown();
-        break;
       case "droneCrashed":
         sound.droneCrash();
         buzz([20, 30, 60]);
@@ -1347,7 +1344,7 @@ function handleGameEvents(): void {
         sound.jellyPop(e.combo);
         break;
       case "paparazzoBeep":
-        sound.cameraBeep(e.timer);
+        sound.droneCrash();
         break;
       case "photo":
         sound.shutter();

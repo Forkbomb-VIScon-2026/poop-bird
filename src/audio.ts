@@ -158,7 +158,6 @@ export class Sound {
   hit(_combo: number): void { this.play("hit"); }
   shutter(): void { this.play("shutter"); }
   cameraBeep(_timer: number): void { this.play("camera_beep"); }
-  powerDown(): void { this.play("power_down"); }
   droneCrash(): void { this.play("drone_crash"); }
   smash(): void { this.play("smash"); }
   slingshotDraw(_windup: number): void { this.play("slingshot_draw", 1, 0.5); }
