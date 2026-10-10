@@ -148,16 +148,16 @@ total distance.
 
 - **The harbour.** After `cityObstaclesBeforeGate` (6) city obstacles the street
   ends at a quay (bollard, ladder, stone wall) and the harbour opens up below.
-  Over the water there's nothing to hit: stop pooping and the bird falls in.
-  Whoever keeps flying gets "Dive in!", and after `diveForceTime` (2.5 s) the
-  pooping stops working. Poops that land in the water just plop.
-- **Dive and transformation.** The bird plunges through the surface and the
+  Poops that land in the water just plop.
+- **Dive and transformation.** Once the bird is over the water the game takes
+  the controls: a little hop, and it plunges through the surface while the
   camera follows it down past the quay wall into the sea. Under water it
   gulps, loses its feathers in a burst of bubbles and becomes a deflated
   pufferfish, which then inflates. On the first dive in face mode, inflating
   *is* the puff calibration: the world holds still with "PUFF YOUR CHEEKS!"
   and the fish puffs up as you do (see below). Otherwise it inflates by itself
-  over `oceanTransformTime`. Keyboard mode shows "Hold SPACE to puff up".
+  over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
+  shows "Hold SPACE to puff up".
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
@@ -171,13 +171,12 @@ total distance.
   the last ~0.3 s.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
 - **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
-  wall comes up ahead and, once the last obstacle is behind you, the surface
-  opens: "Swim up!". Touch it (or reach the wall) and the fish shoots up,
-  breaks the surface and becomes a bird again mid-leap, with the camera
-  following it up to the street. If you hang around, after
-  `oceanExitAssistDelay` (1.5 s) the water carries you up. Landing back in the
-  water before the quay just skims off it. A strain held while surfacing
-  doesn't fire: you have to relax first.
+  wall comes up ahead. Once the last obstacle is behind you and the wall is
+  close, the game takes the controls: the fish shoots up, breaks the surface
+  and becomes a bird again mid-leap, with the camera following it up to the
+  street. The bird glides at a safe height until the street is below it, then
+  the controls are yours again, so the wall can't get you. A strain held while
+  surfacing doesn't fire: you have to relax first.
 - With Space alone: hold to inflate (rise), let go to deflate (sink), and tap to
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
