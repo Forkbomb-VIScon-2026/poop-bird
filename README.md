@@ -7,7 +7,8 @@ Then dive into the harbour, where the bird becomes a pufferfish that you steer
 by **making a pufferfish face**: cheeks puffed, lips pursed.
 
 Everything runs in the browser: face tracking runs locally with MediaPipe, and
-no video, snapshot or score leaves the device.
+no video, snapshot or score leaves the device unless the player submits a run
+to the [leaderboard](#leaderboard).
 
 ## Run it
 
@@ -30,7 +31,7 @@ Other scripts:
 | `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
-| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector) |
+| `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector, leaderboard) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
 | `npm run data:pull` / `data:purge` | Copy the face dataset from the team VM into `data/` / delete that copy (see [Face dataset](#face-dataset)) |
@@ -66,7 +67,8 @@ starts the face dataset collector (local credentials `local` /
 | **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
 | **R** | Play again from game over |
 | **K** | Menu: play with the keyboard |
-| **Esc** | Calibration and game over: back to the menu |
+| **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
+| **Esc** | Calibration, game over and the leaderboard: back to the menu |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
@@ -314,6 +316,59 @@ city by city (the debug panel's "Progression" group).
 - With Space alone: hold to inflate (rise), let go to deflate (sink), and tap to
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
+
+## Leaderboard
+
+The game-over screen and the start screen's 🏆 (**L**) show the online
+leaderboard: two boards of the runs players chose to submit.
+
+- **🏆 Top scores**, by score.
+- **😣 Most strained faces**, by how strained the run's finest-strain face
+  looks, 0–100. Only runs submitted with their face are on it.
+
+Nothing is sent until the player presses "Submit to the leaderboard" on the
+game-over screen (with a name, 16 characters at most). The face goes along
+only if they tick "with my face", which starts unticked every run, so the next
+player at the same machine doesn't inherit the choice. A run submitted from
+a browser has a ✕ there to take it off again (the delete key is kept in
+`localStorage`).
+
+**Strainedness** (`strain.ts` `strainedness`) is the weighted mean of the raw
+`browDown`, `eyeSquint` and ½ × `eyeBlink` blendshapes. These move on a strain
+face for nearly everyone in the face dataset, and the mouth doesn't. It
+ignores the calibration: the calibrated strain tops out at 1 for anyone who
+strains past their own calibration (and a timid calibration would win), so it
+can't rank players against each other. In the dataset, relaxed faces score
+about 20–30 and hard strains 60–75. The score is smoothed like the strain
+signal (`emaAlpha`), and the finest-strain snapshot is the frame where it
+peaked while the game counted the player as straining in the city, so a laugh
+or a blink doesn't count.
+
+**Server.** The collector serves it (`collector/leaderboard.ts`, format and
+ranking in `src/leaderboard.ts`) on the same `poopbird-data` volume as the
+face dataset, so it survives deploys:
+
+| Request | |
+| --- | --- |
+| `GET /api/leaderboard?limit=10` | both boards |
+| `POST /api/leaderboard` | a run (JSON); answers its places and a delete key |
+| `GET /api/leaderboard/<id>.jpg` | a shared face |
+| `DELETE /api/leaderboard/<id>` | with `X-Delete-Key`, or the dev token |
+
+Each board keeps its top 100. A run on neither isn't stored, and one pushed
+off both is deleted, face and all. Submissions are limited to 300 an hour per
+address. Scores aren't verified: anyone who can open the game could post any
+number, so the team removes junk with the dev token:
+
+```sh
+ssh viscon@24-direct.viscon-hackathon.ch 'curl -s -X DELETE -H "Authorization: Bearer $(grep ^DEV_TOKEN= poopbird-collector.env | cut -d= -f2)" localhost:8080/api/leaderboard/<id>'
+```
+
+Debug builds (`npm run dev:debug`) submit their runs as debug runs and show
+only those, so testing never puts anything on the public boards. With `npm run
+dev`, `/api` goes to the VM through `npm run tunnel` (or `COLLECTOR_URL`); a
+local collector (`npm run collector`, see [Face dataset](#face-dataset)) gives
+an empty board to play with.
 
 ## How the strain detection works
 
@@ -662,15 +717,19 @@ when a change is ready to merge. Older debug-recorder clips
 - Video frames go to MediaPipe running in the page (WASM/WebGL) and nowhere
   else.
 - The "finest strain" snapshot is taken in every face-mode run. It's a 200 px
-  JPEG of your face at peak strain, kept in memory, shown on the game-over
-  screen, and saved only if you add the run to the local Hall of Fame
-  (`localStorage`, top 5).
+  JPEG of your face at its most strained, kept in memory and shown on the
+  game-over screen. It leaves the device only if you submit the run to the
+  [leaderboard](#leaderboard) with "with my face" ticked; then everyone who
+  can open the game sees it until you remove it (✕) or it drops off the
+  boards. Without the face, a submitted run is a name, a score and a few
+  stats.
 - The paparazzi's photos show your face in face mode, and the bird with the
   keyboard. So does the bird in the wedding photos. They stay in memory for
   the current run and are never stored.
 - All storage access is wrapped in try/catch, so the game works without
   storage.
-- Playing never sends face data anywhere. Only the separate dataset recorder
+- Playing sends nothing anywhere unless you submit a run to the
+  leaderboard. Apart from that, only the separate dataset recorder
   (`collect.html`) uploads, after explicit consent, and it records expression
   scores and face-mesh points, never video or images. See
   [Face dataset](#face-dataset).
@@ -690,12 +749,16 @@ src/
   audio.ts      WebAudio synth sounds
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
-  storage.ts    safe localStorage, best score, Hall of Fame
+  storage.ts    safe localStorage, best score, your leaderboard runs
+  leaderboard.ts       leaderboard format, checks, ranking (shared with the collector)
+  leaderboard-view.ts  the boards in the page: fetch, submit, remove, draw
   main.ts       screens, input, loops, calibration flow
   session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
   collect.ts    the dataset recorder page (collect.html)
 collector/
   server.ts     dataset upload/download server (Node, no deps)       server.test.ts
+  leaderboard.ts  the online leaderboard's routes and storage        leaderboard.test.ts
+  http.ts       helpers shared by both
   Dockerfile
 scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm

@@ -11,6 +11,8 @@ import { BIRD_RADIUS, Game, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
+import { strainPercent, type RunStats } from "./leaderboard";
+import { showBoards, submitRun } from "./leaderboard-view";
 import {
   assessPuffCalibration,
   buildInteractivePuffCalibration,
@@ -21,18 +23,14 @@ import {
 import {
   CALIBRATION_KEY,
   PUFF_CALIBRATION_KEY,
-  addToHallOfFame,
   loadBest,
-  loadHallOfFame,
   loadSeenTutorials,
-  qualifiesForHallOfFame,
   saveBest,
   saveSeenTutorials,
   storageGet,
   storageRemove,
   storageSet,
   TUTORIALS,
-  type HallOfFameEntry,
   type Tutorial,
 } from "./storage";
 import {
@@ -48,7 +46,9 @@ import {
   neutralFaceStats,
   neutralFalseRate,
   restoreCalibration,
+  smoothStrain,
   stepStrain,
+  strainedness,
   type Calibration,
   type FeatureName,
   type FeatureVector,
@@ -71,6 +71,7 @@ const screens = {
   ready: $("screen-ready"),
   pause: $("screen-pause"),
   gameover: $("screen-gameover"),
+  leaderboard: $("screen-leaderboard"),
 };
 const hud = $("hud");
 const cam = $("cam");
@@ -161,8 +162,11 @@ let keyHeld = false;
 /** Pointers (fingers, mouse) held down on the canvas. Any one of them holds. */
 const heldPointers = new Set<number>();
 let best = loadBest();
-let lastGameOverEntryDate: string | null = null;
 let currentSnapshotUrl: string | null = null;
+/** The run on the game-over screen, as it would go to the leaderboard. null once submitted. */
+let lastRun: { score: number; mode: Mode; stats: RunStats; face: { url: string; strain: number } | null } | null = null;
+/** Smoothed `strainedness` of the face (the finest-strain snapshot's and the leaderboard's measure). */
+let faceStrain = 0;
 /** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
 const seenTutorials = loadSeenTutorials();
 
@@ -220,8 +224,10 @@ tracker.onFrame((frame) => {
     placeCamBox($("cam-lock"), debug.showFaceLock ? frame.box : null);
     placeCamBox($("cam-crop"), debug.showFaceLock ? frame.crop : null);
   }
-  if (state === "playing" && game.phase === "playing" && game.stage === "city") {
-    snapshot.offer(video, frame.box, strain.smoothed);
+  faceStrain = frame.features ? smoothStrain(faceStrain, strainedness(frame.features), config.emaAlpha, dt) : 0;
+  // Only while the game counts it as straining: a laugh or a blink isn't a finest strain.
+  if (state === "playing" && game.phase === "playing" && game.stage === "city" && strain.active) {
+    snapshot.offer(video, frame.box, faceStrain);
   }
 });
 
@@ -1379,82 +1385,71 @@ function onGameOver(): void {
   currentSnapshotUrl = mode === "face" ? snapshot.toDataURL() : null;
   show($("go-snapshot"), currentSnapshotUrl !== null);
   if (currentSnapshotUrl) $<HTMLImageElement>("go-snapshot-img").src = currentSnapshotUrl;
+  $("go-strain").textContent = String(strainPercent(snapshot.peakStrain));
 
-  const list = loadHallOfFame();
-  lastGameOverEntryDate = null;
-  const form = $<HTMLFormElement>("go-hof-form");
-  show(form, qualifiesForHallOfFame(score, list));
+  lastRun = {
+    score,
+    mode,
+    stats: { targets: game.targetsHit, distance: Math.round(game.distance / 50), bestCombo: game.bestCombo },
+    face: currentSnapshotUrl ? { url: currentSnapshotUrl, strain: snapshot.peakStrain } : null,
+  };
+  show($("go-lb-form"), score > 0 || lastRun.face !== null);
+  show($("go-lb-face-opt"), lastRun.face !== null);
+  // Sharing the face is a fresh choice every run (the next player at this machine may not want to).
+  $<HTMLInputElement>("go-lb-face").checked = false;
+  $<HTMLButtonElement>("btn-lb-submit").disabled = false;
   $<HTMLInputElement>("go-name").value = storageGet("poopbird.name.v1") ?? "";
-  renderHallOfFame($("go-hof"), list, null);
+  show($("go-lb-status"), false);
+  void showBoards($("go-lb"));
   showScreen("gameover");
 }
 
-function saveHallOfFameEntry(): void {
+/** Sends the game-over screen's run to the online leaderboard (only when the player presses Submit). */
+async function submitToLeaderboard(): Promise<void> {
+  const run = lastRun;
+  if (!run) return;
   const name = ($<HTMLInputElement>("go-name").value.trim() || "Anonymous Pooper").slice(0, 16);
   storageSet("poopbird.name.v1", name);
-  const entry: HallOfFameEntry = {
-    name,
-    score: game.score,
-    date: new Date().toISOString(),
-    targets: game.targetsHit,
-    ...(currentSnapshotUrl ? { snapshot: currentSnapshotUrl } : {}),
-  };
-  lastGameOverEntryDate = entry.date;
-  const { list, saved } = addToHallOfFame(entry);
-  show($("go-hof-form"), false);
-  renderHallOfFame($("go-hof"), list, lastGameOverEntryDate);
-  if (!saved) {
-    const warn = document.createElement("p");
-    warn.className = "error";
-    warn.textContent = "Couldn't save: this browser's storage is blocked or full. Your score is shown but won't be kept.";
-    $("go-hof").append(warn);
+  const withFace = run.face !== null && $<HTMLInputElement>("go-lb-face").checked;
+  const button = $<HTMLButtonElement>("btn-lb-submit");
+  const status = $("go-lb-status");
+  button.disabled = true;
+  status.textContent = "Submitting…";
+  status.classList.remove("error");
+  show(status, true);
+  try {
+    const result = await submitRun({
+      name,
+      score: run.score,
+      mode: run.mode,
+      stats: run.stats,
+      ...(withFace && run.face
+        ? { face: { jpeg: run.face.url.slice(run.face.url.indexOf(",") + 1), strain: run.face.strain } }
+        : {}),
+    });
+    if (lastRun !== run) return;
+    lastRun = null;
+    show($("go-lb-form"), false);
+    const places = [
+      result.rank.score !== null ? `#${result.rank.score} on scores` : "",
+      result.rank.face !== null ? `#${result.rank.face} on faces` : "",
+    ].filter(Boolean);
+    status.textContent = places.length
+      ? `You're ${places.join(" and ")}! 🎉`
+      : "Not in the top 100 this time. Strain harder! 💩";
+    void showBoards($("go-lb"), { highlight: result.id });
+  } catch (err) {
+    if (lastRun !== run) return;
+    button.disabled = false;
+    status.textContent = `Couldn't submit: ${err instanceof Error ? err.message : "no connection"}.`;
+    status.classList.add("error");
   }
 }
 
-function renderHallOfFame(container: HTMLElement, list: HallOfFameEntry[], highlightDate: string | null): void {
-  container.innerHTML = "";
-  const title = document.createElement("h3");
-  title.textContent = "🏆 Hall of Fame (this device)";
-  container.append(title);
-  if (list.length === 0) {
-    const p = document.createElement("p");
-    p.className = "hof-empty";
-    p.textContent = "No legends yet. Be the first!";
-    container.append(p);
-    return;
-  }
-  const ol = document.createElement("ol");
-  list.forEach((e, i) => {
-    const li = document.createElement("li");
-    if (highlightDate && e.date === highlightDate) li.className = "me";
-    const rank = document.createElement("span");
-    rank.className = "rank";
-    rank.textContent = `${i + 1}.`;
-    let thumb: HTMLElement;
-    if (e.snapshot) {
-      const img = document.createElement("img");
-      img.src = e.snapshot;
-      img.alt = `${e.name}'s strain face`;
-      thumb = img;
-    } else {
-      thumb = document.createElement("span");
-      thumb.textContent = "💩";
-    }
-    thumb.classList.add("thumb");
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = e.name;
-    const date = document.createElement("span");
-    date.className = "date";
-    const d = new Date(e.date);
-    date.textContent = Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString();
-    const score = document.createElement("span");
-    score.className = "score";
-    score.textContent = String(e.score);
-    li.append(rank, thumb, name, date, score);
-    ol.append(li);
-  });
-  container.append(ol);
+/** The start screen's 🏆: both boards over the demo. */
+function openLeaderboard(): void {
+  showScreen("leaderboard");
+  void showBoards($("lb-full"), { limit: 20 });
 }
 
 function pick<T>(items: readonly T[]): T {
@@ -1980,10 +1975,12 @@ on("btn-download", () => {
   a.download = `poop-bird-finest-strain-${game.score}.jpg`;
   a.click();
 });
-$<HTMLFormElement>("go-hof-form").addEventListener("submit", (e) => {
+$<HTMLFormElement>("go-lb-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  saveHallOfFameEntry();
+  void submitToLeaderboard();
 });
+on("btn-leaderboard", openLeaderboard);
+on("btn-lb-back", () => showScreen("start"));
 // Buttons and option toggles shouldn't keep focus, or Space would "click" them while straining
 // (and a focused checkbox counts as typing, which mutes the shortcuts).
 document.addEventListener("click", (e) => {

@@ -1295,7 +1295,17 @@ svg.face.gauge-face {
   transform: rotate(1.5deg);
 }
 
-.go-hof-form {
+.go-strain {
+  font-weight: 700;
+}
+
+.go-strain b {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.go-lb-form {
   margin-top: 14px;
   display: flex;
   gap: 8px;
@@ -1305,57 +1315,70 @@ svg.face.gauge-face {
   font-weight: 700;
 }
 
-.go-hof-form input {
+.go-lb-form input:not([type="checkbox"]) {
   font: inherit;
   padding: 6px 10px;
   border: 3px solid var(--ink);
   border-radius: 10px;
-  margin-left: 6px;
-  width: 190px;
+  width: 170px;
 }
 
-/* --- Hall of Fame ------------------------------------------------------------------ */
+.go-lb-form .opt {
+  margin: 0;
+}
 
-.hof {
+.go-lb-status {
+  margin: 10px 0 0;
+  font-weight: 800;
+}
+
+/* --- Leaderboard ------------------------------------------------------------------ */
+
+.lb {
   margin-top: 10px;
   text-align: left;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 6px 16px;
 }
 
-.hof h3 {
+.lb h3 {
   text-align: center;
   margin: 6px 0;
 }
 
-.hof ol {
+.lb ol {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.hof li {
+.lb li {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 4px 8px;
   border-radius: 10px;
 }
 
-.hof li:nth-child(odd) {
+.lb li:nth-child(odd) {
   background: rgba(0, 0, 0, 0.05);
 }
 
-.hof li.me {
+.lb li.me {
   background: var(--gold);
 }
 
-.hof .rank {
+.lb .rank {
   font-weight: 900;
-  width: 26px;
+  width: 28px;
+  flex: none;
 }
 
-.hof .thumb {
+.lb .thumb {
   width: 40px;
   height: 40px;
+  flex: none;
   border-radius: 8px;
   border: 2px solid var(--ink);
   object-fit: cover;
@@ -1366,29 +1389,56 @@ svg.face.gauge-face {
   font-size: 22px;
 }
 
-.hof .name {
+/* The faces are the point of this board. */
+.lb-faces .thumb {
+  width: 56px;
+  height: 56px;
+}
+
+.lb .name {
   flex: 1;
+  min-width: 0;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.hof .date {
-  font-size: 12px;
-  opacity: 0.6;
-}
-
-.hof .score {
+.lb .value {
   font-weight: 900;
-  min-width: 60px;
   text-align: right;
 }
 
-.hof-empty {
+.lb-faces .value {
+  font-size: 20px;
+  color: var(--accent);
+}
+
+.lb-remove {
+  flex: none;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.lb-remove:hover,
+.lb-remove:focus-visible {
+  opacity: 1;
+}
+
+.lb-note {
+  grid-column: 1 / -1;
   text-align: center;
   opacity: 0.6;
   font-size: 14px;
+}
+
+.lb-board .lb-note {
+  margin: 4px 0;
 }
 
 /* --- Debug panel ---------------------------------------------------------------------- */
@@ -1767,7 +1817,7 @@ body.debug-open #cam {
     height: 144px;
   }
 
-  .go-hof-form {
+  .go-lb-form {
     margin-top: 8px;
   }
 }
