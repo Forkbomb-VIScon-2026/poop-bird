@@ -269,6 +269,12 @@ body.recording .masthead {
   min-height: 1.5em;
 }
 
+.record-mid {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+}
+
 .record-foot {
   display: flex;
   gap: 12px;

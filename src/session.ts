@@ -31,13 +31,16 @@ export interface SessionStep {
   beep?: Beep;
 }
 
-export const SEGMENT_NAMES = ["calibration", "strain", "puff"] as const;
+export const SEGMENT_NAMES = ["calibration", "strain", "puff", "fish"] as const;
 export type SegmentName = (typeof SEGMENT_NAMES)[number];
 
 /** Labels of steps where the participant strains or puffs (the rest are relaxed or "ready"). */
 export const STRAIN_LABELS = ["strain", "pulseStrain", "longStrain"];
 export const PLAIN_PUFF_LABELS = ["fullPuff", "halfPuff", "puffPulse", "lookPuff"];
-/** The "pufferfish face": cheeks puffed and lips pursed, a candidate gesture that MediaPipe may see better. */
+/**
+ * The "pufferfish face": puffing the cheeks while pursing the lips, a
+ * candidate gesture that MediaPipe may see better than a plain puff.
+ */
 export const FISH_PUFF_LABELS = ["fishPuff", "fishPulse", "fishLook"];
 export const PUFF_LABELS = [...PLAIN_PUFF_LABELS, ...FISH_PUFF_LABELS];
 
@@ -92,37 +95,39 @@ export function strainScript(random: () => number = Math.random): SessionStep[] 
   ];
 }
 
-/**
- * Puff levels for the fish (none, half, full), quick puffs, and a puff held
- * while moving; then the same with the "pufferfish face" (cheeks puffed and
- * lips pursed), to compare which of the two gestures the tracker sees better.
- * Pulses last 2–3 s: people react 0.5–1 s late, and shorter pulses were
- * mostly reaction time.
- */
+/** Pulses of random length, 2–3 s: people react 0.5–1 s late, and shorter pulses were mostly reaction time. */
+function puffPulses(random: () => number, prompt: string, label: string): SessionStep[] {
+  return [1, 2, 3, 4].flatMap((): SessionStep[] => [
+    { seconds: between(random, 2, 3), prompt, label, beep: "high" },
+    { seconds: between(random, 2, 3), prompt: "Relax", label: "puffRelax", beep: "low" },
+  ]);
+}
+
+/** Puff levels for the fish (none, half, full), quick puffs, and a puff held while moving. */
 export function puffScript(random: () => number = Math.random): SessionStep[] {
-  const pulses = (prompt: string, label: string) =>
-    [1, 2, 3, 4].flatMap((): SessionStep[] => [
-      { seconds: between(random, 2, 3), prompt, label, beep: "high" },
-      { seconds: between(random, 2, 3), prompt: "Relax", label: "puffRelax", beep: "low" },
-    ]);
   return [
-    { seconds: 3, prompt: "Next: puffing your cheeks", hint: "High beep: puff. Low beep: relax.", label: "ready", beep: "low" },
+    { seconds: 3, prompt: "Get ready to puff your cheeks", hint: "High beep: puff. Low beep: relax.", label: "ready", beep: "low" },
     { seconds: 3, prompt: "Relax your face", label: "neutral", beep: "low" },
     { seconds: 5, prompt: "Puff your cheeks fully and HOLD", label: "fullPuff", beep: "high" },
     { seconds: 3, prompt: "Relax", label: "relax", beep: "low" },
     { seconds: 5, prompt: "Puff halfway and hold", label: "halfPuff", beep: "high" },
     { seconds: 3, prompt: "Relax", label: "relax", beep: "low" },
-    ...pulses("Puff", "puffPulse"),
+    ...puffPulses(random, "Puff", "puffPulse"),
     { seconds: 5, prompt: "Puff and hold while looking around", label: "lookPuff", beep: "high" },
     { seconds: 3, prompt: "Relax", label: "relax", beep: "low" },
-    {
-      seconds: 4, prompt: "Next: pufferfish face 🐡", hint: "Puff your cheeks AND purse your lips, like a fish kiss. High beep: fish face. Low beep: relax.",
-      label: "ready", beep: "low",
-    },
-    { seconds: 5, prompt: "Pufferfish face and HOLD", hint: "Cheeks full, lips pursed.", label: "fishPuff", beep: "high" },
+  ];
+}
+
+/** The same as puffScript (without the half puff) for the pufferfish face: cheeks puffed while the lips are pursed. */
+export function fishScript(random: () => number = Math.random): SessionStep[] {
+  const how = "Puff your cheeks while pursing your lips, like a kiss.";
+  return [
+    { seconds: 3, prompt: "Get ready: puff + pursed lips", hint: `${how} High beep: do it. Low beep: relax.`, label: "ready", beep: "low" },
+    { seconds: 3, prompt: "Relax your face", label: "neutral", beep: "low" },
+    { seconds: 5, prompt: "Puff your cheeks + purse your lips, HOLD", hint: how, label: "fishPuff", beep: "high" },
     { seconds: 3, prompt: "Relax", label: "relax", beep: "low" },
-    ...pulses("Fish face", "fishPulse"),
-    { seconds: 5, prompt: "Fish face and hold while looking around", label: "fishLook", beep: "high" },
+    ...puffPulses(random, "Puff + purse your lips", "fishPulse"),
+    { seconds: 5, prompt: "Puff + purse your lips, hold while looking around", label: "fishLook", beep: "high" },
     { seconds: 3, prompt: "Relax", label: "relax", beep: "low" },
   ];
 }

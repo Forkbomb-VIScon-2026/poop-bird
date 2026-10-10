@@ -2,7 +2,8 @@
 // face from the calibration, puff samples from the first hold of the gesture),
 // then replay the puff segment and check the fish gets the levels it should.
 // Two gestures are scored separately: the plain puff, and the "pufferfish
-// face" (cheeks puffed, lips pursed) that sessions recorded since October 10 also have.
+// face" (puffing the cheeks while pursing the lips) that sessions recorded
+// since October 10 also have.
 
 import type { Config } from "../../src/config";
 import { FISH_PUFF_LABELS, PLAIN_PUFF_LABELS } from "../../src/session";
@@ -43,7 +44,8 @@ const RELAXED = ["neutral", "relax", "puffRelax"];
 /** null if the recording has no puff segment, or none of this gesture. */
 export function scorePuff(rec: Recording, variant: PuffVariant, config: Config, gesture: PuffGesture = "plain"): PuffScore | null {
   const { hold, labels } = GESTURES[gesture];
-  const frames = rec.segments.puff;
+  // The pufferfish face has its own segment; sessions from October 10 morning have it at the end of the puff segment.
+  const frames = gesture === "fish" ? (rec.segments.fish ?? rec.segments.puff) : rec.segments.puff;
   const calib = rec.segments.calibration;
   if (!frames?.length || !calib) return null;
   const neutral = calib

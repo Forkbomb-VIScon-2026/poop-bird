@@ -63,6 +63,7 @@
           <legend>Record</legend>
           <label><input type="checkbox" name="segments" value="strain" checked /> Straining</label>
           <label><input type="checkbox" name="segments" value="puff" checked /> Puffing cheeks</label>
+          <label><input type="checkbox" name="segments" value="fish" checked /> Pufferfish face (puffing the cheeks while pursing the lips)</label>
         </fieldset>
         <p class="muted">The calibration from the game is always recorded first.</p>
         <div class="actions"><button id="btn-profile" class="primary">Start camera</button></div>
@@ -88,7 +89,10 @@
         <div class="record">
           <div class="record-meta"><span id="record-part"></span><span id="record-left"></span></div>
           <div id="record-prompt" class="prompt"></div>
-          <div id="record-hint" class="hint"></div>
+          <div class="record-mid">
+            <div id="record-hint" class="hint"></div>
+            <button id="btn-continue" class="primary" hidden></button>
+          </div>
           <div class="progress"><div id="record-progress"></div></div>
           <div class="record-foot">
             <div class="preview small"><video id="video-small" playsinline muted autoplay></video></div>
