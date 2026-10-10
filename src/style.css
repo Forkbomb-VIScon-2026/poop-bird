@@ -532,18 +532,36 @@ svg.face {
   color: #fff;
 }
 
-.start-hero .more {
-  background: rgba(255, 250, 240, 0.9);
-  border: 3px solid var(--ink);
-  border-radius: 12px;
-  padding: 4px 12px;
-  color: var(--ink);
+.start-play {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.start-hero .more:not([open]) {
-  background: none;
-  border-color: transparent;
-  color: #fff;
+/* Square button with just an emoji (play without the camera). */
+.btn.icon {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.kbd-icon {
+  width: 40px;
+  height: 26px;
+}
+
+.start-hero .opt {
+  margin: 4px 0 0;
+}
+
+.start-hero .opt input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
 }
 
 @keyframes float {
@@ -653,11 +671,6 @@ svg.face {
 .privacy.small {
   font-size: 11px;
   margin: 4px 0 0;
-}
-
-.keys {
-  font-size: 12px;
-  opacity: 0.75;
 }
 
 kbd {

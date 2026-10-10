@@ -93,14 +93,11 @@
         <div class="start-hero">
           <h1 class="title">Poop <span class="accent">Bird</span></h1>
           <p class="tagline">Strain your face. Fly the bird. 💩</p>
-          <button id="btn-face" class="btn primary big" data-default>😣 Play</button>
-          <button id="btn-keyboard" class="btn small ghost light" data-keys="K">or play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span></button>
-          <details class="more">
-            <summary>⚙️ Options</summary>
-            <label class="opt"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here: show tips (like how to swim in the ocean)</label>
-            <p class="keys kbd-only"><kbd>Space</kbd> strain in keyboard mode (or puff underwater) · <kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>C</kbd> recalibrate · <kbd>N</kbd> track another face<span data-debug-only> · <kbd>D</kbd> debug</span></p>
-          </details>
-          <p class="privacy light">🔒 Your camera never leaves this device.</p>
+          <div class="start-play">
+            <button id="btn-face" class="btn primary big" data-default>😣 Play</button>
+            <button id="btn-keyboard" class="btn icon" data-keys="K" aria-label="Play without the camera" title="Play without the camera"><svg class="kbd-only kbd-icon" viewBox="0 0 40 26" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="23" rx="4" fill="#fff" stroke="currentColor" stroke-width="3" /><g fill="currentColor"><rect x="7" y="7" width="4" height="4" rx="1" /><rect x="14" y="7" width="4" height="4" rx="1" /><rect x="21" y="7" width="4" height="4" rx="1" /><rect x="28" y="7" width="4" height="4" rx="1" /><rect x="11" y="15" width="18" height="4" rx="1" /></g></svg><span class="touch-only">👆</span></button>
+          </div>
+          <label class="opt light" title="Show tips, like how to swim in the ocean"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here</label>
         </div>
       </section>
 
