@@ -149,7 +149,9 @@ export class Sound {
   accident(): void { this.play("accident"); }
   zap(): void { this.play("zap"); }
   balloonPop(): void { this.play("balloon_pop"); }
-  chuteOpen(): void { this.play("chute_open"); }
+  chuteOpen(): void {
+    this.play(`chute_open_${Math.floor(Math.random() * 2) + 1}`);
+  }
   basketLanded(): void { this.play("basket_landed"); }
   burner(): void { this.play("burner", 1, 0.3); }
   splat(_big = false): void { this.play("splat"); }
