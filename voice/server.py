@@ -54,6 +54,8 @@ MIN_VOICE_SECONDS = 2.0
 MAX_VOICE_SECONDS = 30.0
 # Requests waiting behind the one being served; more get a 429.
 MAX_WAITING = 2
+# Seconds a client may stall sending its upload or reading a line.
+SOCKET_TIMEOUT = 20
 
 
 
@@ -245,9 +247,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:  # quieter than the default
         log.debug("%s " + fmt, self.address_string(), *args)
 
-    def send_json(self, status: int, payload: dict) -> None:
+    def send_json(self, status: int, payload: dict, headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload).encode()
         self.send_response(status)
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -266,28 +270,30 @@ class Handler(BaseHTTPRequestHandler):
         if length <= 0 or length > MAX_BODY:
             self.close_connection = True
             return self.send_json(413, {"error": f"body: 1 byte to {MAX_BODY // 1024 // 1024} MB"})
-        body = self.rfile.read(length)
-        try:
-            samples, rate, lines = parse_request(body)
-        except ValueError as e:
-            return self.send_json(400, {"error": str(e)})
-        del body
         if not VOICE.usable:
+            self.close_connection = True
             return self.send_json(503, {"error": "loading" if VOICE.model is None else "no voice cloning"})
+        # Take a place in the queue before reading the upload, so a crowd of
+        # requests can't pile recordings up in memory.
         with VOICE.waiting_lock:
-            if VOICE.waiting > MAX_WAITING:
-                self.send_response(429)
-                body = b'{"error": "busy, try again in a moment"}'
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Retry-After", "10")
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            VOICE.waiting += 1
+            full = VOICE.waiting > MAX_WAITING
+            if not full:
+                VOICE.waiting += 1
+        if full:
+            self.close_connection = True
+            return self.send_json(429, {"error": "busy, try again in a moment"}, {"Retry-After": "10"})
         try:
+            # A client that stalls (sending or reading) times out instead of holding a place or the model.
+            self.connection.settimeout(SOCKET_TIMEOUT)
+            try:
+                samples, rate, lines = parse_request(self.rfile.read(length))
+            except ValueError as e:
+                return self.send_json(400, {"error": str(e)})
             with VOICE.lock:
                 self.stream(samples, rate, lines)
+        except OSError:
+            log.info("client stalled or went away")
+            self.close_connection = True
         finally:
             with VOICE.waiting_lock:
                 VOICE.waiting -= 1
@@ -310,8 +316,9 @@ class Handler(BaseHTTPRequestHandler):
             for lid, wav in VOICE.speak(samples, rate, lines):
                 chunk({"id": lid, "wav": base64.b64encode(wav).decode()})
             chunk({"done": True})
-        except (BrokenPipeError, ConnectionResetError):
-            # The player moved on (new recording, closed the tab): stop generating.
+        except OSError:
+            # The player moved on (closed the tab, went to the menu) or stopped
+            # reading (timeout): stop generating.
             log.info("client went away")
             self.close_connection = True
             return

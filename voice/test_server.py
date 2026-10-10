@@ -75,3 +75,85 @@ class ParseTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HttpTest(unittest.TestCase):
+    """The HTTP handler against a stub model: streaming, validation, the queue."""
+
+    def setUp(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+
+        import server
+
+        class StubVoice(server.Voice):
+            def __init__(self):
+                super().__init__()
+                self.model = object()
+                self.cloning = True
+                self.release = threading.Event()
+                self.release.set()
+
+            def speak(self, samples, rate, lines):
+                for line in lines:
+                    self.release.wait(5)
+                    yield line["id"], encode_wav(tone(0.1), RATE)
+
+        self.server_module = server
+        self.saved = server.VOICE
+        server.VOICE = self.stub = StubVoice()
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        self.httpd.daemon_threads = True
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/api/voice"
+
+    def tearDown(self):
+        self.stub.release.set()
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.server_module.VOICE = self.saved
+
+    def post(self, body: bytes):
+        import urllib.error
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(urllib.request.Request(f"{self.url}/lines", data=body), timeout=10) as res:
+                return res.status, res.read().decode()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()
+
+    def test_streams_one_json_line_per_voice_line(self):
+        status, text = self.post(request(lines=["intro:0", "crash:0"]))
+        self.assertEqual(status, 200)
+        msgs = [json.loads(line) for line in text.splitlines()]
+        self.assertEqual([m.get("id") for m in msgs], ["intro:0", "crash:0", None])
+        self.assertTrue(msgs[-1]["done"])
+        self.assertEqual(base64.b64decode(msgs[0]["wav"])[:4], b"RIFF")
+
+    def test_rejects_own_text_over_http(self):
+        status, text = self.post(request(lines=[{"id": "a", "text": "Say this"}]))
+        self.assertEqual(status, 400)
+
+    def test_turns_requests_away_when_the_queue_is_full(self):
+        import threading
+        import time
+        import urllib.request
+
+        self.stub.release.clear()
+        hold = [threading.Thread(target=self.post, args=(request(),), daemon=True) for _ in range(3)]
+        for t in hold:
+            t.start()
+        for _ in range(100):
+            if self.stub.waiting == 3:
+                break
+            time.sleep(0.02)
+        self.assertEqual(self.stub.waiting, 3)
+        with urllib.request.urlopen(f"{self.url}/health", timeout=5) as res:
+            self.assertTrue(json.loads(res.read())["full"])
+        status, _ = self.post(request())
+        self.assertEqual(status, 429)
+        self.stub.release.set()
+        for t in hold:
+            t.join(10)
+        self.assertEqual(self.stub.waiting, 0)
