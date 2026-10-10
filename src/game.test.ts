@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { config, ramp } from "./config";
-import { ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, WATER_Y, obstacleRects } from "./game";
+import {
+  ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, PERCH_Y, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects,
+} from "./game";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
 function atHarbour(edge: number, y: number, vy: number): Game {
@@ -38,6 +40,66 @@ describe("harbour dive", () => {
     expect(game.stage).toBe("ocean");
     expect(game.transition).toBeNull();
     expect(game.phase).toBe("playing");
+  });
+});
+
+describe("calm water", () => {
+  /** A game that just dived into the ocean, in calm water. */
+  function calm(): Game {
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 6 && game.stage === "city"; i++) game.step(1 / 60);
+    game.calmWater = true;
+    for (let i = 0; i < 60 * 6 && game.transition; i++) game.step(1 / 60);
+    return game;
+  }
+
+  it("spawns nothing and lets the fish rest on the sea floor, while the world scrolls on", () => {
+    const game = calm();
+    const start = game.distance;
+    game.puffInput = 0; // deflated: sinks to the floor
+    for (let i = 0; i < 60 * 30; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    expect(game.distance).toBeGreaterThan(start + 500);
+    expect(game.obstacles).toHaveLength(0);
+    expect(game.jellies).toHaveLength(0);
+    expect(game.bird.y).toBeCloseTo(GROUND_Y - game.bodyRadius, 0);
+  });
+
+  it("can't spike or pop the fish", () => {
+    const game = calm();
+    game.puffInput = 1;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    expect(game.spike.spiked).toBe(false);
+    expect(game.phase).toBe("playing");
+  });
+
+  it("gives a fish on the sea floor a moment to swim off it once it ends", () => {
+    const game = calm();
+    game.puffInput = 0;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    expect(game.onSeaFloor).toBe(true);
+    game.calmWater = false;
+    for (let i = 0; i < 60 * 1; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    game.puffInput = 1;
+    for (let i = 0; i < 60 * 3; i++) game.step(1 / 60);
+    expect(game.phase).toBe("playing");
+    expect(game.onSeaFloor).toBe(false);
+    // Off the floor once, the floor kills again.
+    game.puffInput = 0;
+    for (let i = 0; i < 60 * 6 && game.phase === "playing"; i++) game.step(1 / 60);
+    expect(game.phase).not.toBe("playing");
+  });
+
+  it("brings the first obstacle a full delay after it ends", () => {
+    const game = calm();
+    game.puffInput = 0.4;
+    for (let i = 0; i < 60 * 10; i++) game.step(1 / 60);
+    game.calmWater = false;
+    const from = game.distance;
+    for (let i = 0; i < 60 * 30 && game.obstacles.length === 0; i++) game.step(1 / 60);
+    expect(game.obstacles.length).toBeGreaterThan(0);
+    expect(game.distance - from).toBeGreaterThan(400);
   });
 });
 
@@ -137,6 +199,37 @@ describe("anchored boats", () => {
   });
 });
 
+describe("shipwrecks", () => {
+  const saved = { wreck: config.oceanWreckChance, anchor: config.oceanAnchorChance };
+  afterEach(() => {
+    config.oceanWreckChance = saved.wreck;
+    config.oceanAnchorChance = saved.anchor;
+  });
+
+  for (const anchor of [0, 1]) {
+    it(`stay low, with only a short mast above the hull${anchor ? " (under an anchor)" : ""}`, () => {
+      config.oceanWreckChance = 1;
+      config.oceanAnchorChance = anchor;
+      // The anchor tests above cover anchors over open water.
+      const open = config.oceanAnchorOpenChance;
+      config.oceanAnchorOpenChance = 0;
+      const game = new Game(1000);
+      const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
+      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"]();
+      config.oceanAnchorOpenChance = open;
+      for (const o of game.obstacles) {
+        expect(o.bottom).toBe("wreck");
+        expect(o.gapBottom - o.gapTop).toBeGreaterThanOrEqual(gap - 1e-6);
+        const deck = GROUND_Y - WRECK_HULL_H;
+        const mast = deck - o.gapBottom;
+        expect(mast).toBeGreaterThanOrEqual(WRECK_MAST_MIN - 1e-6);
+        expect(mast).toBeLessThanOrEqual(WRECK_MAST_MAX + 1e-6);
+        for (const r of obstacleRects(o)) expect(r.y + r.h <= o.gapTop + 1e-6 || r.y >= o.gapBottom - 1e-6).toBe(true);
+      }
+    });
+  }
+});
+
 describe("attract mode", () => {
   it("flies on its own for a long while and keeps hitting people", () => {
     const game = new Game(1000);
@@ -166,5 +259,54 @@ describe("attract mode", () => {
     expect(game.demo).toBe(false);
     expect(game.targets).toHaveLength(0);
     expect(game.score).toBe(0);
+  });
+});
+
+describe("practice perch", () => {
+  /** Strains for `strainS`, then relaxes for `relaxS`, on the perch. */
+  function practise(game: Game, strainS: number, relaxS: number): void {
+    game.straining = true;
+    for (let t = 0; t < strainS; t += 1 / 120) game.stepPerch(1 / 120);
+    game.straining = false;
+    for (let t = 0; t < relaxS; t += 1 / 120) game.stepPerch(1 / 120);
+  }
+
+  it("hops off the lamp and lands back on it", () => {
+    const game = new Game(1000);
+    game.perch();
+    practise(game, 0.8, 3);
+    expect(game.events.some((e) => e.type === "release")).toBe(true);
+    expect(game.bird.y).toBe(PERCH_Y);
+    expect(game.phase).toBe("playing");
+    expect(game.speed).toBe(0);
+  });
+
+  it("survives an accident, and the practice doesn't count once the run starts", () => {
+    const game = new Game(1000);
+    game.perch();
+    practise(game, 4, 3);
+    expect(game.accidents).toBe(1);
+    expect(game.phase).toBe("playing");
+    game.leavePerch();
+    expect(game.score).toBe(0);
+    expect(game.accidents).toBe(0);
+    expect(game.targetsHit).toBe(0);
+  });
+
+  it("leaves the lamp behind once the run scrolls", () => {
+    const game = new Game(1000);
+    game.perch();
+    game.leavePerch();
+    for (let i = 0; i < 60 * 3; i++) game.step(1 / 60);
+    expect(game.perchX === null || game.perchX < game.bird.x - 100).toBe(true);
+  });
+});
+
+describe("practice perch on a resize", () => {
+  it("keeps the lamp under the bird when the screen widens", () => {
+    const game = new Game(600);
+    game.perch();
+    game.resize(1400);
+    expect(game.perchX).toBe(game.bird.x);
   });
 });

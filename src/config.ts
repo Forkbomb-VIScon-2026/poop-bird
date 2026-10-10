@@ -71,11 +71,11 @@ export const CONFIG_SPEC = {
   calibrationSettle: { value: 0.7, min: 0, max: 2, step: 0.1, group: "Strain", label: "Calibration settle", hint: "s ignored at the start of each phase" },
   defaultNeutralSeconds: {
     value: 1.5, min: 0.5, max: 5, step: 0.1, group: "Strain", label: "Default: relaxed read",
-    hint: "s of relaxed face read on the strain check when the player skips calibration",
+    hint: "s of relaxed face read on the perch when the player skips calibration",
   },
   slowDetectionRate: {
     value: 8, min: 0, max: 30, step: 1, group: "Strain", label: "Slow tracking warning",
-    hint: "detections/s below which the strain check suggests touch or keyboard play (slow phones)",
+    hint: "detections/s below which the perch suggests touch or keyboard play (slow phones)",
   },
   defaultStrainScale: {
     value: 1, min: 0.3, max: 2.5, step: 0.05, group: "Strain", label: "Default: strain scale",
@@ -137,6 +137,9 @@ export const CONFIG_SPEC = {
   // --- Targets & score -----------------------------------------------------
   poopGravity: { value: 1000, min: 100, max: 3000, step: 50, group: "Targets", label: "Poop gravity", hint: "px/s² (separate from the bird so aiming stays the same)" },
   targetSpawnRate: { value: 0.55, min: 0, max: 3, step: 0.05, group: "Targets", label: "Spawn rate", hint: "targets per second" },
+  statueChance: { value: 0.05, min: 0, max: 0.5, step: 0.01, group: "Targets", label: "Statue chance", hint: "share of street targets that are statues (skipped where they'd overlap a building or pole)" },
+  angryChance: { value: 0.4, min: 0, max: 1, step: 0.05, group: "Targets", label: "Angry chance", hint: "share of splatted pedestrians that stop and curse at the bird (one already cursing always does again)" },
+  angryDuration: { value: 2.2, min: 0.5, max: 6, step: 0.1, group: "Targets", label: "Angry time", hint: "seconds a cursing pedestrian stands and shakes a fist before walking on" },
   targetPoints: { value: 50, min: 0, max: 500, step: 5, group: "Targets", label: "Points per hit", hint: "base; cars ×1, pedestrians ×1.5, statue ×2" },
   comboStep: { value: 0.5, min: 0, max: 2, step: 0.05, group: "Targets", label: "Combo step", hint: "multiplier added per consecutive hit" },
   comboMax: { value: 5, min: 1, max: 20, step: 0.5, group: "Targets", label: "Combo max", hint: "multiplier cap" },
@@ -200,7 +203,9 @@ export const CONFIG_SPEC = {
   oceanGapJump: { value: 150, min: 20, max: 500, step: 5, group: "Ocean", label: "Max gap jump", hint: "px the gap centre may move between obstacles" },
   oceanAnchorChance: { value: 0.4, min: 0, max: 1, step: 0.05, group: "Ocean", label: "Anchor chance", hint: "share of ocean obstacles that are a boat with its anchor hanging down" },
   oceanAnchorOpenChance: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Ocean", label: "Anchor over open water", hint: "share of anchors with nothing below (dive under) instead of coral or a rock" },
+  oceanWreckChance: { value: 0.2, min: 0, max: 1, step: 0.05, group: "Ocean", label: "Shipwreck chance", hint: "share of sea-floor obstacles that are an old shipwreck (a low hull with one broken mast)" },
   oceanFirstObstacleDelay: { value: 600, min: 0, max: 3000, step: 50, group: "Ocean", label: "First obstacle after", hint: "px after each stage change" },
+  oceanCalmFloorGrace: { value: 5, min: 0, max: 10, step: 0.5, group: "Ocean", label: "Floor grace after lesson", hint: "s after the swim lesson in which a fish lying on the sea floor isn't killed by it (ends once it swims off)" },
   oceanSpikeThreshold: { value: 0.85, min: 0.3, max: 1, step: 0.01, group: "Ocean", label: "Spike threshold", hint: "puff level that spikes the fish out" },
   oceanSpikeRelease: { value: 0.05, min: 0, max: 0.3, step: 0.01, group: "Ocean", label: "Spike release margin", hint: "spikes retract below threshold − this (no flicker)" },
   oceanSpikeMaxHold: { value: 1.5, min: 0.2, max: 5, step: 0.05, group: "Ocean", label: "Max spiked time", hint: "s spiked before a pop accident" },
@@ -223,11 +228,20 @@ export const CONFIG_SPEC = {
   anglerCloseMultiplier: { value: 1, min: 0, max: 10, step: 0.5, group: "Fisherman", label: "Close-one points", hint: "× points for dodging the hook by a whisker" },
 
   // --- Ocean puff detection ------------------------------------------------
-  oceanCalibrationSeconds: { value: 3, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Puff calibration", hint: "s of the puff phase at the first dive (first calibrationSettle s ignored)" },
+  oceanCalibrationSeconds: { value: 3.5, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Puff step", hint: "s of each puff step in the swim lesson and the puff calibration (first calibrationSettle s ignored)" },
   oceanPuffMinSeparation: { value: 1.5, min: 0.2, max: 6, step: 0.1, group: "Ocean puff", label: "Min separation", hint: "a puff feature counts once its change exceeds this many noise units (full weight at 2×)" },
   oceanMinPuffChange: { value: 0.5, min: 0, max: 5, step: 0.05, group: "Ocean puff", label: "Min puff change", hint: "calibration quality: summed puff weights must exceed this (1 = one clearly separated feature)" },
-  oceanFallbackMin: { value: 0.06, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: relaxed", hint: "max(mouthPress, cheekPuff) mapped to puff 0 without a calibration" },
-  oceanFallbackMax: { value: 0.22, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Fallback: full puff", hint: "max(mouthPress, cheekPuff) mapped to puff 1 without a calibration" },
+  oceanFallbackMin: { value: 0.1, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Pucker: relaxed", hint: "max(mouthPucker, cheekPuff) mapped to puff 0; used with or without a calibration" },
+  oceanFallbackMax: { value: 0.5, min: 0, max: 1, step: 0.01, group: "Ocean puff", label: "Pucker: full puff", hint: "max(mouthPucker, cheekPuff) mapped to puff 1; used with or without a calibration" },
+  oceanFallbackRestSds: { value: 3, min: 0, max: 8, step: 0.5, group: "Ocean puff", label: "Pucker: rest SDs", hint: "the pucker range starts this many SDs above the player's resting pucker (if above Pucker: relaxed)" },
+  oceanFallbackRestMargin: { value: 0.05, min: 0, max: 0.3, step: 0.01, group: "Ocean puff", label: "Pucker: rest margin", hint: "added on top of the resting pucker + SDs" },
+  oceanPuffCalibrationAttempts: { value: 1, min: 1, max: 4, step: 1, group: "Ocean puff", label: "Puff calibration tries", hint: "calibration runs after an unclear swim lesson before giving up (pursed lips only)" },
+  oceanRelaxSeconds: { value: 3.5, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Relax step", hint: "s of each relax step in the swim lesson and the puff calibration (first calibrationSettle s ignored)" },
+  oceanLessonHeadsUp: { value: 0, min: 0, max: 5, step: 0.5, group: "Ocean puff", label: "Lesson heads-up", hint: "s of countdown before each switch between puffing and relaxing in the swim lesson (0 = none; the calibration after an unclear lesson has its own)" },
+  oceanCalibrationHeadsUp: { value: 0, min: 0, max: 5, step: 0.5, group: "Ocean puff", label: "Calibration heads-up", hint: "s of countdown before each switch in the puff calibration after an unclear lesson (0 = none)" },
+  oceanPuffRelaxedQuantile: { value: 0.8, min: 0.5, max: 1, step: 0.05, group: "Ocean puff", label: "Relaxed edge", hint: "share of the calibration's relaxed faces (also right after a puff) that score 0 on each feature" },
+  oceanPuffMinGap: { value: 0.5, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min puff gap", hint: "a feature gets full weight once the puff clears the relaxed edge by this share of its change" },
+  oceanPuffMinSinkRate: { value: 0.8, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min sink rate", hint: "calibration quality: share of its relaxed faces that must score below the hover point" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;

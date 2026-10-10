@@ -4,7 +4,7 @@ A browser game you control by **straining your face**. The bird keeps falling;
 the only way up is to poop. Make a constipated face at your webcam to charge,
 relax to let go. Dodge the city, splat the cars, people and statues below.
 Then dive into the harbour, where the bird becomes a pufferfish that you steer
-by **puffing your cheeks**.
+by **making a pufferfish face**: cheeks puffed, lips pursed.
 
 Everything runs in the browser: face tracking runs locally with MediaPipe, and
 no video, snapshot or score leaves the device.
@@ -59,11 +59,11 @@ starts the face dataset collector (local credentials `local` /
 | Input | Action |
 | --- | --- |
 | Strain face (webcam) | City: charge; relax to poop |
-| Puff cheeks (webcam) | Ocean: inflate (more puff = rise, less = sink) |
+| Pufferfish face: puff cheeks, purse lips (webcam) | Ocean: inflate (more puff = rise, less = sink) |
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / Esc / ⏸ button | Pause |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
-| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). The ocean tutorial takes Enter only, since Space tries out the puff there. Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
+| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
 | **R** | Play again from game over |
 | **K** | Menu: play with the keyboard |
 | **Esc** | Calibration and game over: back to the menu |
@@ -95,17 +95,33 @@ wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
 - Short landscape screens get compact cards: the webcam sits next to the
   calibration card, and the game-over card puts its buttons first.
 - If face tracking runs below `slowDetectionRate` detections per second, the
-  strain check suggests playing with touch or the keyboard instead.
+  perch suggests playing with touch or the keyboard instead.
 
 ## How it plays
 
-Calibration is optional. Face mode opens straight on a strain check: a live
-meter between a relaxed and a strained face sketch, running on a default
-calibration fitted to a quick read of the player's relaxed face. If the meter
-doesn't follow their face, the player clicks "Calibrate" for the full two-phase
-calibration (each phase shows a sketch of the face to make). Then the
-bird hovers until the player strains for the first time, which starts the run;
-there's no countdown.
+Calibration is optional. Every run starts on the **perch**: the bird sits in
+its nest on top of a street lamp, with the player's webcam and an upright
+strain gauge right beside it, and a big arrow from the webcam to the bird says
+"that's you!". Above them is a single instruction next to a sketch of the face
+it asks for. The gauge
+fills as the face strains; over its 💩 line, the bird charges. Face mode runs
+on a default calibration fitted to a quick read of the player's relaxed face.
+
+- **Takeoff takes a full poop.** "Squeeze till the bird is full": smaller
+  poops just hop in the nest ("Squeeze longer to take off"), so a stray strain
+  never starts the run. Once the bird is full, the line changes to "Relax to
+  fly! 🚀", and letting go then starts the run. There's no countdown.
+- **New players** (the perch tutorial hasn't been seen on this browser, or
+  "I'm new here" is ticked) first get one guided practice poop: "Squeeze your
+  face" until the bird starts filling up, then "Now relax".
+- **Tuning** (the full two-phase calibration) is a small "Tune to my face"
+  button (or **C**). It turns yellow and pulses with a question when the gauge
+  doesn't follow the face: it never reaches the 💩 line when the player is
+  asked to strain (7 s; 10 s once practised), or it stays over it when they're
+  asked to relax (3 s) or for 6 s anyway. A good calibration goes straight
+  back to the perch; a failed one offers "Try again" or "Play anyway".
+
+Practice poops score nothing, and the lamp and its nest scroll away with the street.
 
 - Gravity pulls the bird down all the time. Fall speed is capped, and the bird
   falls slower while charging, because it tenses up.
@@ -119,6 +135,9 @@ there's no countdown.
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
+  Some splatted pedestrians (`angryChance`) stop, turn on the bird and curse:
+  red in the face, shaking a fist, a `#@$%!` bubble and a `curse` sound, for
+  `angryDuration` seconds before walking on. Hitting one again restarts it.
 - **Power lines:** from the second city on (after the first dive), some city
   obstacles are a run of poles with wires sagging between them
   (`powerLineChance`). Touching a wire zaps the bird and ends the run, and so
@@ -198,23 +217,40 @@ city by city (the debug panel's "Progression" group).
   the controls: a little hop, and it plunges through the surface while the
   camera follows it down past the quay wall into the sea. Under water it
   gulps, loses its feathers in a burst of bubbles and becomes a deflated
-  pufferfish, which then inflates. On the first dive in face mode, inflating
-  *is* the puff calibration: the world holds still with "PUFF YOUR CHEEKS!"
-  and the fish puffs up as you do (see below). Otherwise it inflates by itself
-  over `oceanTransformTime`. Then the controls are yours again. Keyboard mode
-  shows "Hold SPACE to puff up".
-- **Ocean tutorial.** A new player's first dive stops right after the bird
-  becomes a fish: the world holds still and a "You're a pufferfish!" card
-  explains puffing, the meter, spikes and jellyfish, popping and the way out.
-  The fish follows your puff meanwhile, so in keyboard mode you can try Space.
-  **Got it** (or Enter) carries on, then the puff calibration if one is due.
-  It shows once per browser; **⚙️ Options → "I'm new here: show tips"** in the
-  menu turns it back on (or off) for the next player.
+  pufferfish, which inflates by itself over `oceanTransformTime`. Then the
+  controls are yours again. Keyboard mode shows "Hold SPACE to puff up". On
+  the first dive in face mode the fish swims on right away into the **swim
+  lesson** (see below).
+- **Swim lesson** (face mode, first dive). The fish swims on in **calm
+  water** (`Game.calmWater`: no obstacles or jellyfish, no spiking, the sea
+  floor doesn't kill) while banners walk you through it: relax, "PUCKER &
+  PUFF!", "LET IT OUT", once more. Each banner has a pictogram of the face to
+  make (relaxed, or the pufferfish face: cheeks puffed, lips pursed); the
+  steps follow each other without countdowns. The fish follows
+  your measured puff meanwhile (pursed lips, as there's no puff calibration
+  yet), and your face is sampled. If the reading is clear, the calibration is
+  used right away and the level starts. If not, a slower **calibration** runs,
+  with a timeline of its steps (so the next switch is never a surprise) and
+  a look-around; there the fish shows each step (puffs up and floats, shrinks
+  and sinks) whatever your face does. New players then get the ocean tips as two
+  banners. A fish lying on the sand when the level starts isn't killed by the
+  sea floor until it swims off (at most `oceanCalmFloorGrace`, 5 s). Details
+  below.
+- **New players.** In face mode a new player always gets the swim lesson,
+  even with a saved puff calibration (which it then refits). In keyboard mode
+  a new player's first dive also swims on in calm water, under banners on
+  holding Space (or the screen) to puff and the two ocean tips; then the
+  level starts. Neither ever stops the world. The tips show once per browser;
+  **⚙️ Options → "I'm new here: show tips"** in the menu turns them back on
+  (or off) for the next player.
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
   floor kills; the surface is a soft ceiling you bump against.
-- **Obstacles.** Coral and rocks rise from the sea floor. Some slots are a
+- **Obstacles.** Coral and rocks rise from the sea floor. Now and then
+  (`oceanWreckChance`, 20%) it's an old shipwreck instead: a long, low hull
+  with one mast snapped off short, so you clear it by staying high enough
+  rather than threading a gap. Some slots are a
   boat at anchor instead (`oceanAnchorChance`, 40%): its anchor hangs down on
   the chain, over coral or a rock (a gap between them) or, for
   `oceanAnchorOpenChance` (35%) of them, over open water, so you dive under
@@ -276,7 +312,7 @@ webcam), and the wiring in `src/main.ts`.
    pollute the data. We store the mean and standard deviation of each feature
    for both phases.
 
-   **Default calibration.** Without a saved calibration, the strain check reads the
+   **Default calibration.** Without a saved calibration, the perch reads the
    relaxed face for `defaultNeutralSeconds` (1.5 s; it retries until a face
    stays in view) and takes each feature's median as neutral. The strain target
    is neutral plus a typical change per feature (`DEFAULT_STRAIN_DELTAS` in
@@ -344,6 +380,27 @@ player sits down.
 Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
 `src/strain.ts`.
 
+The gesture is the **pufferfish face**: cheeks puffed while the lips are
+pursed, like a kiss. In the face dataset a plain puff barely moved what
+MediaPipe reports for some people (no feature, blendshape or landmark,
+separated their puffs from their relaxed face), while pursed lips light up
+`mouthPucker` for everyone: near 0 while relaxed, looking around or laughing,
+0.2–1 with the pufferfish face. So the face puff is the higher of two signals:
+
+- the **pucker range**: `max(mouthPucker, cheekPuff)` mapped from
+  `oceanFallbackMin` (0.1, puff 0) to `oceanFallbackMax` (0.5, puff 1). It
+  needs no puff calibration, so it works from the first frame and whenever
+  the puff calibration is missing or failed. A few people rest with slightly
+  pursed lips (0.2 in the calibration, 0.5 between puffs for one participant,
+  whose fish floated all the time), so the range starts above the player's
+  resting pucker (from the puff calibration's relaxed faces, or the main
+  calibration's without one) when that's higher: resting +
+  `oceanFallbackRestSds` (3) SDs + `oceanFallbackRestMargin` (0.05), same
+  width.
+- the **puff calibration** below, which learns the player's own scale: some
+  people purse their lips much less than others and wouldn't get far up the
+  pucker range alone.
+
 1. **Features.** MediaPipe's `cheekPuff` blendshape stays near 0 however hard
    you puff ([google-ai-edge/mediapipe#4436](https://github.com/google-ai-edge/mediapipe/issues/4436)),
    so puff is read mostly from the face **landmarks** (`faceGeometry`): 3D
@@ -361,41 +418,63 @@ Code: `src/puff.ts` (pure, unit-tested), reusing the calibration machinery in
    case a future model fixes it). The strain calibration only weights its own
    features, so the new ones get strain weight 0 and strain detection is
    unchanged.
-2. **Neutral** comes from the main calibration's relaxed phase (or the
-   default calibration's relaxed read), which also stores each feature's
-   standard deviation.
-3. **Puff phase.** On the first dive in face mode, with the world frozen, we
-   collect `oceanCalibrationSeconds` (3 s) of full puff and drop the first
-   `calibrationSettle`. Pausing restarts the phase; going to the menu or
-   recalibrating abandons it. The phase is summarized with **robust stats**
-   (median and MAD): as the cheeks fill, the lips purse hard for ~0.2 s and
-   then relax, and with mean stats that blip got weight, so the fish only
-   puffed while the face was changing and sank while the puff was held. With
-   the median only what you hold through most of the phase counts.
-4. **Weights.** Geometry moves by a few hundredths while blendshapes move by
-   tenths, so the puff weights are scale-free: a feature counts once its change
-   exceeds `oceanPuffMinSeparation` (1.5) times its noise, with full weight at
-   twice that. Whatever moves for *you* gets picked. The score is the same
-   weighted normalized mean and EMA as strain, but with **no hysteresis**: the
-   fish needs the analog value.
-5. **Quality check.** It fails on low face coverage, summed puff weights below
+2. **Swim lesson and calibration** (`main.ts` `runSwimLesson`). On the first
+   dive in face mode the world swims on in calm water and banners walk the
+   player through `LESSON_STEPS`: relax, pucker & puff, let it out, again, each
+   with a pictogram of the face (`#face-relaxed`, `#face-puffed`). The fish
+   follows the measured puff (the pucker range), which playtesters found more
+   intuitive than a scripted fish. With a clear reading (the quality check
+   below) the level starts right away. If not, `CALIBRATION_STEPS` run: relax,
+   look around, then the same two cycles, with a timeline of the steps so the
+   player sees the next switch coming. There the fish is driven by the script
+   (puff 0.75 on puff steps, 0.05 otherwise), so the player sees what each
+   step does whatever the camera reads. After play-testing, neither has a
+   countdown before a switch (`oceanLessonHeadsUp`, `oceanCalibrationHeadsUp`:
+   0 s; the countdown is still there for higher values). Puff steps last
+   `oceanCalibrationSeconds` (3.5 s), the others
+   `oceanRelaxSeconds` (3.5 s); the first `calibrationSettle` of each is
+   dropped. Pausing restarts the step; going to the menu or recalibrating
+   abandons it. The relax steps right
+   **after** each puff matter most: a face just after a puff doesn't go back
+   to the relaxed face from before it (the mouth stays narrower, the lips
+   pressed or a bit pursed, the mouth corners up). When the calibration only
+   knew the relaxed face from the start of the game, those leftovers read as
+   puff and the fish often wouldn't sink: in the face dataset a fifth of the
+   relaxed frames after a puff floated, for some people half. Looking around
+   teaches it which features move with the head.
+3. **Fit** (`buildInteractivePuffCalibration`). All relax steps count as "not
+   puffing". Per feature, "relaxed" is the `oceanPuffRelaxedQuantile` (80%) of
+   those relaxed faces toward the puff side, so most of them score 0, and
+   "full" is the puff **median** (as the cheeks fill, the lips purse hard for
+   ~0.2 s and then relax; with the median only what you hold counts).
+   Geometry moves by a few hundredths while blendshapes move by tenths, so the
+   weights are scale-free: a feature counts once its change exceeds
+   `oceanPuffMinSeparation` (1.5) times its noise (full weight at twice that),
+   and only fully if the puff clears the relaxed edge by `oceanPuffMinGap`
+   (half) of its change. Whatever moves for *you*, and stays put when you
+   relax, gets picked. The score is the same weighted normalized mean and EMA
+   as strain, but with **no hysteresis**: the fish needs the analog value.
+4. **Quality check.** It fails on low face coverage, summed puff weights below
    `oceanMinPuffChange` (0.5, i.e. at least half a feature that clearly moved),
-   or fewer than 60% of puff samples scoring above the hover point. A failure
-   never blocks the game: puff falls back to `max(mouthPress, cheekPuff)`
-   mapped through `oceanFallbackMin`..`oceanFallbackMax`, with a toast. A
-   calibration saved before these features existed has no neutral stats for
-   them, so the fish uses the fallback until you recalibrate with **C**.
-6. A passing puff calibration is saved like the main one, and the toast says
-   which features it watches. **C** clears it, so the next dive samples again.
-   After the face-loss grace, puff drops to 0 and the fish sinks.
-7. **Input.** The fish gets `max(face puff, key puff)`; only one of them is live,
+   fewer than 60% of puff samples scoring above the hover point, or fewer than
+   `oceanPuffMinSinkRate` (80%) of the relaxed samples scoring below it, the
+   pucker range included ("your face didn't relax between puffs"). After an
+   unclear lesson the banner says why and the calibration runs
+   (`oceanPuffCalibrationAttempts`, 1 run). A failure never blocks the game:
+   after the last run the fish follows the pucker range alone, with a toast.
+5. The calibration is saved like the main one (`poopbird.puffCalibration.v3`;
+   older single-hold ones are ignored), and the toast says which features it
+   watches. **C** clears it, so the next dive calibrates again. After the
+   face-loss grace, puff drops to 0 and the fish sinks.
+6. **Input.** The fish gets `max(face puff, key puff)`; only one of them is live,
    depending on the mode. In keyboard mode, holding Space, mouse or touch inflates
    the key puff at `oceanKeyInflateRate`; releasing deflates it at
    `oceanKeyDeflateRate`.
 
 If the puff doesn't register, open the debug panel (`npm run dev:debug`) in the ocean: the feature
 rows show the geometry values as numbers with the relaxed-face marker, and the
-stats line "puff source" names the features the calibration picked.
+stats line "puff source" names the features the calibration picked (or
+"pucker range" without one).
 `poopBird.lastPuffAttempt` in the console holds the last attempt, including
 one that failed.
 
@@ -478,10 +557,11 @@ participant through about 3 minutes:
 
    Each break explains the next part and waits for its start button; nothing
    is recorded meanwhile. Every step beeps: high for strain or puff, low for
-   relax. The pufferfish face is a candidate gesture for the ocean: plain
-   puffs barely move what MediaPipe reports (`cheekPuff` stays 0 and the
-   geometry moves about as much as a relaxed face drifts), while pursed lips
-   light up `mouthPucker`.
+   relax. The pufferfish face is the ocean's gesture (see
+   [Puff detection](#puff-detection-ocean)): plain puffs barely move what
+   MediaPipe reports (`cheekPuff` stays 0 and the geometry moves about as much
+   as a relaxed face drifts), while pursed lips light up `mouthPucker`. The
+   plain puff script stays as a baseline.
 5. The upload, with a "Delete this session" button and a fallback to save the
    file when the upload fails. Then **Next person** starts over at consent
    with a fresh participant code (for one shared device at a collection
@@ -538,10 +618,19 @@ npm run data:purge  # delete the local copy (everyone, when the VM goes away)
 replays the rest. For strain it reports hits on strain steps, false strain
 while relaxed, looking around and laughing, releases in the middle of a
 strain, and press and release latency. For puff it scores the plain puff
-and the pufferfish face separately, each with a calibration fitted from its
-own first hold: the median puff level while relaxed, at half and at full
-puff, how often the fish sinks while relaxed and rises while puffing, and
-false spikes. To try a
+and the pufferfish face separately. Like the game's interactive calibration,
+each script's first two hold → relax cycles (plus the relaxed step before
+them) are the swim lesson, and every variant is scored only on what comes
+after: the median puff level
+while relaxed, at half and at full puff, how often the fish sinks while
+relaxed and rises while puffing, false spikes, and how often it would rise
+while the player looks around (the look frames no calibration saw) or laughs
+(the strain script's "look" and "laugh" steps). Like the game, a puff
+calibration that fails its quality check isn't used; after an unclear lesson,
+the calibration is fitted from the script's next two cycles plus the start of
+the strain script's look-around. The features are computed again from the
+recorded blendshapes and landmarks with the current `extractFeatures` and
+`faceGeometry`, so a new or changed feature scores on every recording. To try a
 detection idea, add a variant to `scripts/eval/variants.ts`; the first entry
 is what the game does today. About 1 in 5 participants are held out (picked
 by a hash of their code); score them with `npm run eval -- --holdout` only

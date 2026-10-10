@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   assessPuffCalibration,
+  buildInteractivePuffCalibration,
   buildPuffCalibration,
   faceGeometry,
   fallbackPuff,
   initialPuffState,
+  puckerRange,
   rawPuff,
   stepKeyPuff,
   stepPuff,
@@ -28,6 +30,10 @@ const PARAMS = {
   oceanMinPuffChange: 0.5,
   oceanFallbackMin: 0.1,
   oceanFallbackMax: 0.5,
+  oceanFallbackRestSds: 3,
+  oceanFallbackRestMargin: 0.05,
+  oceanPuffRelaxedQuantile: 0.8,
+  oceanPuffMinGap: 0.5,
   emaAlpha: 1,
   faceLossGrace: 0.25,
 };
@@ -228,6 +234,42 @@ describe("assessPuffCalibration", () => {
   });
 });
 
+describe("buildInteractivePuffCalibration", () => {
+  // Right after a puff the mouth stays narrow and the lips pressed; only the cheeks and eyes-to-mouth go back.
+  const AFTER_PUFF = { ...RELAXED, mouthWidth: 0.5, mouthPress: 0.2 };
+  const relaxed = [...samples(RELAXED, 30), ...samples(AFTER_PUFF, 30)];
+  const cal = buildInteractivePuffCalibration(relaxed, samples(PUFFED, 40), PARAMS)!;
+
+  it("only weights what the puff has and the face right after it doesn't", () => {
+    expect(cal.weights.eyeMouth).toBeGreaterThan(0.9);
+    expect(cal.weights.cheekWidth).toBeGreaterThan(0.5);
+    expect(cal.weights.mouthWidth).toBeLessThan(0.05);
+    expect(cal.weights.mouthPress).toBeLessThan(0.05);
+    for (const f of STRAIN_FEATURES) if (!PUFF_FEATURES.includes(f)) expect(cal.weights[f]).toBe(0);
+  });
+
+  it("lets the face right after a puff sink, and a puff float", () => {
+    expect(rawPuff(fv(AFTER_PUFF), cal, PARAMS)).toBeLessThan(PARAMS.oceanHoverPuff);
+    expect(rawPuff(fv(RELAXED), cal, PARAMS)).toBeCloseTo(0, 1);
+    expect(rawPuff(fv(PUFFED), cal, PARAMS)).toBeGreaterThan(0.9);
+  });
+
+  it("needs both relaxed and puff samples", () => {
+    expect(buildInteractivePuffCalibration([], samples(PUFFED, 10), PARAMS)).toBeNull();
+    expect(buildInteractivePuffCalibration(relaxed, [], PARAMS)).toBeNull();
+  });
+
+  it("fails the quality check when the relaxed faces would keep the fish up", () => {
+    const plain = buildInteractivePuffCalibration(samples(RELAXED, 30), samples(PUFFED, 40), PARAMS)!;
+    const puffs = samples(PUFFED, 40);
+    expect(assessPuffCalibration(plain, puffs, { strain: 1 }, PARAMS, samples(RELAXED, 30)).ok).toBe(true);
+    const q = assessPuffCalibration(plain, puffs, { strain: 1 }, PARAMS, samples(PUFFED, 30));
+    expect(q.ok).toBe(false);
+    expect(q.sinkRate).toBe(0);
+    expect(q.reason).toMatch(/relax/);
+  });
+});
+
 describe("fallbackPuff", () => {
   it("maps a raw score through the fixed range", () => {
     expect(fallbackPuff(0.05, 0.05, 0.45)).toBe(0);
@@ -241,13 +283,47 @@ describe("fallbackPuff", () => {
     expect(fallbackPuff(0.2, 0.3, 0.3)).toBe(0);
   });
 
-  it("is used by rawPuff when there is no calibration, reading pressed lips (cheekPuff is dead)", () => {
-    expect(rawPuff(fv({ mouthPress: 0.3, cheekPuff: 0.00001 }), null, PARAMS)).toBeCloseTo(0.5);
-    expect(rawPuff(fv({ mouthPress: 0.05, cheekPuff: 0.3 }), null, PARAMS)).toBeCloseTo(0.5);
+  it("is used by rawPuff when there is no calibration, reading pursed lips (cheekPuff is dead)", () => {
+    expect(rawPuff(fv({ mouthPucker: 0.3, cheekPuff: 0.00001 }), null, PARAMS)).toBeCloseTo(0.5);
+    expect(rawPuff(fv({ mouthPucker: 0.05, cheekPuff: 0.3 }), null, PARAMS)).toBeCloseTo(0.5);
   });
 
-  it("ignores pursed lips, which only flicker as the cheeks fill", () => {
-    expect(rawPuff(fv({ mouthPucker: 0.9 }), null, PARAMS)).toBe(0);
+  it("ignores pressed lips, which some people rest with", () => {
+    expect(rawPuff(fv({ mouthPress: 0.9 }), null, PARAMS)).toBe(0);
+  });
+
+  it("lifts a calibrated puff to the pursed-lips level", () => {
+    const cal = buildPuffCalibration(mainCal, samples(PUFFED, 40), PARAMS)!;
+    expect(rawPuff(fv(RELAXED), cal, PARAMS)).toBeCloseTo(0, 1);
+    // The calibration hold had no pucker; a pufferfish face still reaches the top.
+    expect(rawPuff(fv({ ...RELAXED, mouthPucker: 0.6 }), cal, PARAMS)).toBe(1);
+    expect(rawPuff(fv({ ...RELAXED, mouthPucker: 0.3 }), cal, PARAMS)).toBeCloseTo(0.5);
+  });
+});
+
+describe("puckerRange", () => {
+  const rest = (pucker: number, std: number) => ({
+    neutral: fv({ mouthPucker: pucker }),
+    neutralStd: fv({ mouthPucker: std }),
+  });
+
+  it("is the configured range for a relaxed face without pursed lips, or without one at all", () => {
+    expect(puckerRange(rest(0.01, 0.005), PARAMS)).toEqual({ min: 0.1, max: 0.5 });
+    expect(puckerRange(null, PARAMS)).toEqual({ min: 0.1, max: 0.5 });
+  });
+
+  it("starts above a resting pucker and keeps its width", () => {
+    // Rests at 0.2 (± 0.05): starts at 0.2 + 3 × 0.05 + 0.05.
+    const r = puckerRange(rest(0.2, 0.05), PARAMS);
+    expect(r.min).toBeCloseTo(0.4);
+    expect(r.max).toBeCloseTo(0.8);
+  });
+
+  it("keeps such a face's half-pursed rest out of the fallback, with or without a puff calibration", () => {
+    const face = fv({ mouthPucker: 0.35 });
+    expect(rawPuff(face, null, PARAMS)).toBeCloseTo(0.625);
+    expect(rawPuff(face, null, PARAMS, rest(0.2, 0.05))).toBe(0);
+    expect(rawPuff(fv({ mouthPucker: 0.8 }), null, PARAMS, rest(0.2, 0.05))).toBe(1);
   });
 });
 

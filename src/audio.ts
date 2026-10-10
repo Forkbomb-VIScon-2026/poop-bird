@@ -402,4 +402,10 @@ export class Sound {
     const delay = 0;
     this.play("line_snap", volume, delay);
   }
+
+  curse(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("curse", volume, delay);
+  }
 }

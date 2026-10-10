@@ -7,8 +7,9 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { decodeFrames, type SegmentName, type Session } from "../../src/session";
-import { zeroFeatures, type FeatureVector } from "../../src/strain";
+import { faceGeometry, type LandmarkPoint } from "../../src/puff";
+import { LANDMARK_COUNT, decodeFrames, decodeLandmarks, type SegmentName, type Session } from "../../src/session";
+import { extractFeatures, zeroFeatures, type FeatureVector } from "../../src/strain";
 
 export interface Frame {
   /** Seconds since the segment start. */
@@ -43,10 +44,38 @@ function features(f: Record<string, number> | null): FeatureVector | null {
   return f ? { ...zeroFeatures(), ...f } : null;
 }
 
+/**
+ * Sessions store the features as the recording build computed them, plus the
+ * raw blendshapes and landmarks. The features are computed again here from
+ * those with the current extractFeatures and faceGeometry, so features added
+ * or changed since then score on every recording.
+ */
 function fromSession(s: Session, id: string): Recording {
   const segments: Recording["segments"] = {};
+  const aspect = s.device.video.width / s.device.video.height;
   for (const seg of s.segments) {
-    segments[seg.name] = decodeFrames(seg).map((fr) => ({ t: fr.t, label: fr.label, since: fr.since, f: features(fr.features) }));
+    const landmarks = decodeLandmarks(seg);
+    const per = LANDMARK_COUNT * 3;
+    const shapes = Object.keys(seg.blendshapes);
+    segments[seg.name] = decodeFrames(seg).map((fr, i) => {
+      let f = features(fr.features);
+      if (f) {
+        const lm: LandmarkPoint[] = [];
+        for (let j = 0; j < LANDMARK_COUNT; j++) {
+          const k = i * per + j * 3;
+          lm.push({ x: landmarks[k], y: landmarks[k + 1], z: landmarks[k + 2] });
+        }
+        const geometry = faceGeometry(lm, aspect);
+        if (shapes.length) {
+          const scores: Record<string, number> = {};
+          for (const k of shapes) scores[k] = seg.blendshapes[k][i];
+          f = extractFeatures(scores, geometry);
+        } else {
+          Object.assign(f, geometry);
+        }
+      }
+      return { t: fr.t, label: fr.label, since: fr.since, f };
+    });
   }
   return { id, participant: s.participant.code, holdout: isHoldout(s.participant.code), segments };
 }

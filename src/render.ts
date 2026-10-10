@@ -1,6 +1,5 @@
 // Canvas rendering. Simple shapes, chunky outlines, no image assets.
 
-import { initialChargeState } from "./charge";
 import { config } from "./config";
 import { initialSpikeState } from "./swim";
 import {
@@ -18,8 +17,11 @@ import {
   CHURCH_TOWER_W,
   WEDDING_WINDUP,
   churchGeometry,
+  wreckGeometry,
+  WRECK_MAST_W,
   weddingX,
   OCEAN_DEPTH,
+  PERCH_Y,
   VIEW_H,
   WATER_Y,
   PEBBLE_R,
@@ -46,6 +48,7 @@ import {
   type PowerLine,
   type Splat,
   type Tabloid,
+  type Rage,
   type Target,
   type Bouquet,
   type Dove,
@@ -56,10 +59,14 @@ import {
 /** A captured photo: a face crop from the webcam, or a crop of the game canvas around the bird. */
 export type Photo = HTMLCanvasElement;
 
-/** What drawBird reads, so a bird can be drawn outside the game (the strain check's meter). */
+/** What drawBird reads (captureBird draws the bird outside the game). */
 type BirdLook = Pick<Game, "bird" | "charge" | "stunned" | "phase" | "overstrainProgress" | "zapped" | "zapFlash" | "time">;
 
 const OUTLINE = "#2b2d42";
+/** The perch's nest, relative to the perched bird's centre (PERCH_Y): its rim, depth and half-width. */
+const NEST_RIM = 8;
+const NEST_DEPTH = 30;
+const NEST_RX = 36;
 /** Pigeons are drawn at this scale (their hit radius is PIGEON_R in game.ts). */
 const PIGEON_SCALE = 1.35;
 /** Slingshot kids are drawn at this scale (their hitbox is the target's w × h). */
@@ -160,52 +167,6 @@ export class Renderer {
     return out;
   }
 
-  /**
-   * The strain check's bird, perched on the live meter at `at` (0..1 across
-   * the canvas) and charged by the live strain, so the player sees that
-   * straining is what drives the bird before the run starts. `relief` shows
-   * its relieved face (after letting go of a strain).
-   */
-  drawMeterBird(canvas: HTMLCanvasElement, at: number, strain: number, relief: boolean, time: number): void {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = Math.round(canvas.clientWidth * dpr);
-    const h = Math.round(canvas.clientHeight * dpr);
-    if (w <= 0 || h <= 0) return;
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
-    const octx = canvas.getContext("2d");
-    if (!octx) return;
-    octx.setTransform(1, 0, 0, 1, 0, 0);
-    octx.clearRect(0, 0, w, h);
-    const charge = Math.max(0, Math.min(1, strain));
-    // Room for the fully puffed bird plus its sweat drops.
-    const s = h / (BIRD_RADIUS * 3.2);
-    const half = BIRD_RADIUS * 1.6 * s;
-    // Over the fill's end, but whole on the canvas near either end of the bar.
-    const x = Math.max(half, Math.min(w - half, at * w));
-    // The bird puffs up around its centre (drawBird), so lift it as it grows: its belly
-    // (plus the outline) stays resting on the bottom edge, never sinking into the bar.
-    const belly = BIRD_RADIUS * (1 + charge * 0.28) + 2;
-    octx.setTransform(s, 0, 0, s, x, h - belly * s);
-    const look: BirdLook = {
-      bird: { x: 0, y: 0, vy: 0, rot: Math.sin(time * 2.5) * 0.06, stretch: 1, stretchV: 0, relief: relief ? 1 : 0, flap: 0 },
-      charge: { ...initialChargeState(), charge },
-      stunned: false,
-      phase: "playing",
-      overstrainProgress: 0,
-      zapped: false,
-      zapFlash: 0,
-      time,
-    };
-    const main = this.ctx;
-    this.ctx = octx;
-    try {
-      this.drawBird(look);
-    } finally {
-      this.ctx = main;
-    }
-  }
-
   /** Fits the canvas to its CSS size. Returns the logical width (height is always VIEW_H). */
   resize(): number {
     const rect = this.canvas.getBoundingClientRect();
@@ -236,6 +197,7 @@ export class Renderer {
     if (game.wedding) drawWeddingBackdrop(ctx, game.wedding, game.time);
     for (const o of game.obstacles) this.drawObstacle(o, game.time);
     for (const l of game.powerLines) this.drawPowerLine(l, game.time);
+    if (game.perchX !== null) this.drawPerch(game.perchX);
     // People stand on the sidewalk, in front of the buildings and poles.
     for (const t of game.targets) if (t.kind !== "car" && !t.chute) this.drawTarget(t, game.time);
     for (const b of game.balloons) this.drawBalloon(b, game.time);
@@ -245,7 +207,7 @@ export class Renderer {
     // Over the buildings, so a paparazzo's timer is never hidden.
     for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
     for (const d of game.doves) drawDove(ctx, d, game.time);
-    for (const j of game.jellies) this.drawJelly(j, game.time, game.spike.spiked);
+    for (const j of game.jellies) this.drawJelly(j, game.time);
     if (game.angler) this.drawAngler(game.angler, game);
     this.drawPoops(game);
     for (const p of game.pebbles) drawPebble(this.ctx, p);
@@ -253,6 +215,7 @@ export class Renderer {
     if (!game.transition) this.drawParticles(game);
     if (ocean) this.drawFish(game);
     else this.drawBird(game);
+    if (game.perchX !== null && !ocean) this.drawNestFront(game.perchX);
     if (game.angler && !game.transition) this.drawHookedCue(game.angler, game);
     // Over the bird, so the crosshair reads on it.
     if (!game.transition) for (const t of game.targets) if (t.kid) this.drawKidAim(t, game);
@@ -260,8 +223,6 @@ export class Renderer {
     if (game.wedding && !game.transition) this.drawWeddingCue(game.wedding, game);
     if (game.transition) {
       this.drawParticles(game);
-      // A held dive (tutorial, puff calibration) shows the meter, so the player sees their puff.
-      if (ocean && game.holdTransition) this.drawPuffMeter(game);
     } else if (game.phase === "playing" && !game.demo) {
       if (ocean) this.drawPuffMeter(game);
       else this.drawChargeMeter(game);
@@ -566,6 +527,7 @@ export class Renderer {
     if (o.anchor) this.drawAnchoredBoat(o);
     if (o.bottom === "none") return;
     if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
+    if (o.bottom === "wreck") return this.drawWreck(o, time);
     if (o.bottom === "church") return drawChurch(this.ctx, o, time);
     const ctx = this.ctx;
     const [base] = obstacleRects(o);
@@ -575,41 +537,6 @@ export class Renderer {
     // Bottom part
     if (o.bottom === "billboard") {
       this.drawBillboard(o, time);
-    } else if (o.bottom === "chimney") {
-      ctx.fillStyle = "#a44a3f";
-      roundRect(ctx, base.x, base.y, base.w, base.h + 4, 4);
-      ctx.fill();
-      ctx.stroke();
-      // Bricks
-      ctx.strokeStyle = "rgba(0,0,0,0.18)";
-      ctx.lineWidth = 2;
-      for (let y = base.y + 16, row = 0; y < GROUND_Y; y += 14, row++) {
-        ctx.beginPath();
-        ctx.moveTo(base.x + 3, y);
-        ctx.lineTo(base.x + base.w - 3, y);
-        ctx.stroke();
-        for (let x = base.x + (row % 2 ? 10 : 22); x < base.x + base.w - 4; x += 24) {
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x, y + 14);
-          ctx.stroke();
-        }
-      }
-      // Cap
-      ctx.fillStyle = "#6b2d26";
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 3;
-      roundRect(ctx, base.x - 6, base.y - 2, base.w + 12, 16, 3);
-      ctx.fill();
-      ctx.stroke();
-      // Smoke puffs
-      for (let i = 0; i < 3; i++) {
-        const t = (time * 0.6 + i / 3) % 1;
-        ctx.fillStyle = `rgba(230,230,230,${0.6 * (1 - t)})`;
-        ctx.beginPath();
-        ctx.arc(base.x + base.w / 2 - t * 30, base.y - 10 - t * 50, 8 + t * 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
     } else {
       ctx.fillStyle = o.color;
       roundRect(ctx, base.x, base.y, base.w, base.h + 4, 5);
@@ -649,6 +576,92 @@ export class Renderer {
   }
 
   // --- power lines ------------------------------------------------------------
+
+  /**
+   * The practice perch: the bird's nest on top of a street lamp (game.perch).
+   * This is the lamp and the inside of the nest; drawNestFront() covers the
+   * bird's belly once the bird is drawn, so it sits in the nest.
+   */
+  private drawPerch(x: number): void {
+    const ctx = this.ctx;
+    const top = PERCH_Y + NEST_DEPTH + 6;
+    const foot = GROUND_Y + 16;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = OUTLINE;
+    // Arm and the lamp hanging off it.
+    ctx.fillStyle = "#3d4a5c";
+    ctx.beginPath();
+    ctx.moveTo(x + 4, top + 26);
+    ctx.quadraticCurveTo(x + 40, top + 10, x + 56, top + 30);
+    ctx.lineTo(x + 52, top + 33);
+    ctx.quadraticCurveTo(x + 38, top + 18, x + 4, top + 34);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#fff3a0";
+    ctx.beginPath();
+    ctx.moveTo(x + 42, top + 32);
+    ctx.lineTo(x + 66, top + 32);
+    ctx.lineTo(x + 60, top + 46);
+    ctx.lineTo(x + 48, top + 46);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Pole and its base.
+    ctx.fillStyle = "#3d4a5c";
+    ctx.fillRect(x - 5, top, 10, foot - top);
+    ctx.strokeRect(x - 5, top, 10, foot - top);
+    roundRect(ctx, x - 11, foot - 18, 22, 20, 4);
+    ctx.fill();
+    ctx.stroke();
+    // The inside of the nest, behind the bird.
+    ctx.fillStyle = "#5c3b1e";
+    ctx.beginPath();
+    ctx.ellipse(x, PERCH_Y + NEST_RIM, NEST_RX, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  /** The front of the nest: a woven bowl over the bird's belly, with twigs sticking out. */
+  private drawNestFront(x: number): void {
+    const ctx = this.ctx;
+    const y0 = PERCH_Y + NEST_RIM;
+    const bottom = PERCH_Y + NEST_DEPTH;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineCap = "round";
+    // Twigs poking out of the sides.
+    ctx.lineWidth = 2.5;
+    for (const [dx, dy, ex, ey] of [[-30, 8, -46, -2], [-24, 16, -42, 20], [28, 6, 46, -4], [26, 15, 44, 22]]) {
+      ctx.beginPath();
+      ctx.moveTo(x + dx, y0 + dy);
+      ctx.lineTo(x + ex, y0 + ey);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 3;
+    ctx.fillStyle = "#a0703c";
+    ctx.beginPath();
+    ctx.moveTo(x - NEST_RX - 2, y0);
+    ctx.quadraticCurveTo(x, y0 + 16, x + NEST_RX + 2, y0);
+    ctx.quadraticCurveTo(x + NEST_RX - 2, bottom, x, bottom + 2);
+    ctx.quadraticCurveTo(x - NEST_RX + 2, bottom, x - NEST_RX - 2, y0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Woven straw.
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#d9a865";
+    for (let i = 0; i < 3; i++) {
+      const y = y0 + 8 + i * 6;
+      const w = NEST_RX - 4 - i * 6;
+      ctx.beginPath();
+      ctx.moveTo(x - w, y - 3);
+      ctx.quadraticCurveTo(x - w / 3, y + 4, x + w / 4, y - 1);
+      ctx.moveTo(x - w / 6, y + 3);
+      ctx.quadraticCurveTo(x + w / 2, y + 5, x + w, y - 3);
+      ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+  }
 
   private drawPowerLine(l: PowerLine, time: number): void {
     const ctx = this.ctx;
@@ -2244,6 +2257,195 @@ export class Renderer {
   }
 
   /**
+   * An old shipwreck settled on the sea floor: a long, low wooden hull half
+   * sunk into the sand, its planks stove in, and one mast snapped off short.
+   * The mast's splintered tip is the gap's bottom edge (see obstacleRects).
+   */
+  private drawWreck(o: Obstacle, time: number): void {
+    const ctx = this.ctx;
+    const { deck, facing, mastX } = wreckGeometry(o);
+    // Hull coordinates: t runs from the stern (0) to the bow (o.w), mirrored when the bow points left.
+    const X = (t: number) => (facing > 0 ? o.x + t : o.x + o.w - t);
+    const w = o.w;
+    const wood = o.color;
+    ctx.lineJoin = "round";
+
+    // Mast: leaning a little, splintered at the top, a rope trailing off it.
+    const mastTop = o.gapBottom;
+    const lean = (rnd(o.seed + 2) - 0.5) * 6;
+    const hw = WRECK_MAST_W / 2 - 1;
+    ctx.beginPath();
+    ctx.moveTo(mastX - hw, deck + 6);
+    ctx.lineTo(mastX - hw + lean, mastTop + 9);
+    ctx.lineTo(mastX - hw * 0.4 + lean, mastTop + 1);
+    ctx.lineTo(mastX + lean, mastTop + 7);
+    ctx.lineTo(mastX + hw * 0.5 + lean, mastTop);
+    ctx.lineTo(mastX + hw + lean, mastTop + 11);
+    ctx.lineTo(mastX + hw, deck + 6);
+    ctx.closePath();
+    ctx.fillStyle = shadeHex(wood, -12);
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mastX + 1, deck);
+    ctx.lineTo(mastX + 1 + lean * 0.8, mastTop + 14);
+    ctx.stroke();
+    // An iron band and the stump of a yard.
+    const bandY = mastTop + Math.min(26, (deck - mastTop) * 0.45);
+    ctx.fillStyle = "#56616d";
+    ctx.fillRect(mastX - hw + lean * 0.7, bandY, hw * 2, 4);
+    // A strand of weed swaying off the tip.
+    ctx.strokeStyle = "#2a9d73";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    const sway = Math.sin(time * 1.3 + o.seed) * 4;
+    ctx.beginPath();
+    ctx.moveTo(mastX + lean, mastTop + 8);
+    ctx.quadraticCurveTo(mastX + lean - facing * (10 + sway), mastTop + 18, mastX + lean - facing * (6 + sway), mastTop + 32);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+
+    // Hull: a flat, rotten deck line, the stern post on one end and the bow rising a little on the other.
+    const sand = GROUND_Y + 4;
+    const hull = () => {
+      ctx.beginPath();
+      ctx.moveTo(X(4), deck - 4);
+      ctx.lineTo(X(w * 0.42), deck);
+      ctx.lineTo(X(w - 34), deck);
+      ctx.quadraticCurveTo(X(w - 12), deck - 3, X(w + 2), deck - 12);
+      ctx.quadraticCurveTo(X(w - 8), deck + 30, X(w - 36), sand);
+      ctx.lineTo(X(20), sand);
+      ctx.quadraticCurveTo(X(4), GROUND_Y - 18, X(4), deck - 4);
+      ctx.closePath();
+    };
+    hull();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = wood;
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, GROUND_Y - deck + 24);
+    // Planks: seams along the hull, a few gone dark.
+    ctx.strokeStyle = "rgba(0,0,0,0.28)";
+    ctx.lineWidth = 2;
+    for (let y = deck + 10, i = 0; y < GROUND_Y; y += 11, i++) {
+      ctx.beginPath();
+      ctx.moveTo(o.x - 4, y + (facing > 0 ? 2 : -2));
+      ctx.lineTo(o.x + w + 4, y + (facing > 0 ? -2 : 2));
+      ctx.stroke();
+      // Butt joints, staggered.
+      for (let t = 24 + (i % 2) * 22 + rnd(o.seed + i) * 10; t < w - 20; t += 54) {
+        ctx.beginPath();
+        ctx.moveTo(X(t), y);
+        ctx.lineTo(X(t), y + 11);
+        ctx.stroke();
+      }
+    }
+    // The gunwale: a thicker rail along the top.
+    ctx.fillStyle = shadeHex(wood, -22);
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, 22);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(o.x - 10, deck + 6, w + 20, 3);
+    // Algae creeping up from the sand, greener toward the bottom.
+    const algae = ctx.createLinearGradient(0, deck, 0, GROUND_Y);
+    algae.addColorStop(0, "rgba(74,124,89,0)");
+    algae.addColorStop(1, "rgba(74,124,89,0.4)");
+    ctx.fillStyle = algae;
+    ctx.fillRect(o.x - 10, deck, w + 20, GROUND_Y - deck + 6);
+    // Seen through the water it's all a bit bluer.
+    ctx.fillStyle = "rgba(27,143,181,0.12)";
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, GROUND_Y - deck + 24);
+    ctx.restore();
+    hull();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // A hole stove into the side, with broken plank ends.
+    const ht = w * (0.5 + rnd(o.seed + 4) * 0.12);
+    const hy = deck + 22;
+    ctx.beginPath();
+    ctx.moveTo(X(ht - 20), hy + 4);
+    ctx.lineTo(X(ht - 9), hy - 6);
+    ctx.lineTo(X(ht - 2), hy + 1);
+    ctx.lineTo(X(ht + 10), hy - 7);
+    ctx.lineTo(X(ht + 22), hy + 5);
+    ctx.lineTo(X(ht + 15), hy + 17);
+    ctx.lineTo(X(ht + 4), hy + 13);
+    ctx.lineTo(X(ht - 6), hy + 20);
+    ctx.lineTo(X(ht - 17), hy + 14);
+    ctx.closePath();
+    ctx.fillStyle = "#16202b";
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // Something lives in there: two eyes peering out.
+    ctx.fillStyle = "#ffd166";
+    const blink = Math.sin(time * 0.9 + o.seed * 3) > 0.96;
+    for (const dx of [-4, 5]) {
+      ctx.beginPath();
+      ctx.ellipse(X(ht + dx), hy + 6, 2.6, blink ? 0.5 : 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Portholes toward the bow, crusted green.
+    for (let i = 0; i < 2; i++) {
+      const px = X(w * 0.74 + i * 22 - (ht > w * 0.58 ? 0 : 6));
+      const py = deck + 24;
+      ctx.beginPath();
+      ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#3d6b5e";
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#16202b";
+      ctx.fill();
+    }
+
+    // Barnacles along the waterline of long ago.
+    ctx.fillStyle = "rgba(240,235,220,0.75)";
+    for (let i = 0; i < 12; i++) {
+      const t = 26 + rnd(o.seed + i + 30) * (w - 60);
+      const y = deck + 34 + rnd(o.seed + i + 50) * 18;
+      ctx.beginPath();
+      ctx.arc(X(t), y, 1.6 + rnd(o.seed + i + 70) * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Sand drifted up against the hull, and a starfish on it.
+    // Only its crest is outlined: where it meets the (wavy) floor, it blends in.
+    const crest = () => {
+      ctx.beginPath();
+      ctx.moveTo(o.x - 14, GROUND_Y + 2);
+      ctx.quadraticCurveTo(o.x + w * 0.25, GROUND_Y - 16, o.x + w * 0.5, GROUND_Y - 9);
+      ctx.quadraticCurveTo(o.x + w * 0.78, GROUND_Y - 3, o.x + w + 14, GROUND_Y + 2);
+    };
+    crest();
+    ctx.lineTo(o.x + w + 14, GROUND_Y + 10);
+    ctx.lineTo(o.x - 14, GROUND_Y + 10);
+    ctx.closePath();
+    ctx.fillStyle = "#e9cf94";
+    ctx.fill();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(o.x - 20, GROUND_Y - 40, w + 40, 36);
+    ctx.clip();
+    crest();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+    drawStar(ctx, X(w * (0.2 + rnd(o.seed + 6) * 0.15)), GROUND_Y - 8, 7, "#ff9f43");
+    ctx.lineJoin = "miter";
+  }
+
+  /**
    * A boat at anchor: the hull on the surface (painted above the waterline,
    * red antifouling below, tinted by the water), a cabin and a mast above,
    * and the chain down to the anchor, whose crown is the gap's top edge.
@@ -2403,7 +2605,7 @@ export class Renderer {
     ctx.fill();
   }
 
-  private drawJelly(j: Jelly, time: number, poppable: boolean): void {
+  private drawJelly(j: Jelly, time: number): void {
     const ctx = this.ctx;
     const pulse = 1 + Math.sin(time * 3 + j.phase) * 0.08;
     const r = j.r;
@@ -2446,16 +2648,6 @@ export class Renderer {
       ctx.fill();
     }
     ctx.restore();
-    // Spiked fish can pop it: a pulsing gold ring says so.
-    if (poppable) {
-      ctx.strokeStyle = `rgba(255,214,0,${0.5 + 0.4 * Math.sin(time * 10)})`;
-      ctx.lineWidth = 3;
-      ctx.setLineDash([6, 5]);
-      ctx.beginPath();
-      ctx.arc(j.x, j.y, r * 1.45, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
   }
 
   /**
@@ -2471,9 +2663,7 @@ export class Renderer {
     const stunned = game.stunned;
     const danger = game.popProgress;
     const warn = game.popWarning;
-    const holding = !!game.transition && game.holdTransition;
-    let r = game.bodyRadius;
-    if (holding) r *= 1 + Math.sin(game.time * 5) * 0.06;
+    const r = game.bodyRadius;
     const puff = Math.min(1, Math.max(0, f.puff));
     const shape = fishShape(r, puff);
     const { L, H, B, q } = shape;
@@ -2983,9 +3173,12 @@ function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
 }
 
 function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
-  const walk = Math.sin(time * 9 + t.seed) * 0.5;
+  const rage = t.rage;
+  const walk = rage ? 0 : Math.sin(time * 9 + t.seed) * 0.5;
   const h = t.h;
   ctx.save();
+  // Furious: stamping on the spot.
+  if (rage) ctx.translate(0, -Math.abs(Math.sin(time * 14)) * 3);
   ctx.scale(t.facing, 1);
   ctx.lineCap = "round";
   // Legs
@@ -2994,7 +3187,7 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   for (const s of [1, -1]) {
     ctx.beginPath();
     ctx.moveTo(0, -h * 0.38);
-    ctx.lineTo(Math.sin(walk * s) * 10, 0);
+    ctx.lineTo(rage ? s * 6 : Math.sin(walk * s) * 10, 0);
     ctx.stroke();
   }
   // Body
@@ -3003,15 +3196,32 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   roundRect(ctx, -9, -h * 0.75, 18, h * 0.4, 6);
   ctx.fill();
   ctx.stroke();
-  // Arms
+  // Arms: a fist shaken at the bird when angry.
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(0, -h * 0.68);
-  ctx.lineTo(-Math.sin(walk) * 10, -h * 0.42);
+  if (rage) {
+    const fx = 16 + Math.sin(time * 24) * 3;
+    const fy = -h * 1.02 + Math.cos(time * 24) * 3;
+    ctx.lineTo(fx, fy);
+    ctx.stroke();
+    ctx.fillStyle = "#f1c27d";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.68);
+    ctx.lineTo(-7, -h * 0.4);
+  } else {
+    ctx.lineTo(-Math.sin(walk) * 10, -h * 0.42);
+  }
   ctx.stroke();
-  // Head
+  // Head (red in the face when angry)
   ctx.lineWidth = 3;
-  ctx.fillStyle = "#f1c27d";
+  ctx.fillStyle = rage ? "#f2785c" : "#f1c27d";
   ctx.beginPath();
   ctx.arc(0, -h * 0.87, 8, 0, Math.PI * 2);
   ctx.fill();
@@ -3026,8 +3236,62 @@ function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number):
   ctx.beginPath();
   ctx.arc(4, -h * 0.87, 1.6, 0, Math.PI * 2);
   ctx.fill();
+  if (rage) {
+    // A furious brow and a shouting mouth.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.8;
+    line(ctx, 1.5, -h * 0.87 - 4.5, 7, -h * 0.87 - 1.5);
+    ctx.beginPath();
+    ctx.ellipse(5, -h * 0.87 + 4, 2, 1.6 + Math.abs(Math.sin(time * 18)), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
   ctx.lineCap = "butt";
+  if (rage) drawRage(ctx, rage, h, time);
+}
+
+/** Steam off the head and a grawlix speech bubble, popping in, over a cursing pedestrian. */
+function drawRage(ctx: CanvasRenderingContext2D, rage: Rage, h: number, time: number): void {
+  // Steam puffs rising off the head.
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  for (let i = 0; i < 2; i++) {
+    const k = (time * 1.6 + i * 0.5) % 1;
+    const side = i === 0 ? -1 : 1;
+    ctx.globalAlpha = 1 - k;
+    ctx.beginPath();
+    ctx.arc(side * (7 + k * 6), -h - 2 - k * 14, 2.5 + k * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // Bubble pops in with a little overshoot, then wobbles.
+  const pop = Math.min(1, rage.t / 0.15);
+  const scale = pop < 1 ? pop * 1.15 : 1 + Math.sin(time * 20) * 0.03;
+  const by = -h - 30;
+  ctx.save();
+  ctx.translate(0, by);
+  ctx.scale(scale, scale);
+  ctx.font = "900 15px 'Trebuchet MS', sans-serif";
+  const w = ctx.measureText(rage.curse).width + 16;
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-4, 11);
+  ctx.lineTo(2, 22);
+  ctx.lineTo(6, 11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  roundRect(ctx, -w / 2, -12, w, 24, 9);
+  ctx.fill();
+  ctx.stroke();
+  // Cover the tail's joint so the bubble reads as one shape.
+  ctx.fillRect(-3, 8, 8, 5);
+  ctx.fillStyle = "#e63946";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(rage.curse, 0, 1);
+  ctx.restore();
 }
 
 function drawStatue(ctx: CanvasRenderingContext2D, t: Target): void {

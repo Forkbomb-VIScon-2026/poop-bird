@@ -60,11 +60,21 @@ export const VIEW_H = 600;
 export const GROUND_Y = 520;
 export const BIRD_RADIUS = 22;
 /** × the target spawn rate in attract mode, so there's always someone to hit. */
-const DEMO_SPAWN_SCALE = 2.2;
+const DEMO_SPAWN_SCALE = 3;
 /** Top fraction of the gap-centre range that makes a tall building (see pickGapCenter). */
 const TALL_FRACTION = 0.4;
 /** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
 const DEMO_MAX_RISE = 300;
+/** The practice perch (a street lamp) the bird sits on before a run: the bird's y when perched. */
+export const PERCH_Y = 270;
+/** Fastest climb (px/s) off the practice perch, so a practice poop is a hop, not a launch. */
+const PERCH_MAX_RISE = 280;
+/** Attract mode: how far (screen vx, px/s) off a poop's natural fall the autopilot still lets go for a target. */
+const DEMO_RELEASE_SLACK = 25;
+/** Attract mode: the most a falling poop gets nudged (px/s) toward its target. */
+const DEMO_MAX_NUDGE = 40;
+/** How fast a poop loses its forward world speed (1/s). */
+const POOP_DRAG = 0.6;
 /** Collision radius is a bit smaller than the drawn bird, to feel fair. */
 const BIRD_HIT_RADIUS = 16;
 /** Ocean: the water surface (a soft ceiling). The sea floor is GROUND_Y. */
@@ -103,8 +113,7 @@ export interface Shore {
  * the bird hops and plunges through the surface, becomes a deflated fish
  * under water (`swapped`) and inflates while the camera follows it down.
  * Breach: the fish shoots up, becomes the bird as it breaks the surface and
- * leaps up to a safe height, gliding until it's over the street. While
- * `Game.holdTransition` is set (tutorial, puff calibration) the dive doesn't finish.
+ * leaps up to a safe height, gliding until it's over the street.
  */
 export interface StageTransition {
   to: Stage;
@@ -126,7 +135,7 @@ export interface Rect {
 }
 
 /** "none": open water down to the sea floor (only under an anchor). */
-export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "church" | "coral" | "rock" | "none";
+export type BottomKind = "billboard" | "building" | "tower" | "church" | "coral" | "rock" | "wreck" | "none";
 
 export interface Splat {
   dx: number;
@@ -441,7 +450,21 @@ export interface Target {
   wedding?: Wedding;
   /** Only on parachutists. */
   chute?: Chute | null;
+  /** Set while a splatted pedestrian stands there cursing at the bird. */
+  rage?: Rage | null;
 }
+
+/** A pedestrian's fit of rage after being splatted. */
+export interface Rage {
+  /** Seconds since it started (restarts on another hit). */
+  t: number;
+  /** The walking speed to resume once it has calmed down. */
+  walk: number;
+  /** The grawlix in the speech bubble. */
+  curse: string;
+}
+
+const CURSES = ["#@$%!", "%&#@!!", "$#!*@", "@#%&$!", "*!#@%"];
 
 export interface Poop {
   x: number;
@@ -520,6 +543,7 @@ export type GameEvent =
   | { type: "pebbleShot"; points: number; combo: number }
   | { type: "ricochet" }
   | { type: "kidCried" }
+  | { type: "curse" }
   | { type: "weddingArrived" }
   | { type: "weddingBeat"; count: number }
   | { type: "weddingKiss" }
@@ -624,6 +648,8 @@ const PERSON_COLORS = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#6c5ce7", "#fd79a8", "#
 const BUILDING_COLORS = ["#c8553d", "#588b8b", "#8e7dbe", "#d4a373", "#6d8a96", "#b56576"];
 const CORAL_COLORS = ["#ff7f6e", "#ff9f43", "#f368e0", "#ee5a6f", "#ffb86b"];
 const ROCK_COLORS = ["#6b7b8c", "#7d6e63", "#5f6f7a"];
+/** Waterlogged timber, greyed and greened by the years. */
+const WRECK_COLORS = ["#8a6440", "#7b5b3a", "#74604a"];
 const JELLY_HUES = [320, 285, 200, 340];
 
 export type GamePhase = "playing" | "dying" | "over";
@@ -673,8 +699,17 @@ export class Game {
 
   stage: Stage = "city";
   transition: StageTransition | null = null;
-  /** Set by main.ts while the ocean tutorial or the puff calibration runs: the dive doesn't finish, and the world holds still. */
-  holdTransition = false;
+  /**
+   * Set by main.ts while the swim lesson / puff calibration runs in the ocean:
+   * the world scrolls on, but no obstacles or jellyfish spawn, the fish can't
+   * spike out, and the sea floor doesn't kill. The first obstacle comes
+   * oceanFirstObstacleDelay after it's cleared.
+   */
+  calmWater = false;
+  /** Was calmWater set last step (to start the floor grace when it's cleared). */
+  private wasCalm = false;
+  /** Seconds left in which the sea floor still doesn't kill, after calm water (oceanCalmFloorGrace). */
+  private floorGrace = 0;
   /** The waterfront at the end (or just behind the start) of the stage. */
   shore: Shore | null = null;
   /** Top of the view in city coordinates: 0 in the city, OCEAN_DEPTH in the ocean, in between while diving or leaping. */
@@ -775,6 +810,14 @@ export class Game {
    */
   demo = false;
 
+  /**
+   * Before a run: x of the street lamp the bird sits on to practise (null =
+   * no lamp). Once the run starts, the lamp scrolls away with the street.
+   */
+  perchX: number | null = null;
+  /** The bird still sits on the perch (the run hasn't started). */
+  private perched = false;
+
   constructor(width: number) {
     this.resize(width);
     this.reset();
@@ -782,11 +825,16 @@ export class Game {
 
   resize(width: number): void {
     this.width = width;
+    const x = this.bird.x;
     this.bird.x = Math.round(Math.min(320, width * 0.28));
+    // Still on the perch (e.g. a phone turned to landscape): the lamp moves with the bird.
+    if (this.perched && this.perchX !== null) this.perchX += this.bird.x - x;
   }
 
   reset(): void {
     this.demo = false;
+    this.perchX = null;
+    this.perched = false;
     this.phase = "playing";
     this.time = 0;
     this.runTime = 0;
@@ -795,7 +843,9 @@ export class Game {
     this.straining = false;
     this.stage = "city";
     this.transition = null;
-    this.holdTransition = false;
+    this.calmWater = false;
+    this.wasCalm = false;
+    this.floorGrace = 0;
     this.shore = null;
     this.cameraY = 0;
     this.puffInput = 0;
@@ -902,6 +952,11 @@ export class Game {
     return this.stage === "ocean" && !this.transition && this.phase === "playing";
   }
 
+  /** The fish lies on (or just above) the sea floor. */
+  get onSeaFloor(): boolean {
+    return this.stage === "ocean" && this.bird.y + this.bodyRadius >= GROUND_Y - 30;
+  }
+
   /** Radius of the drawn bird or fish. */
   get bodyRadius(): number {
     if (this.stage === "city") return BIRD_RADIUS;
@@ -960,9 +1015,11 @@ export class Game {
     this.step(dt);
     // A long strain would send it to the top of the screen: hop, don't launch.
     this.bird.vy = Math.max(this.bird.vy, -DEMO_MAX_RISE);
+    // The autopilot lets go when the poop's natural fall lands on someone; it only
+    // gets a slight nudge for what it can't foresee (people stopping or turning).
     for (const p of this.poops) {
-      const aim = this.aim(p.x, p.y, p.vy, p.vx, 700);
-      if (aim) p.vx += (aim.vx - p.vx) * Math.min(1, dt * 10);
+      const aim = this.aim(p.x, p.y, p.vy, p.vx, DEMO_MAX_NUDGE);
+      if (aim) p.vx += (aim.vx - p.vx) * Math.min(1, dt * 3);
     }
     // Nobody listens on the start screen.
     this.events = [];
@@ -974,7 +1031,7 @@ export class Game {
     const c = this.charge.charge;
     if (c > 0) {
       const vy = 140 + c * 260 + Math.max(0, b.vy * 0.2); // as in release()
-      const onTarget = c >= 0.3 && this.aim(b.x - 4, b.y + BIRD_RADIUS * 0.8, vy, 0, 120) !== null;
+      const onTarget = c >= 0.15 && this.aim(b.x - 4, b.y + BIRD_RADIUS * 0.8, vy, 0, DEMO_RELEASE_SLACK) !== null;
       return !onTarget && this.charge.fullHold < 0.85 && b.y < 390;
     }
     return b.y > 210 && b.vy > 0;
@@ -983,16 +1040,20 @@ export class Game {
   /**
    * The target a poop at (x, y) falling at vy would hit with the least change
    * to its screen vx, and the vx that gets it there; null if that change is
-   * more than `maxChange`.
+   * more than `maxChange`. Follows updatePoops(): the poop's world vx decays
+   * with POOP_DRAG, so its screen vx drifts from vx toward -speed.
    */
   private aim(x: number, y: number, vy: number, vx: number, maxChange: number): { target: Target; vx: number } | null {
     const g = config.poopGravity;
+    const s = this.speed;
     let best: { target: Target; vx: number } | null = null;
     for (const t of this.targets) {
       const dy = t.y - t.h * 0.5 - y;
       if (dy <= 0) continue;
       const time = (-vy + Math.sqrt(vy * vy + 2 * g * dy)) / g;
-      const need = (t.x + (t.speed - this.speed) * time - x) / time;
+      // Screen x after `time`: x + (vx + s)(1 - e^(-k·time))/k - s·time; the target is at t.x + (t.speed - s)·time.
+      const glide = (1 - Math.exp(-POOP_DRAG * time)) / POOP_DRAG;
+      const need = (t.x + t.speed * time - x) / glide - s;
       if (Math.abs(need - vx) > maxChange) continue;
       if (!best || Math.abs(need - vx) < Math.abs(best.vx - vx)) best = { target: t, vx: need };
     }
@@ -1008,6 +1069,51 @@ export class Game {
     this.updateEffects(dt, 0);
   }
 
+  /** Sits the bird on the practice perch. Call after reset(). */
+  perch(): void {
+    const b = this.bird;
+    this.perched = true;
+    this.perchX = b.x;
+    Object.assign(b, { y: PERCH_Y, vy: 0, rot: 0 });
+  }
+
+  /**
+   * One practice step on the perch: `straining` charges as in a run and a
+   * release poops and hops the bird, but the world holds still and the bird
+   * lands back on the lamp. Nothing spawns and nothing can hurt it.
+   */
+  stepPerch(dt: number): void {
+    this.time += dt;
+    this.speed = 0;
+    this.updateCharge(dt);
+    const b = this.bird;
+    b.vy = Math.max(b.vy, -PERCH_MAX_RISE);
+    const charging = this.charge.charge > 0 && !this.stunned;
+    b.vy = Math.min(b.vy + config.gravity * (charging ? config.chargeGravityScale : 1) * dt, config.maxFallSpeed);
+    b.y += b.vy * dt;
+    if (b.y >= PERCH_Y) {
+      b.y = PERCH_Y;
+      if (b.vy > 0) b.vy = 0;
+    }
+    this.animateBird(dt);
+    b.rot += ((this.stunned ? 0 : Math.max(-0.5, Math.min(0.7, b.vy / 700))) - b.rot) * Math.min(1, dt * 10);
+    for (const t of this.targets) t.hitFlash = Math.max(0, t.hitFlash - dt);
+    this.updatePoops(dt, 0);
+    this.updateEffects(dt, 0);
+  }
+
+  /** The run starts: practice hits and mishaps don't count. The lamp stays behind. */
+  leavePerch(): void {
+    this.perched = false;
+    this.bonus = 0;
+    this.combo = 0;
+    this.bestCombo = 0;
+    this.targetsHit = 0;
+    this.poopsDropped = 0;
+    this.accidents = 0;
+    this.floaters = [];
+  }
+
   step(dt: number): void {
     this.time += dt;
     this.runTime += dt;
@@ -1021,6 +1127,12 @@ export class Game {
       this.updateEffects(dt, this.speed);
       return;
     }
+    // Calm water just ended: the fish may be lying on the sea floor, so it gets a moment to swim off it.
+    // Once it has, the floor is deadly again.
+    if (this.wasCalm && !this.calmWater) this.floorGrace = config.oceanCalmFloorGrace;
+    this.wasCalm = this.calmWater;
+    if (!this.onSeaFloor) this.floorGrace = 0;
+    this.floorGrace = Math.max(0, this.floorGrace - dt);
     const alive = this.phase === "playing";
     const ocean = this.stage === "ocean";
     // The world holds still while the fisherman reels in a hooked fish.
@@ -1031,9 +1143,13 @@ export class Game {
       this.distance += speed * dt;
       this.stageTime += dt;
     }
+    if (this.perchX !== null) {
+      this.perchX -= speed * dt;
+      if (this.perchX < -100) this.perchX = null;
+    }
 
     if (ocean) {
-      if (alive && !reeling) this.updateSpike(dt);
+      if (alive && !reeling && !this.calmWater) this.updateSpike(dt);
       this.updateFish(dt);
     } else {
       if (alive) this.updateCharge(dt);
@@ -1148,13 +1264,7 @@ export class Game {
       if (b.vy < 0) b.vy = 0;
     }
 
-    // Squash & stretch spring.
-    const k = 220;
-    const damp = 14;
-    b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
-    b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
-    b.relief = Math.max(0, b.relief - dt);
-    b.flap = Math.max(0, b.flap - dt);
+    this.animateBird(dt);
 
     if (this.stunned) b.rot += dt * 14;
     else if (this.phase === "dying") b.rot += (1.4 - b.rot) * Math.min(1, dt * 6);
@@ -1188,6 +1298,17 @@ export class Game {
         gravity: -40, world: true,
       });
     }
+  }
+
+  /** Squash & stretch spring, and the relief and flap timers. */
+  private animateBird(dt: number): void {
+    const b = this.bird;
+    const k = 220;
+    const damp = 14;
+    b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
+    b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
+    b.relief = Math.max(0, b.relief - dt);
+    b.flap = Math.max(0, b.flap - dt);
   }
 
   private crash(cause: "crash" | "zap" = "crash"): void {
@@ -1364,7 +1485,7 @@ export class Game {
     if (b.y + r >= GROUND_Y) {
       b.y = GROUND_Y - r;
       if (b.vy > 0) b.vy = 0;
-      if (this.phase === "playing") this.crash();
+      if (this.phase === "playing" && !this.calmWater && this.floorGrace <= 0) this.crash();
     }
     if (this.phase === "playing" && this.hitsObstacle()) this.crash();
   }
@@ -1405,6 +1526,7 @@ export class Game {
       }
     }
     this.jellies = this.jellies.filter((j) => j.r > 0);
+    if (this.calmWater) return;
 
     this.jellySpawnAcc += dt * config.oceanJellyRate;
     if (this.jellySpawnAcc >= 1) {
@@ -1752,11 +1874,10 @@ export class Game {
   private updateTransition(dt: number): void {
     const tr = this.transition!;
     const b = this.bird;
-    const held = this.holdTransition;
     tr.t += dt;
     if (tr.swapped) tr.sinceSwap += dt;
-    // The world drifts on, so the dive doesn't stop dead (but holds still for the puff calibration).
-    const speed = held ? 0 : this.scrollSpeed * (this.stage === "ocean" ? config.oceanScrollScale : 1);
+    // The world drifts on, so the dive doesn't stop dead.
+    const speed = this.scrollSpeed * (this.stage === "ocean" ? config.oceanScrollScale : 1);
     this.speed = speed;
     this.distance += speed * dt;
     this.scrollWorld(dt, speed);
@@ -1774,7 +1895,7 @@ export class Game {
     const arrived = Math.abs(this.cameraY - end) < 2;
 
     const done = tr.to === "ocean"
-      ? tr.swapped && !held && arrived && tr.sinceSwap >= Math.max(0.5, config.oceanTransformTime)
+      ? tr.swapped && arrived && tr.sinceSwap >= Math.max(0.5, config.oceanTransformTime)
       : tr.swapped && arrived && tr.sinceSwap >= 0.6 && !this.overWater(b.x);
     if (done) {
       this.transition = null;
@@ -1787,8 +1908,7 @@ export class Game {
   /**
    * City → ocean. Before the swap (city y): fall to the water, plunge in and
    * slow down. Once deep enough the bird becomes a deflated fish, which sinks
-   * to cruising depth and inflates: to the hover puff, or while the puff
-   * calibration holds the dive, to however much the player puffs.
+   * to cruising depth and inflates to the hover puff.
    */
   private updateDive(tr: StageTransition, dt: number): void {
     const b = this.bird;
@@ -1811,9 +1931,7 @@ export class Game {
     b.y += b.vy * dt;
     b.rot += (0 - b.rot) * Math.min(1, dt * 5);
     const f = this.fish;
-    const goal = this.holdTransition
-      ? Math.min(1, Math.max(0, this.puffInput))
-      : tr.sinceSwap > 0.25 ? config.oceanHoverPuff : 0;
+    const goal = tr.sinceSwap > 0.25 ? config.oceanHoverPuff : 0;
     f.puff += (goal - f.puff) * (1 - Math.exp(-dt / 0.12));
     this.bubbleTrail(dt, 12);
   }
@@ -1979,6 +2097,11 @@ export class Game {
     }
 
     if (this.phase !== "playing" || this.demo) return;
+    if (this.calmWater && this.stage === "ocean") {
+      // Nothing spawns; the first obstacle stays a full delay ahead.
+      this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + config.oceanFirstObstacleDelay);
+      return;
+    }
 
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
@@ -1996,7 +2119,7 @@ export class Game {
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnShore();
       else if (ocean && this.anglerDue(before)) extra = this.spawnAngler();
-      else if (ocean) this.spawnOceanObstacle();
+      else if (ocean) extra = this.spawnOceanObstacle();
       else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();
       else if (balloon) extra = this.spawnBalloon();
@@ -2037,8 +2160,8 @@ export class Game {
     const tallChance = ramp(config.tallBuildingChance, config.tallBuildingChanceMax, this.stageLevel());
     const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50, tallChance);
 
-    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "chimney", "tower"]);
-    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
+    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "building", "tower"]);
+    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "tower" ? 78 : 96 + Math.random() * 30;
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
@@ -2050,9 +2173,11 @@ export class Game {
   /**
    * Coral or a rock from the sea floor, or a boat whose anchor hangs down from
    * the surface: over coral or a rock (a gap between them), or over open water
-   * (dive under it).
+   * (dive under it). Now and then the sea floor holds an old shipwreck
+   * instead: a long, low hull with one broken mast. Returns the extra room a
+   * wreck's long hull needs before the next obstacle.
    */
-  private spawnOceanObstacle(): void {
+  private spawnOceanObstacle(): number {
     const gap = ramp(config.oceanGap, config.oceanGapMin, this.difficulty);
     // Not the last one: it can still be on screen when the fish leaps out, and
     // its boat would vanish from the harbour as the stage switches. Nor while a
@@ -2061,18 +2186,28 @@ export class Game {
     const last = this.stageObstacles >= Math.round(config.oceanObstacles) - 1;
     const anchor = !last && !this.angler && Math.random() < config.oceanAnchorChance;
     const open = anchor && Math.random() < config.oceanAnchorOpenChance;
+    const wreck = !open && Math.random() < config.oceanWreckChance;
     // The boat, the shortest chain and the anchor itself all sit above the gap.
-    const center = anchor
-      ? this.pickGapCenter(gap, ANCHOR_TOP_MIN, 10, config.oceanGapJump, open ? 0 : 40)
-      : this.pickGapCenter(gap, SURFACE_Y, 40, config.oceanGapJump);
-    const bottom: BottomKind = open ? "none" : pick(["coral", "coral", "rock"]);
-    const w = bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    let top = anchor ? ANCHOR_TOP_MIN : SURFACE_Y;
+    let margin = anchor ? 10 : 40;
+    let bottomMargin = open ? 0 : 40;
+    if (wreck) {
+      // The gap's bottom is the broken mast's tip: low, so the wreck is easy to clear.
+      top = Math.max(top + margin, GROUND_Y - WRECK_HULL_H - WRECK_MAST_MAX - gap);
+      margin = 0;
+      bottomMargin = WRECK_HULL_H + WRECK_MAST_MIN;
+    }
+    const center = this.pickGapCenter(gap, top, margin, config.oceanGapJump, bottomMargin);
+    const bottom: BottomKind = open ? "none" : wreck ? "wreck" : pick(["coral", "coral", "rock"]);
+    const w = bottom === "wreck" ? 210 + Math.random() * 50 : bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    const colors = bottom === "wreck" ? WRECK_COLORS : bottom === "rock" ? ROCK_COLORS : CORAL_COLORS;
     this.obstacles.push({
       x: this.width + 40, w, gapTop: center - gap / 2,
       gapBottom: open ? GROUND_Y : center + gap / 2,
-      bottom, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
+      bottom, color: pick(colors), seed: Math.random() * 1000,
       passed: false, splats: [], tabloid: null, anchor,
     });
+    return bottom === "wreck" ? w - 90 : 0;
   }
 
   /** The stage ends at the waterfront: the quay's edge (city) or the far quay (ocean) scrolls in. */
@@ -2486,6 +2621,7 @@ export class Game {
       if (t.pap) this.updatePaparazzo(t, dt);
       if (t.kid) this.updateKid(t, dt);
       if (t.chute) this.updateParachutist(t, dt, speed);
+      if (t.rage) this.updateRage(t, dt);
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
@@ -2498,6 +2634,36 @@ export class Game {
       // Nobody wanders through the wedding; the road stays busy.
       else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
+  }
+
+  // --- angry pedestrians ------------------------------------------------------
+
+  /** Some splatted pedestrians stop, turn on the bird and curse; another hit sets them off again. */
+  private provoke(t: Target): void {
+    if (t.kind !== "pedestrian" || t.wedding) return;
+    if (!t.rage) {
+      if (Math.random() >= config.angryChance) return;
+      t.rage = { t: 0, walk: t.speed, curse: pick(CURSES) };
+    } else {
+      t.rage.t = 0;
+      t.rage.curse = pick(CURSES.filter((c) => c !== t.rage?.curse));
+    }
+    t.speed = 0;
+    this.events.push({ type: "curse" });
+  }
+
+  private updateRage(t: Target, dt: number): void {
+    const rage = t.rage;
+    if (!rage) return;
+    rage.t += dt;
+    if (rage.t < config.angryDuration) {
+      t.facing = this.bird.x < t.x ? -1 : 1;
+      return;
+    }
+    // Calmed down (mostly): walk on as before.
+    t.rage = null;
+    t.speed = rage.walk;
+    if (rage.walk !== 0) t.facing = rage.walk < 0 ? -1 : 1;
   }
 
   // --- paparazzi ---------------------------------------------------------------
@@ -2601,7 +2767,8 @@ export class Game {
 
   private spawnTarget(only?: "car"): void {
     const r = Math.random();
-    const kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 0.85 ? "pedestrian" : "statue");
+    let kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
+    if (kind === "statue" && !this.statueFits(this.width + 80, 46)) kind = "pedestrian";
     // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
     const roadY = GROUND_Y + 68;
     let t: Target;
@@ -2625,6 +2792,32 @@ export class Game {
       };
     }
     this.targets.push(t);
+  }
+
+  /**
+   * Whether a statue at x (centre) with width w stands clear of everything else
+   * on the sidewalk: buildings, power-line poles, other statues and paparazzi,
+   * and the slot the next obstacle (or the church, or the quay) will scroll into.
+   */
+  private statueFits(x: number, w: number): boolean {
+    const margin = 24;
+    const left = x - w / 2 - margin;
+    const right = x + w / 2 + margin;
+    const clear = (l: number, r: number) => r < left || l > right;
+    for (const o of this.obstacles) {
+      const s = obstacleSpan(o);
+      if (!clear(s.left, s.right)) return false;
+    }
+    for (const l of this.powerLines) {
+      for (let i = 0; i < l.poles; i++) if (!clear(poleX(l, i) - 6, poleX(l, i) + 6)) return false;
+    }
+    for (const t of this.targets) {
+      if ((t.kind === "statue" || t.pap) && !clear(t.x - t.w / 2, t.x + t.w / 2)) return false;
+    }
+    // The next obstacle spawns at width + 40 once we've travelled up to
+    // nextObstacleAt; by then this statue will have scrolled that far left.
+    if (!this.demo && right > this.width + 40 + (this.nextObstacleAt - this.distance)) return false;
+    return true;
   }
 
   // --- slingshot kids ----------------------------------------------------------
@@ -3229,11 +3422,10 @@ export class Game {
   }
 
   private updatePoops(dt: number, speed: number): void {
-    const drag = 0.6;
     const keep: Poop[] = [];
     for (const p of this.poops) {
       // World velocity decays from `speed` toward 0 → screen vx drifts back.
-      const worldVx = (p.vx + speed) * Math.exp(-drag * dt);
+      const worldVx = (p.vx + speed) * Math.exp(-POOP_DRAG * dt);
       p.vx = worldVx - speed;
       p.vy += config.poopGravity * dt;
       p.x += p.vx * dt;
@@ -3290,6 +3482,7 @@ export class Game {
       this.splatParticles(p.x, p.y, p.r, true);
       this.events.push({ type: "hit", points, combo: this.combo, kind: t.kind });
       this.events.push({ type: "splat", big: p.big });
+      this.provoke(t);
       return true;
     }
     // Obstacles
@@ -3406,6 +3599,24 @@ export function churchGeometry(o: Obstacle): { cx: number; towerTop: number; nav
   return { cx: o.x + o.w / 2, towerTop, naveTop: Math.max(towerTop + 40, GROUND_Y - 150) };
 }
 
+/** A shipwreck's hull: how high its deck stands above the sea floor. */
+export const WRECK_HULL_H = 62;
+/** Its broken mast's height above the deck (the mast's tip is the gap's bottom edge). */
+export const WRECK_MAST_MIN = 24;
+export const WRECK_MAST_MAX = 96;
+/** The hull's bow and stern curve in: this much of each end doesn't count for collisions. */
+const WRECK_END_INSET = 18;
+export const WRECK_MAST_W = 12;
+
+/**
+ * A shipwreck's layout: the deck height, which way the bow points (+1: right),
+ * and the mast's centre, set back from the middle toward the stern.
+ */
+export function wreckGeometry(o: Obstacle): { deck: number; facing: 1 | -1; mastX: number } {
+  const facing = Math.floor(o.seed * 7) % 2 === 0 ? 1 : -1;
+  return { deck: GROUND_Y - WRECK_HULL_H, facing, mastX: o.x + o.w / 2 - facing * o.w * 0.14 };
+}
+
 /** The couple stands this far left of the church. */
 const WEDDING_COUPLE_DX = 105;
 
@@ -3477,6 +3688,12 @@ function bottomRects(o: Obstacle): Rect[] {
     rects.push({ x: cx - 20, y: o.gapBottom + CHURCH_SPIRE_H / 2, w: 40, h: CHURCH_SPIRE_H / 2 });
     rects.push({ x: cx - CHURCH_TOWER_W / 2, y: towerTop, w: CHURCH_TOWER_W, h: GROUND_Y - towerTop });
     rects.push({ x: o.x, y: naveTop - 14, w: o.w, h: GROUND_Y - naveTop + 14 });
+    return rects;
+  }
+  if (o.bottom === "wreck") {
+    const { deck, mastX } = wreckGeometry(o);
+    rects.push({ x: o.x + WRECK_END_INSET, y: deck, w: o.w - WRECK_END_INSET * 2, h: GROUND_Y - deck });
+    rects.push({ x: mastX - WRECK_MAST_W / 2, y: o.gapBottom, w: WRECK_MAST_W, h: deck - o.gapBottom });
     return rects;
   }
   // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).
