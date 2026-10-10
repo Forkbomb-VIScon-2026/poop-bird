@@ -214,7 +214,10 @@ city by city (the debug panel's "Progression" group).
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
   floor kills; the surface is a soft ceiling you bump against.
-- **Obstacles.** Coral and rocks rise from the sea floor. Some slots are a
+- **Obstacles.** Coral and rocks rise from the sea floor. Now and then
+  (`oceanWreckChance`, 20%) it's an old shipwreck instead: a long, low hull
+  with one mast snapped off short, so you clear it by staying high enough
+  rather than threading a gap. Some slots are a
   boat at anchor instead (`oceanAnchorChance`, 40%): its anchor hangs down on
   the chain, over coral or a rock (a gap between them) or, for
   `oceanAnchorOpenChance` (35%) of them, over open water, so you dive under

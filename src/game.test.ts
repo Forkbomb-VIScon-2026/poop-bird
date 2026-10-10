@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { config, ramp } from "./config";
-import { ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, WATER_Y, obstacleRects } from "./game";
+import {
+  ANCHOR_H, BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, WATER_Y, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects,
+} from "./game";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
 function atHarbour(edge: number, y: number, vy: number): Game {
@@ -135,6 +137,37 @@ describe("anchored boats", () => {
     for (let i = 0; i < 30; i++) game.step(1 / 60);
     expect(game.phase).toBe("playing");
   });
+});
+
+describe("shipwrecks", () => {
+  const saved = { wreck: config.oceanWreckChance, anchor: config.oceanAnchorChance };
+  afterEach(() => {
+    config.oceanWreckChance = saved.wreck;
+    config.oceanAnchorChance = saved.anchor;
+  });
+
+  for (const anchor of [0, 1]) {
+    it(`stay low, with only a short mast above the hull${anchor ? " (under an anchor)" : ""}`, () => {
+      config.oceanWreckChance = 1;
+      config.oceanAnchorChance = anchor;
+      // The anchor tests above cover anchors over open water.
+      const open = config.oceanAnchorOpenChance;
+      config.oceanAnchorOpenChance = 0;
+      const game = new Game(1000);
+      const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
+      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"]();
+      config.oceanAnchorOpenChance = open;
+      for (const o of game.obstacles) {
+        expect(o.bottom).toBe("wreck");
+        expect(o.gapBottom - o.gapTop).toBeGreaterThanOrEqual(gap - 1e-6);
+        const deck = GROUND_Y - WRECK_HULL_H;
+        const mast = deck - o.gapBottom;
+        expect(mast).toBeGreaterThanOrEqual(WRECK_MAST_MIN - 1e-6);
+        expect(mast).toBeLessThanOrEqual(WRECK_MAST_MAX + 1e-6);
+        for (const r of obstacleRects(o)) expect(r.y + r.h <= o.gapTop + 1e-6 || r.y >= o.gapBottom - 1e-6).toBe(true);
+      }
+    });
+  }
 });
 
 describe("attract mode", () => {

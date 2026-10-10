@@ -18,6 +18,8 @@ import {
   CHURCH_TOWER_W,
   WEDDING_WINDUP,
   churchGeometry,
+  wreckGeometry,
+  WRECK_MAST_W,
   weddingX,
   OCEAN_DEPTH,
   VIEW_H,
@@ -566,6 +568,7 @@ export class Renderer {
     if (o.anchor) this.drawAnchoredBoat(o);
     if (o.bottom === "none") return;
     if (o.bottom === "coral" || o.bottom === "rock") return this.drawSeaObstacle(o);
+    if (o.bottom === "wreck") return this.drawWreck(o, time);
     if (o.bottom === "church") return drawChurch(this.ctx, o, time);
     const ctx = this.ctx;
     const [base] = obstacleRects(o);
@@ -2206,6 +2209,195 @@ export class Renderer {
       ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fillRect(base.x + base.w - 12, base.y + 18, 9, Math.max(0, base.h - 18));
     }
+  }
+
+  /**
+   * An old shipwreck settled on the sea floor: a long, low wooden hull half
+   * sunk into the sand, its planks stove in, and one mast snapped off short.
+   * The mast's splintered tip is the gap's bottom edge (see obstacleRects).
+   */
+  private drawWreck(o: Obstacle, time: number): void {
+    const ctx = this.ctx;
+    const { deck, facing, mastX } = wreckGeometry(o);
+    // Hull coordinates: t runs from the stern (0) to the bow (o.w), mirrored when the bow points left.
+    const X = (t: number) => (facing > 0 ? o.x + t : o.x + o.w - t);
+    const w = o.w;
+    const wood = o.color;
+    ctx.lineJoin = "round";
+
+    // Mast: leaning a little, splintered at the top, a rope trailing off it.
+    const mastTop = o.gapBottom;
+    const lean = (rnd(o.seed + 2) - 0.5) * 6;
+    const hw = WRECK_MAST_W / 2 - 1;
+    ctx.beginPath();
+    ctx.moveTo(mastX - hw, deck + 6);
+    ctx.lineTo(mastX - hw + lean, mastTop + 9);
+    ctx.lineTo(mastX - hw * 0.4 + lean, mastTop + 1);
+    ctx.lineTo(mastX + lean, mastTop + 7);
+    ctx.lineTo(mastX + hw * 0.5 + lean, mastTop);
+    ctx.lineTo(mastX + hw + lean, mastTop + 11);
+    ctx.lineTo(mastX + hw, deck + 6);
+    ctx.closePath();
+    ctx.fillStyle = shadeHex(wood, -12);
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mastX + 1, deck);
+    ctx.lineTo(mastX + 1 + lean * 0.8, mastTop + 14);
+    ctx.stroke();
+    // An iron band and the stump of a yard.
+    const bandY = mastTop + Math.min(26, (deck - mastTop) * 0.45);
+    ctx.fillStyle = "#56616d";
+    ctx.fillRect(mastX - hw + lean * 0.7, bandY, hw * 2, 4);
+    // A strand of weed swaying off the tip.
+    ctx.strokeStyle = "#2a9d73";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    const sway = Math.sin(time * 1.3 + o.seed) * 4;
+    ctx.beginPath();
+    ctx.moveTo(mastX + lean, mastTop + 8);
+    ctx.quadraticCurveTo(mastX + lean - facing * (10 + sway), mastTop + 18, mastX + lean - facing * (6 + sway), mastTop + 32);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+
+    // Hull: a flat, rotten deck line, the stern post on one end and the bow rising a little on the other.
+    const sand = GROUND_Y + 4;
+    const hull = () => {
+      ctx.beginPath();
+      ctx.moveTo(X(4), deck - 4);
+      ctx.lineTo(X(w * 0.42), deck);
+      ctx.lineTo(X(w - 34), deck);
+      ctx.quadraticCurveTo(X(w - 12), deck - 3, X(w + 2), deck - 12);
+      ctx.quadraticCurveTo(X(w - 8), deck + 30, X(w - 36), sand);
+      ctx.lineTo(X(20), sand);
+      ctx.quadraticCurveTo(X(4), GROUND_Y - 18, X(4), deck - 4);
+      ctx.closePath();
+    };
+    hull();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = wood;
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, GROUND_Y - deck + 24);
+    // Planks: seams along the hull, a few gone dark.
+    ctx.strokeStyle = "rgba(0,0,0,0.28)";
+    ctx.lineWidth = 2;
+    for (let y = deck + 10, i = 0; y < GROUND_Y; y += 11, i++) {
+      ctx.beginPath();
+      ctx.moveTo(o.x - 4, y + (facing > 0 ? 2 : -2));
+      ctx.lineTo(o.x + w + 4, y + (facing > 0 ? -2 : 2));
+      ctx.stroke();
+      // Butt joints, staggered.
+      for (let t = 24 + (i % 2) * 22 + rnd(o.seed + i) * 10; t < w - 20; t += 54) {
+        ctx.beginPath();
+        ctx.moveTo(X(t), y);
+        ctx.lineTo(X(t), y + 11);
+        ctx.stroke();
+      }
+    }
+    // The gunwale: a thicker rail along the top.
+    ctx.fillStyle = shadeHex(wood, -22);
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, 22);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(o.x - 10, deck + 6, w + 20, 3);
+    // Algae creeping up from the sand, greener toward the bottom.
+    const algae = ctx.createLinearGradient(0, deck, 0, GROUND_Y);
+    algae.addColorStop(0, "rgba(74,124,89,0)");
+    algae.addColorStop(1, "rgba(74,124,89,0.4)");
+    ctx.fillStyle = algae;
+    ctx.fillRect(o.x - 10, deck, w + 20, GROUND_Y - deck + 6);
+    // Seen through the water it's all a bit bluer.
+    ctx.fillStyle = "rgba(27,143,181,0.12)";
+    ctx.fillRect(o.x - 10, deck - 16, w + 20, GROUND_Y - deck + 24);
+    ctx.restore();
+    hull();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // A hole stove into the side, with broken plank ends.
+    const ht = w * (0.5 + rnd(o.seed + 4) * 0.12);
+    const hy = deck + 22;
+    ctx.beginPath();
+    ctx.moveTo(X(ht - 20), hy + 4);
+    ctx.lineTo(X(ht - 9), hy - 6);
+    ctx.lineTo(X(ht - 2), hy + 1);
+    ctx.lineTo(X(ht + 10), hy - 7);
+    ctx.lineTo(X(ht + 22), hy + 5);
+    ctx.lineTo(X(ht + 15), hy + 17);
+    ctx.lineTo(X(ht + 4), hy + 13);
+    ctx.lineTo(X(ht - 6), hy + 20);
+    ctx.lineTo(X(ht - 17), hy + 14);
+    ctx.closePath();
+    ctx.fillStyle = "#16202b";
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // Something lives in there: two eyes peering out.
+    ctx.fillStyle = "#ffd166";
+    const blink = Math.sin(time * 0.9 + o.seed * 3) > 0.96;
+    for (const dx of [-4, 5]) {
+      ctx.beginPath();
+      ctx.ellipse(X(ht + dx), hy + 6, 2.6, blink ? 0.5 : 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Portholes toward the bow, crusted green.
+    for (let i = 0; i < 2; i++) {
+      const px = X(w * 0.74 + i * 22 - (ht > w * 0.58 ? 0 : 6));
+      const py = deck + 24;
+      ctx.beginPath();
+      ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#3d6b5e";
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#16202b";
+      ctx.fill();
+    }
+
+    // Barnacles along the waterline of long ago.
+    ctx.fillStyle = "rgba(240,235,220,0.75)";
+    for (let i = 0; i < 12; i++) {
+      const t = 26 + rnd(o.seed + i + 30) * (w - 60);
+      const y = deck + 34 + rnd(o.seed + i + 50) * 18;
+      ctx.beginPath();
+      ctx.arc(X(t), y, 1.6 + rnd(o.seed + i + 70) * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Sand drifted up against the hull, and a starfish on it.
+    // Only its crest is outlined: where it meets the (wavy) floor, it blends in.
+    const crest = () => {
+      ctx.beginPath();
+      ctx.moveTo(o.x - 14, GROUND_Y + 2);
+      ctx.quadraticCurveTo(o.x + w * 0.25, GROUND_Y - 16, o.x + w * 0.5, GROUND_Y - 9);
+      ctx.quadraticCurveTo(o.x + w * 0.78, GROUND_Y - 3, o.x + w + 14, GROUND_Y + 2);
+    };
+    crest();
+    ctx.lineTo(o.x + w + 14, GROUND_Y + 10);
+    ctx.lineTo(o.x - 14, GROUND_Y + 10);
+    ctx.closePath();
+    ctx.fillStyle = "#e9cf94";
+    ctx.fill();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(o.x - 20, GROUND_Y - 40, w + 40, 36);
+    ctx.clip();
+    crest();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+    drawStar(ctx, X(w * (0.2 + rnd(o.seed + 6) * 0.15)), GROUND_Y - 8, 7, "#ff9f43");
+    ctx.lineJoin = "miter";
   }
 
   /**
