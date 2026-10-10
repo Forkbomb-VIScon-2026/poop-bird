@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "collector": "node collector/server.ts",
+    "tunnel": "ssh -N -o ExitOnForwardFailure=yes -L 8788:localhost:8080 viscon@24-direct.viscon-hackathon.ch",
     "data:pull": "node scripts/data.ts pull",
     "data:purge": "node scripts/data.ts purge",
     "eval": "node scripts/run-ts.mjs scripts/eval/main.ts",

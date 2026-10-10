@@ -16,9 +16,10 @@ export default defineConfig(({ mode }) => ({
     port: 5173,
     host: true,
     // The face dataset recorder (collect.html) uploads to /api. In dev that goes
-    // to the collector on the team VM, or to COLLECTOR_URL (a local collector).
+    // to the collector on the team VM through `npm run tunnel` (the public site
+    // is behind the ETH login), or to COLLECTOR_URL (e.g. a local collector).
     proxy: {
-      "/api": { target: process.env.COLLECTOR_URL ?? "https://24.viscon-hackathon.ch", changeOrigin: true },
+      "/api": { target: process.env.COLLECTOR_URL ?? "http://127.0.0.1:8788", changeOrigin: true },
     },
   },
   build: {

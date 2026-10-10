@@ -313,24 +313,40 @@ Device, camera, detection delegate, tuning config and the game's saved
 calibrations are stored with it. No video or images.
 
 For now the recorder is only built in debug mode; the production build
-ships just the game. In dev, `/api` is proxied to the team VM, or to
-`COLLECTOR_URL` (for example a local `npm run collector`).
+ships just the game. The public site (`https://24.hackathon.ethz.ch`) is
+behind the ETH login, so the team reaches the VM over SSH instead. To record
+from a laptop into the team dataset:
+
+```sh
+npm run tunnel        # keep running: SSH tunnel to the VM (port 8788 → the VM's Caddy)
+npm run dev:debug     # then open /collect.html?code=<COLLECTION_CODE>
+```
+
+The dev server proxies `/api` to the tunnel, or to `COLLECTOR_URL` (for
+example a local `HOST=127.0.0.1 COLLECTION_CODE=local DEV_TOKEN=local-dev-token
+DATA_DIR=/tmp/pb npm run collector` with `COLLECTOR_URL=http://127.0.0.1:8787`;
+its collection code is then `local`).
 
 **Storage.** `collector/server.ts` is a small Node server without
 dependencies, in its own container next to the game, with the recordings on
 the `poopbird-data` Docker volume (it survives deploys). Caddy routes `/api/*`
 to it. On the VM, `deploy.yml` generates its two secrets once into
-`~/poopbird-collector.env`: `COLLECTION_CODE` (for collect links; uploads
-only) and `DEV_TOKEN` (for the team: list, download, review, delete). Every
-upload is validated, quality-checked (face coverage, detection rate, whether
-the strain moved brows and eyes) and added to the index. Participants can
-delete their session right after uploading; to delete everything under a
-code: `curl -X DELETE -H "Authorization: Bearer $DEV_TOKEN" <site>/api/recordings/<code>`.
-
-**Using it.**
+`~/poopbird-collector.env` (`ssh viscon@24-direct.viscon-hackathon.ch cat
+poopbird-collector.env`): `COLLECTION_CODE`, the upload password that goes
+into collect links (uploads only), and `DEV_TOKEN` for the team (list,
+download, review, delete). Every upload is validated, quality-checked (face
+coverage, detection rate, whether the strain moved brows and eyes) and added
+to the index. Participants can delete their session right after uploading; to
+delete everything under a participant code:
 
 ```sh
-export POOPBIRD_DEV_TOKEN=$(ssh viscon@24-direct.viscon-hackathon.ch "grep DEV_TOKEN poopbird-collector.env | cut -d= -f2")
+ssh viscon@24-direct.viscon-hackathon.ch 'curl -s -X DELETE -H "Authorization: Bearer $(grep ^DEV_TOKEN= poopbird-collector.env | cut -d= -f2)" localhost:8080/api/recordings/<code>'
+```
+
+**Using it.** Needs your SSH key on the VM (`ssh-copy-id`); `data:pull` reads
+the dev token and opens its own tunnel.
+
+```sh
 npm run data:pull   # new sessions into data/sessions/, sessions deleted on the server are deleted locally
 npm run eval        # scoreboard: every variant in scripts/eval/variants.ts, per recording and per participant
 npm run data:purge  # delete the local copy (everyone, when the VM goes away)

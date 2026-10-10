@@ -26,8 +26,9 @@
         </div>
         <label class="check"><input id="consent-agree" type="checkbox" /> I agree to this recording and storage.</label>
         <label class="field" id="collection-code-field">
-          <span>Collection code <small>(from the team)</small></span>
+          <span>Collection code</span>
           <input id="collection-code" type="text" autocomplete="off" spellcheck="false" />
+          <small>The upload password in the link the team shares (<code>?code=…</code>). Team: it's <code>COLLECTION_CODE</code> in <code>~/poopbird-collector.env</code> on the VM; a local <code>npm run collector</code> uses whatever you set.</small>
         </label>
         <div class="actions"><button id="btn-consent" class="primary" disabled>Continue</button></div>
       </section>
