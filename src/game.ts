@@ -51,7 +51,7 @@ export interface Rect {
   h: number;
 }
 
-export type BottomKind = "building" | "chimney" | "tower" | "harbour" | "coral" | "rock" | "reef";
+export type BottomKind = "billboard" | "building" | "chimney" | "tower" | "harbour" | "coral" | "rock" | "reef";
 /** Only the stage gates have a top: a solid block from the top of the screen down to the gap. */
 export type TopKind = "harbourArch" | "reefArch";
 
@@ -75,6 +75,38 @@ export interface Obstacle {
   splats: Splat[];
   /** Set on the gate that ends a stage: flying through its gap starts the transition to `gate`. */
   gate: Stage | null;
+  /** Set when `bottom` is "billboard": the published front page it shows. */
+  tabloid: Tabloid | null;
+}
+
+/** A paparazzo's photo that made it to print. `photoId` keys the image main.ts captured. */
+export interface Tabloid {
+  photoId: number;
+  headline: string;
+}
+
+/**
+ * The paparazzo's state. Watching: walking up with the camera raised while
+ * his timer ring fills; it's full when he's just past the bird, and he takes
+ * the shot. Snapped: he got it (the photo is published). Smashed: a poop got
+ * him first.
+ */
+export type PaparazzoState = "watching" | "snapped" | "smashed";
+
+export interface Paparazzo {
+  state: PaparazzoState;
+  /** 0..1 timer ring: how close he is to the shot. */
+  timer: number;
+  /** Where he spawned, so the timer runs from there to the bird. */
+  startX: number;
+  /** The run's first paparazzo walks slower and gets a "SPLAT HIM!" arrow. */
+  tutorial: boolean;
+  /** Camera angle toward the bird (radians, screen space). */
+  aim: number;
+  /** Seconds of the lens flash burst. */
+  flash: number;
+  /** Counts down to the next tick of the camera beep, which speeds up as the timer fills. */
+  beep: number;
 }
 
 export interface Jelly {
@@ -87,7 +119,7 @@ export interface Jelly {
   hue: number;
 }
 
-export type TargetKind = "car" | "pedestrian" | "statue";
+export type TargetKind = "car" | "pedestrian" | "statue" | "paparazzo";
 
 export interface Target {
   x: number;
@@ -102,6 +134,8 @@ export interface Target {
   splats: Splat[];
   hitFlash: number;
   facing: 1 | -1;
+  /** Only on paparazzi. */
+  pap: Paparazzo | null;
 }
 
 export interface Poop {
@@ -166,7 +200,10 @@ export type GameEvent =
   | { type: "surfaced" }
   | { type: "spike" }
   | { type: "pop"; message: string }
-  | { type: "jellyPopped"; points: number; combo: number };
+  | { type: "jellyPopped"; points: number; combo: number }
+  | { type: "paparazzoBeep"; timer: number }
+  | { type: "photo"; photoId: number }
+  | { type: "cameraSmashed" };
 
 const ACCIDENT_MESSAGES = [
   "CODE BROWN!",
@@ -188,6 +225,20 @@ const POP_MESSAGES = [
   "Sea you later, dignity",
   "Hold your breath, they said",
   "Blub… blub…",
+];
+
+const SNAP_MESSAGES = ["SNAP!", "SAY CHEESE!", "CAUGHT ON CAMERA!", "*CLICK*", "GOT YOU!"];
+
+const HEADLINES = [
+  "LOCAL BIRD STRAINS IN PUBLIC",
+  "SHOCK PICS: THE FACE OF EFFORT",
+  "\u201CI WAS JUST FLYING\u201D CLAIMS BIRD",
+  "CONSTIPATION CRISIS GRIPS CITY",
+  "BIRD'S PRIVATE MOMENT EXPOSED",
+  "PUSHING IT TOO HARD?",
+  "IS THIS THE WORST FACE EVER?",
+  "FIBRE SHORTAGE: THE HUMAN COST",
+  "EXPERTS: \u201CJUST RELAX\u201D",
 ];
 
 const CAR_COLORS = ["#e84a5f", "#2a9df4", "#ffb400", "#5cc96b", "#9b5de5", "#f9844a"];
@@ -259,6 +310,13 @@ export class Game {
   poopsDropped = 0;
   accidents = 0;
   shake = 0;
+  /** 0..1 white camera flash over the whole screen. */
+  flash = 0;
+  /** The latest shot, popping up as a polaroid. */
+  polaroid: { photoId: number; life: number } | null = null;
+  /** Photos that went to print, in order. */
+  frontPages: Tabloid[] = [];
+  camerasSmashed = 0;
   message: { text: string; life: number } | null = null;
   dyingTime = 0;
 
@@ -270,6 +328,11 @@ export class Game {
   /** Regular obstacles spawned in the current stage (the gate comes after enough). */
   private stageObstacles = 0;
   private gateSpawned = false;
+  /** Published photos waiting for an obstacle to hang on. */
+  private pendingTabloids: Tabloid[] = [];
+  private nextPhotoId = 1;
+  private lastPaparazzoAt = -Infinity;
+  private paparazziSeen = 0;
 
   events: GameEvent[] = [];
 
@@ -315,6 +378,13 @@ export class Game {
     this.poopsDropped = 0;
     this.accidents = 0;
     this.shake = 0;
+    this.flash = 0;
+    this.polaroid = null;
+    this.frontPages = [];
+    this.camerasSmashed = 0;
+    this.pendingTabloids = [];
+    this.lastPaparazzoAt = -Infinity;
+    this.paparazziSeen = 0;
     this.message = null;
     this.dyingTime = 0;
     this.nextObstacleAt = config.firstObstacleDelay;
@@ -885,7 +955,9 @@ export class Game {
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
       const ocean = this.stage === "ocean";
       const before = Math.round(ocean ? config.oceanObstacles : config.cityObstaclesBeforeGate);
-      if (this.stageObstacles >= before) this.spawnGate();
+      // The harbour waits until a paparazzo's front page has hung in the city.
+      const holdGate = !ocean && (this.pendingTabloids.length > 0 || this.targets.some((t) => t.pap?.state === "watching"));
+      if (this.stageObstacles >= before && !holdGate) this.spawnGate();
       else if (ocean) this.spawnOceanObstacle();
       else this.spawnObstacle();
       this.stageObstacles++;
@@ -895,10 +967,10 @@ export class Game {
     }
   }
 
-  /** Picks a gap centre in [top + margin + gap/2, GROUND_Y − margin − gap/2], within maxJump of the last one. */
-  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number): number {
+  /** Picks a gap centre in [top + margin + gap/2, GROUND_Y − bottomMargin − gap/2], within maxJump of the last one. */
+  private pickGapCenter(gap: number, top: number, margin: number, maxJump: number, bottomMargin = margin): number {
     const minCenter = top + margin + gap / 2;
-    const maxCenter = GROUND_Y - margin - gap / 2;
+    const maxCenter = GROUND_Y - bottomMargin - gap / 2;
     let center = minCenter + Math.random() * Math.max(0, maxCenter - minCenter);
     center = Math.max(this.lastGapCenter - maxJump, Math.min(this.lastGapCenter + maxJump, center));
     center = Math.max(minCenter, Math.min(maxCenter, center));
@@ -909,16 +981,18 @@ export class Game {
   private spawnObstacle(): void {
     const d = this.difficulty;
     const gap = ramp(config.obstacleGap, config.obstacleGapMin, d);
+    // A published photo goes up on a roadside billboard, which needs the whole board below the gap.
+    const tabloid = this.pendingTabloids.shift() ?? null;
     // Limit how far the gap jumps, so the next gap is always reachable.
-    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d);
+    const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50);
 
-    const bottom: BottomKind = pick(["building", "building", "chimney", "tower"]);
-    const w = bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
+    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "chimney", "tower"]);
+    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "chimney" ? 62 : bottom === "tower" ? 78 : 96 + Math.random() * 30;
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom, top: null, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], gate: null,
+      passed: false, splats: [], gate: null, tabloid,
     });
   }
 
@@ -930,7 +1004,7 @@ export class Game {
     this.obstacles.push({
       x: this.width + 40, w, gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom, top: null, color: pick(bottom === "rock" ? ROCK_COLORS : CORAL_COLORS), seed: Math.random() * 1000,
-      passed: false, splats: [], gate: null,
+      passed: false, splats: [], gate: null, tabloid: null,
     });
   }
 
@@ -947,7 +1021,7 @@ export class Game {
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
       bottom: ocean ? "reef" : "harbour", top: ocean ? "reefArch" : "harbourArch",
       color: ocean ? "#5f6f7a" : "#3d5a80", seed: Math.random() * 1000,
-      passed: false, splats: [], gate: ocean ? "city" : "ocean",
+      passed: false, splats: [], gate: ocean ? "city" : "ocean", tabloid: null,
     });
   }
 
@@ -957,14 +1031,112 @@ export class Game {
     for (const t of this.targets) {
       t.x += (t.speed - speed) * dt;
       t.hitFlash = Math.max(0, t.hitFlash - dt);
+      if (t.pap) this.updatePaparazzo(t, dt);
     }
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 400);
     if (this.phase !== "playing" || this.stage !== "city") return;
     this.targetSpawnAcc += dt * config.targetSpawnRate;
     if (this.targetSpawnAcc >= 1) {
       this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
-      this.spawnTarget();
+      if (this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
+      else this.spawnTarget();
     }
+  }
+
+  // --- paparazzi ---------------------------------------------------------------
+
+  private paparazzoDue(): boolean {
+    return (
+      !this.gateSpawned &&
+      this.distance >= config.paparazziMinDistance &&
+      this.distance - this.lastPaparazzoAt >= config.paparazziMinGap &&
+      !this.targets.some((t) => t.pap?.state === "watching")
+    );
+  }
+
+  private spawnPaparazzo(): void {
+    this.lastPaparazzoAt = this.distance;
+    const tutorial = this.paparazziSeen++ === 0;
+    const x = this.width + 60;
+    this.targets.push({
+      x, y: GROUND_Y + 20, w: 56, h: 66, kind: "paparazzo",
+      // The first one walks along with the bird, so there's time to figure him out.
+      speed: tutorial ? config.paparazziTutorialWalk : 0,
+      color: "#6d6875", seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1,
+      pap: { state: "watching", timer: 0, startX: x, tutorial, aim: -2.4, flash: 0, beep: 0 },
+    });
+  }
+
+  /** Debug: a paparazzo walks on right now. */
+  spawnPaparazzoNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
+    this.spawnPaparazzo();
+  }
+
+  private updatePaparazzo(t: Target, dt: number): void {
+    const p = t.pap!;
+    p.flash = Math.max(0, p.flash - dt);
+    if (p.state !== "watching") return;
+    // Camera position (see drawPaparazzo): at shoulder height, aiming at the bird.
+    const camY = t.y - t.h * 0.72;
+    p.aim += (Math.atan2(this.bird.y - camY, this.bird.x - t.x) - p.aim) * Math.min(1, dt * 8);
+    if (this.phase !== "playing") return;
+
+    // The timer fills from where he walked on to just past the bird.
+    const shotX = this.bird.x - config.paparazziShotOffset;
+    p.timer = Math.min(1, Math.max(0, (p.startX - t.x) / Math.max(1, p.startX - shotX)));
+    if (p.timer >= 1) {
+      this.snap(t);
+      return;
+    }
+    // Camera beep, faster as the timer fills (only once he's on screen).
+    if (t.x < this.width) {
+      p.beep -= dt;
+      if (p.beep <= 0) {
+        p.beep = 0.6 - p.timer * 0.48;
+        this.events.push({ type: "paparazzoBeep", timer: p.timer });
+      }
+    }
+  }
+
+  /** He got the shot: flash, polaroid, and it's on the next obstacle as a tabloid front page. */
+  private snap(t: Target): void {
+    const p = t.pap!;
+    p.state = "snapped";
+    p.timer = 1;
+    p.flash = 0.25;
+    t.speed = 0;
+    const photoId = this.nextPhotoId++;
+    this.flash = 1;
+    this.shake = Math.max(this.shake, 6);
+    this.polaroid = { photoId, life: 2.2 };
+    this.message = { text: pick(SNAP_MESSAGES), life: 1.4 };
+    const tabloid: Tabloid = { photoId, headline: pick(HEADLINES) };
+    this.frontPages.push(tabloid);
+    this.pendingTabloids.push(tabloid);
+    this.events.push({ type: "photo", photoId });
+  }
+
+  /** A poop got him before the shot: the camera's done for. */
+  private smashCamera(t: Target): void {
+    const p = t.pap!;
+    p.state = "smashed";
+    t.speed = 0;
+    this.camerasSmashed++;
+    // Lens shards
+    const camX = t.x;
+    const camY = t.y - t.h * 0.72;
+    for (let i = 0; i < 16; i++) {
+      const a = -Math.PI * Math.random();
+      const s = 80 + Math.random() * 200;
+      this.particles.push({
+        x: camX, y: camY, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 1.5 + Math.random() * 2.5,
+        color: Math.random() < 0.5 ? "#caf0f8" : "#adb5bd", gravity: 800, world: true,
+      });
+    }
+    this.floaters.push({ x: t.x, y: t.y - t.h - 44, text: "NO PHOTOS!", color: "#7ae582", size: 24, life: 1.3, maxLife: 1.3 });
+    this.events.push({ type: "cameraSmashed" });
   }
 
   private spawnTarget(): void {
@@ -978,18 +1150,18 @@ export class Game {
       const dir = Math.random() < 0.6 ? 1 : -1;
       t = {
         x: this.width + 120, y: roadY, w: 92, h: 40, kind, speed: dir * (40 + Math.random() * 90),
-        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1,
+        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null,
       };
     } else if (kind === "pedestrian") {
       const dir = Math.random() < 0.5 ? 1 : -1;
       t = {
         x: this.width + 60, y: GROUND_Y + 20, w: 24, h: 52, kind, speed: dir * (18 + Math.random() * 30),
-        color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1,
+        color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null,
       };
     } else {
       t = {
         x: this.width + 80, y: GROUND_Y + 20, w: 46, h: 96, kind, speed: 0,
-        color: "#8fa3a8", seed, splats: [], hitFlash: 0, facing: -1,
+        color: "#8fa3a8", seed, splats: [], hitFlash: 0, facing: -1, pap: null,
       };
     }
     this.targets.push(t);
@@ -1041,7 +1213,9 @@ export class Game {
       this.combo++;
       this.bestCombo = Math.max(this.bestCombo, this.combo);
       this.targetsHit++;
-      const kindMult = t.kind === "car" ? 1 : t.kind === "pedestrian" ? 1.5 : 2;
+      const camera = t.pap?.state === "watching";
+      if (camera) this.smashCamera(t);
+      const kindMult = camera ? config.paparazziMultiplier : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
       const points = Math.round(config.targetPoints * kindMult * this.comboMultiplier * (p.big ? 2 : 1));
       this.bonus += points;
       const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
@@ -1116,6 +1290,11 @@ export class Game {
     this.screenSplats = this.screenSplats.filter((s) => s.life > 0);
 
     this.shake = Math.max(0, this.shake - dt * 40);
+    this.flash = Math.max(0, this.flash - dt * 2.2);
+    if (this.polaroid) {
+      this.polaroid.life -= dt;
+      if (this.polaroid.life <= 0) this.polaroid = null;
+    }
     if (this.message) {
       this.message.life -= dt;
       if (this.message.life <= 0) this.message = null;
@@ -1125,13 +1304,26 @@ export class Game {
 
 // --- geometry helpers ----------------------------------------------------------
 
+/** The roadside billboard: a board at the bottom of the gap on steel legs (see obstacleRects). */
+export const BILLBOARD_W = 230;
+export const BILLBOARD_H = 140;
+const BILLBOARD_MIN_LEGS = 40;
+/** The legs' frame covers the middle of the board's width; the board overhangs on both sides. */
+export const BILLBOARD_LEGS_INSET = 0.16;
+
 /** Collision rectangles for an obstacle, shared by rendering and physics. */
 export function obstacleRects(o: Obstacle): Rect[] {
   const rects: Rect[] = [];
-  // Bottom part rises from the ground to the gap.
-  rects.push({ x: o.x, y: o.gapBottom, w: o.w, h: GROUND_Y - o.gapBottom });
+  // Bottom part rises from the ground to the gap (for a billboard: just the board, legs below).
+  const billboard = o.bottom === "billboard";
+  rects.push({ x: o.x, y: o.gapBottom, w: o.w, h: billboard ? BILLBOARD_H : GROUND_Y - o.gapBottom });
   // A gate's top hangs down to the gap.
   if (o.top) rects.push({ x: o.x - 6, y: 0, w: o.w + 12, h: o.gapTop });
+  if (billboard) {
+    const inset = o.w * BILLBOARD_LEGS_INSET;
+    const legsTop = o.gapBottom + BILLBOARD_H;
+    rects.push({ x: o.x + inset, y: legsTop, w: o.w - inset * 2, h: GROUND_Y - legsTop });
+  }
   return rects;
 }
 
