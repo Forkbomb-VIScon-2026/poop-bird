@@ -1,9 +1,19 @@
-// All sound is synthesized with WebAudio. No audio files.
+// Sound is synthesized with WebAudio, except the recorded poop samples.
+
+import poopWeakUrl from "./assets/poop_weak.wav";
+import poopMiddleUrl from "./assets/poop_middle.wav";
+import poopLargeUrl from "./assets/poop_large.wav";
+
+export type PoopSize = "weak" | "middle" | "large";
+
+const POOP_URLS: Record<PoopSize, string> = { weak: poopWeakUrl, middle: poopMiddleUrl, large: poopLargeUrl };
 
 export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
+  /** Decoded poop samples; a size is missing until loaded (release() synthesizes until then). */
+  private poopBufs: Partial<Record<PoopSize, AudioBuffer>> = {};
   private organWave: PeriodicWave | null = null;
   private groan: { osc: OscillatorNode; osc2: OscillatorNode; lfo: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
   private burble: { src: AudioBufferSourceNode; blub: OscillatorNode; lfo: OscillatorNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
@@ -19,6 +29,7 @@ export class Sound {
         this.master.gain.value = this.muted ? 0 : 0.6;
         this.master.connect(this.ctx.destination);
         this.noiseBuf = this.makeNoise(2);
+        for (const size of Object.keys(POOP_URLS) as PoopSize[]) void this.loadPoop(this.ctx, size);
       }
       if (this.ctx.state === "suspended") void this.ctx.resume();
     } catch (err) {
@@ -34,6 +45,15 @@ export class Sound {
   toggleMute(): boolean {
     this.setMuted(!this.muted);
     return this.muted;
+  }
+
+  private async loadPoop(ctx: AudioContext, size: PoopSize): Promise<void> {
+    try {
+      const res = await fetch(POOP_URLS[size]);
+      this.poopBufs[size] = await ctx.decodeAudioData(await res.arrayBuffer());
+    } catch (err) {
+      console.warn(`[audio] ${size} poop sample unavailable`, err);
+    }
   }
 
   private makeNoise(seconds: number): AudioBuffer | null {
@@ -263,11 +283,24 @@ export class Sound {
     wob.stop(st + dur + 0.02);
   }
 
-  /** Release sound: a "plop" for tiny charges, a fart that grows with charge. */
-  release(charge: number, sweet: boolean): void {
+  /**
+   * Release sound: the recorded poop sample for the poop's size. Until that
+   * sample has loaded, a synthesized "plop" for tiny charges and a fart that
+   * grows with charge.
+   */
+  release(size: PoopSize, charge: number, sweet: boolean): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
     const t = ctx.currentTime;
+    const buf = this.poopBufs[size];
+    if (buf) {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.master);
+      src.start(t);
+      if (sweet) this.chime(t + 0.05);
+      return;
+    }
     // Plop (always)
     const plop = ctx.createOscillator();
     const pg = ctx.createGain();
