@@ -9,7 +9,10 @@ import {
   indexRow,
   newParticipantCode,
   newSessionId,
+  FISH_PUFF_LABELS,
   PARTICIPANT_RE,
+  PLAIN_PUFF_LABELS,
+  PUFF_LABELS,
   puffScript,
   SESSION_RE,
   sessionQuality,
@@ -101,17 +104,31 @@ describe("scripts", () => {
     expect(strainScript(seeded(7))).toEqual(a);
   });
 
-  it("beep high exactly on strain and puff steps", () => {
-    for (const s of strainScript(seeded())) expect(s.beep === "high").toBe(STRAINED.includes(s.label));
-    for (const s of puffScript(seeded())) expect(s.beep === "high").toBe(s.label.toLowerCase().includes("puff") && s.label !== "puffRelax");
+  it("record plain puffs and the pufferfish face, with pulses long enough to react to", () => {
+    const steps = puffScript(seeded(3));
+    const labels = new Set(steps.map((s) => s.label));
+    for (const l of [...PLAIN_PUFF_LABELS, ...FISH_PUFF_LABELS]) expect(labels.has(l)).toBe(true);
+    const pulses = steps.filter((s) => s.label === "puffPulse" || s.label === "fishPulse" || s.label === "puffRelax");
+    expect(pulses).toHaveLength(16);
+    for (const p of pulses) {
+      expect(p.seconds).toBeGreaterThanOrEqual(2);
+      expect(p.seconds).toBeLessThanOrEqual(3);
+    }
+    // Plain puffs first, so the start of the segment matches older sessions.
+    expect(steps.findIndex((s) => s.label === "fullPuff")).toBeLessThan(steps.findIndex((s) => s.label === "fishPuff"));
   });
 
-  it("keep a full session around 2 minutes", () => {
+  it("beep high exactly on strain and puff steps", () => {
+    for (const s of strainScript(seeded())) expect(s.beep === "high").toBe(STRAINED.includes(s.label));
+    for (const s of puffScript(seeded())) expect(s.beep === "high").toBe(PUFF_LABELS.includes(s.label));
+  });
+
+  it("keep a full session under 3 minutes", () => {
     const total = [calibrationScript(3), strainScript(seeded()), puffScript(seeded())]
       .flat()
       .reduce((a, s) => a + s.seconds, 0);
     expect(total).toBeGreaterThan(90);
-    expect(total).toBeLessThan(150);
+    expect(total).toBeLessThan(180);
   });
 });
 

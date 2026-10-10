@@ -8,7 +8,7 @@
 
 import { defaultConfig } from "../../src/config";
 import { loadRecordings, type Recording } from "./load";
-import { scorePuff, type PuffScore } from "./puff";
+import { scorePuff, type PuffGesture, type PuffScore } from "./puff";
 import { scoreStrain, type StrainScore } from "./strain";
 import { PUFF_VARIANTS, STRAIN_VARIANTS } from "./variants";
 
@@ -91,26 +91,34 @@ for (const variant of STRAIN_VARIANTS) {
 // --- Puff ------------------------------------------------------------------------
 
 console.log("PUFF  median puff level while relaxed / at half puff / at full puff (ideal 0 / ~0.5 / 1);");
-console.log("      spike = frames at or above the spike threshold (ideal 0).\n");
-for (const variant of PUFF_VARIANTS) {
-  const scored = recordings.flatMap((rec) => {
-    const score = scorePuff(rec, variant, config);
-    return score ? [{ rec, score }] : [];
-  });
-  if (!scored.length) continue;
-  console.log(`## ${variant.name}`);
-  const row = (name: string, s: PuffScore) => [
-    name, num(s.relaxed), num(s.half), num(s.full), pct(s.spikeRelaxed), pct(s.spikeHalf),
-  ];
-  const mean = (get: (s: PuffScore) => number) => participantMean(scored, get);
-  table(
-    ["recording", "relaxed", "half", "full", "spike relaxed", "spike half"],
-    [
-      ...scored.map(({ rec, score }) => row(rec.id, score)),
+console.log("      sink / rise = relaxed frames below / puff frames above the hover point (ideal 100%);");
+console.log("      spike = frames at or above the spike threshold (ideal 0). Each gesture gets its own calibration,");
+console.log("      from its first hold: plain puff, and the pufferfish face (cheeks puffed, lips pursed).\n");
+const GESTURE_TITLES: Record<PuffGesture, string> = { plain: "plain puff", fish: "pufferfish face" };
+for (const gesture of ["plain", "fish"] as const) {
+  for (const variant of PUFF_VARIANTS) {
+    const scored = recordings.flatMap((rec) => {
+      const score = scorePuff(rec, variant, config, gesture);
+      return score ? [{ rec, score }] : [];
+    });
+    if (!scored.length) {
+      console.log(`## ${variant.name}, ${GESTURE_TITLES[gesture]}: no recordings with it yet\n`);
+      continue;
+    }
+    console.log(`## ${variant.name}, ${GESTURE_TITLES[gesture]}`);
+    const row = (name: string, s: PuffScore) => [
+      name, num(s.relaxed), num(s.half), num(s.full), pct(s.sink), pct(s.rise), pct(s.spikeRelaxed), pct(s.spikeHalf),
+    ];
+    const mean = (get: (s: PuffScore) => number) => participantMean(scored, get);
+    table(
+      ["recording", "relaxed", "half", "full", "sink", "rise", "spike relaxed", "spike half"],
       [
-        "mean over participants", num(mean((s) => s.relaxed)), num(mean((s) => s.half)), num(mean((s) => s.full)),
-        pct(mean((s) => s.spikeRelaxed)), pct(mean((s) => s.spikeHalf)),
+        ...scored.map(({ rec, score }) => row(rec.id, score)),
+        [
+          "mean over participants", num(mean((s) => s.relaxed)), num(mean((s) => s.half)), num(mean((s) => s.full)),
+          pct(mean((s) => s.sink)), pct(mean((s) => s.rise)), pct(mean((s) => s.spikeRelaxed)), pct(mean((s) => s.spikeHalf)),
+        ],
       ],
-    ],
-  );
+    );
+  }
 }
