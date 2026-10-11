@@ -60,15 +60,16 @@ starts the face dataset collector (local credentials `local` /
 | Input | Action |
 | --- | --- |
 | Strain face (webcam) | City: charge; relax to poop |
+| Open your mouth (webcam) | The bird opens its beak with you (just for fun; MediaPipe's `jawOpen`, tuned under "Beak" in the debug panel; classic graphics only) |
 | Pufferfish face: puff cheeks, purse lips (webcam) | Ocean: inflate (more puff = rise, less = sink) |
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
-| **P** / Esc / ⏸ button | Pause |
+| **P** / ⏸ button | Pause, and resume |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
-| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
-| **R** | Play again from game over |
+| **Enter** | Press the yellow button on any screen (Play, Play again…). Every button takes exactly one key, the one on the keycap badge on its corner |
 | **K** | Menu settings (the gear): play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
-| **Esc** | Calibration, game over and the leaderboard: back to the menu |
+| **Q** | Pause: back to the menu |
+| **Esc** | Calibration and game over: back to the menu |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |
@@ -98,6 +99,11 @@ wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
   (Android; iOS has no vibration API).
 - Short landscape screens get compact cards: the webcam sits next to the
   calibration card, and the game-over card puts its buttons first.
+- The game-over card shows the run in pictures, all in one row: your finest
+  strain as a polaroid (face mode), then every front page, wedding photo and
+  the fisherman's trophy photo in the order they were taken. When they don't
+  fit, they overlap like a pile of prints (hover one to lift it), and past
+  that the row scrolls sideways.
 - If face tracking runs below `slowDetectionRate` detections per second, the
   perch suggests playing with touch or the keyboard instead.
 
@@ -119,18 +125,19 @@ timer. On the perch it sits beside the bird; in the city and the ocean, over
 the game near the top. The swim lesson and the puff calibration use it too.
 
 - **Flight lesson** (new players: the tutorial hasn't been seen on this
-  browser, or "I'm new here" is ticked), six steps:
+  browser, or "I'm new here" is ticked), four steps:
   1. "Squeeze your face" (Hold Space) until the bird starts filling up,
   2. "Now relax": the poop hops the bird up, and the coach says "Pooping
      pushes you up!",
   3. "Squeeze longer to fly": a full bird takes off,
   4. in a **calm city** (`Game.calmCity`: no obstacles, paparazzi or kids,
      and the street bounces the bird back up instead of ending the run):
-     "Squeeze & relax to stay up" until three poops (or 20 s),
-  5. "Poop on the car! 🎯": a car drives on; until the first hit (or 12 s),
-  6. "Now dodge the buildings!": the lesson counts as seen, and the calm ends
-     once the bird is clear of the street (or after 8 s); the first obstacle
-     comes `firstObstacleDelay` later.
+     "Squeeze & relax to stay up" until three poops (or 20 s), then "Nice
+     flying!". The lesson counts as seen, and the calm ends (and the coach
+     goes) once the bird is clear of the street (or after 8 s); the first
+     obstacle comes `firstObstacleDelay` later, unannounced.
+  The lesson only teaches flying: the buildings, what to poop on, and what
+  the ocean's jellyfish and sharks do are left for the player to discover.
   An accident (held too long) shows "Too long! Relax as soon as it's full".
   The perch part and the city part are remembered separately (`perch`,
   `city` in `TUTORIALS`).
@@ -212,7 +219,7 @@ Practice poops score nothing, and the lamp and its nest scroll away with the str
     guests and the bird photobombing from the corner, blissfully relieved if
     it just ruined everything. In face mode the bird has the player's face,
     grabbed at "KISS!" (when they should be straining hardest). The game-over
-    screen shows the run's last ruined wedding (or the last wedding).
+    screen shows every wedding of the run.
   Tunables are in the debug panel's "Wedding" group.
 - **Hot-air balloons:** some city obstacles are a balloon drifting along with
   the wind (`balloonChance`). Fly through the envelope (or poop on it) and it
@@ -256,8 +263,9 @@ city by city (the debug panel's "Progression" group).
   used right away and the level starts. If not, a slower **calibration** runs,
   with a timeline of its steps (so the next switch is never a surprise) and
   a look-around; there the fish shows each step (puffs up and floats, shrinks
-  and sinks) whatever your face does. New players then get the ocean tips as two
-  banners. Everyone else gets a short "GET READY!" banner instead, while the
+  and sinks) whatever your face does. New players then get the ocean tip as one
+  banner (spiking out, and popping when held too long; what's in the sea is
+  left to discover). Everyone else gets a short "GET READY!" banner instead, while the
   fish swims to the middle of the sea on its own (`Game.guideY`), so the level
   never starts with it on the sand or at the surface. A fish lying on the sand when the level starts isn't killed by the
   sea floor until it swims off (at most `oceanCalmFloorGrace`, 5 s). Details
@@ -265,7 +273,7 @@ city by city (the debug panel's "Progression" group).
 - **New players.** In face mode a new player always gets the swim lesson,
   even with a saved puff calibration (which it then refits). In keyboard mode
   a new player's first dive also swims on in calm water, under banners on
-  holding Space (or the screen) to puff and the two ocean tips; then the
+  holding Space (or the screen) to puff and the ocean tip; then the
   level starts. Neither ever stops the world. The tips show once per browser;
   **⚙️ Options → "I'm new here: show tips"** in the menu turns them back on
   (or off) for the next player.
@@ -336,8 +344,8 @@ city by city (the debug panel's "Progression" group).
   sync across pauses (`Game.sharkTheme` is the clock). It cuts out the moment the shark bites into the spines; if it eats you, it plays on until the shark is gone. No new obstacles spawn
   in the last seconds before it arrives. Without that file, a synthesized
   two-note "dun-dun" plays instead, speeding up as it closes in. The shark
-  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it,
-  and "SPIKE UP!" flashes by the fish. Then it lunges, homing on the fish:
+  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it.
+  Then it lunges, homing on the fish:
   it can't be outswum, the only defence is to be spiked when it bites (the
   spines reach a bit further than its bite). Spiked, it yelps, turns tail
   with spines in its snout (×5, "NOT TODAY!"). Not spiked, it eats you
@@ -361,8 +369,8 @@ The game-over screen and the start screen's 🏆 (**L**) show the online
 leaderboard: two boards of the runs players chose to submit.
 
 - **🏆 Top scores**, by score.
-- **😣 Most strained faces**, by how strained the run's finest-strain face
-  looks, 0–100. Only runs submitted with their face are on it.
+- **😣 Most constipated faces**, by the constipaticity of the run's finest-strain face
+  (0–100). Only runs submitted with their face are on it.
 
 Only runs played with the face count. After a keyboard or touch run the
 game-over screen says so instead of offering to submit, and the collector
@@ -376,7 +384,7 @@ player at the same machine doesn't inherit the choice. A run submitted from
 a browser has a ✕ there to take it off again (the delete key is kept in
 `localStorage`).
 
-**Strainedness** (`strain.ts` `strainedness`) is the weighted mean of the raw
+**Constipaticity** (`strain.ts` `strainedness`) is the weighted mean of the raw
 `browDown`, `eyeSquint` and ½ × `eyeBlink` blendshapes. These move on a strain
 face for nearly everyone in the face dataset, and the mouth doesn't. It
 ignores the calibration: the calibrated strain tops out at 1 for anyone who

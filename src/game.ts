@@ -64,6 +64,8 @@ const CALM_BOUNCE = 320;
 export const BIRD_RADIUS = 22;
 /** × the target spawn rate in attract mode, so there's always someone to hit. */
 const DEMO_SPAWN_SCALE = 3;
+/** Share of attract-mode targets that are cars (vs 0.5 in a run), so the faster spawning doesn't jam the road. */
+const DEMO_CAR_SHARE = 0.2;
 /** Top fraction of the gap-centre range that makes a tall building (see pickGapCenter). */
 const TALL_FRACTION = 0.4;
 /** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
@@ -401,8 +403,6 @@ export interface Wedding {
   /** The countdown number showing (3, 2, 1); 0 before and after. */
   count: number;
   outcome: WeddingOutcome | null;
-  /** The run's first wedding gets a hint over the couple. */
-  tutorial: boolean;
   /** "Reto ♥ Nadine", on the banner over the arch. */
   names: string;
   /** The couple got splatted before the kiss (they carry on, a bit brown). */
@@ -900,7 +900,6 @@ export class Game {
   private lastKidAt = -Infinity;
   /** This city stage gets a wedding that hasn't happened yet. */
   private weddingPlanned = false;
-  private weddingsSeen = 0;
   /** This ocean stage gets a fisherman who hasn't shown up yet. */
   private anglerPlanned = false;
   private sharkPlanned = false;
@@ -1004,7 +1003,6 @@ export class Game {
     this.weddingsRuined = 0;
     this.bouquetsCaught = 0;
     this.weddingPlanned = Math.random() < config.weddingChance;
-    this.weddingsSeen = 0;
     this.pendingTabloids = [];
     this.lastPaparazzoAt = -Infinity;
     this.paparazziSeen = 0;
@@ -3290,7 +3288,8 @@ export class Game {
 
   private spawnTarget(only?: "car"): void {
     const r = Math.random();
-    let kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
+    const carShare = this.demo ? DEMO_CAR_SHARE : 0.5;
+    let kind: TargetKind = only ?? (r < carShare ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
     if (kind === "statue" && !this.statueFits(this.width + 80, 46)) kind = "pedestrian";
     // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
     const roadY = GROUND_Y + 68;
@@ -3673,7 +3672,6 @@ export class Game {
     const colors = [...GUEST_COLORS].sort(() => Math.random() - 0.5);
     const wedding: Wedding = {
       phase: "arriving", t: 0, count: 0, outcome: null,
-      tutorial: this.weddingsSeen++ === 0,
       names: pick(COUPLES), early: false, thrown: false, announced: false, flash: 0,
       groom: person("groom", -15, 28, 70, "#2b2d42", 1),
       bride: person("bride", 15, 32, 70, "#ffffff", -1),

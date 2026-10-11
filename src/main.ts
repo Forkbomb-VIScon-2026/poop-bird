@@ -8,7 +8,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, VIEW_H, wireAt } from "./game";
-import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
+import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import { BOARD_KEEP, strainPercent, type RunStats } from "./leaderboard";
@@ -145,8 +145,8 @@ let coachOwner = 0;
 let puffCoach = 0;
 /** The coach claim of the perch. */
 let perchCoach = 0;
-/** Poops, target hits and accidents this run, for the city lesson. */
-const lessonCount = { poops: 0, hits: 0, accidents: 0, lastAccident: -Infinity };
+/** Poops and accidents this run, for the city lesson. */
+const lessonCount = { poops: 0, accidents: 0, lastAccident: -Infinity };
 /** A calibration that failed the quality check; used only if the player picks "Play anyway". */
 let rejectedCalibration: Calibration | null = null;
 /** Whether the calibration result screen is showing a failed calibration. */
@@ -170,6 +170,8 @@ const SCRIPT_RATE = 1.2;
 const SCRIPT_PUFF = 0.75;
 const SCRIPT_RELAX = 0.05;
 let lastFace: FaceFrame | null = null;
+/** How far the player's mouth is open, 0..1 (smoothed jawOpen); the bird's beak mirrors it. */
+let mouthOpen = 0;
 let lastFaceTime = 0;
 let lastFaceSeen = 0;
 let keyHeld = false;
@@ -239,6 +241,9 @@ tracker.onFrame((frame) => {
     placeCamBox($("cam-crop"), debug.showFaceLock ? frame.crop : null);
   }
   faceStrain = frame.features ? smoothStrain(faceStrain, strainedness(frame.features), config.emaAlpha, dt) : 0;
+  const jaw = frame.features ? (frame.blendshapes.jawOpen ?? 0) : 0;
+  const open = Math.min(1, Math.max(0, (jaw - config.mouthOpenFrom) / Math.max(0.01, config.mouthOpenFull - config.mouthOpenFrom)));
+  mouthOpen = smoothStrain(mouthOpen, open, config.mouthOpenAlpha, dt);
   // Only while the game counts it as straining: a laugh or a blink isn't a finest strain.
   if (state === "playing" && game.phase === "playing" && game.stage === "city" && strain.active) {
     snapshot.offer(video, frame.box, faceStrain);
@@ -795,7 +800,7 @@ async function runSwimLesson(): Promise<void> {
  */
 async function swimToMiddle(token: number): Promise<boolean> {
   // A heads-up, not a step: no progress bar.
-  coachSay(puffCoach, { title: "GET READY! 🐡", hint: "Here come the rocks and jellyfish.", face: null, bar: false });
+  coachSay(puffCoach, { title: "GET READY! 🐡", hint: "Here come the rocks.", face: null, bar: false });
   game.guideY = OCEAN_MID_Y;
   try {
     // At least a moment to read the banner; at most long enough to cross the whole sea.
@@ -814,9 +819,7 @@ async function swimToMiddle(token: number): Promise<boolean> {
 async function oceanTipBanners(token: number, intro?: [string, string]): Promise<boolean> {
   const tips: [string, string][] = [
     ...(intro ? [intro] : []),
-    ["Spikes! 🐡", "Puff past the red line to spike out and pop jellyfish 🪼"],
-    ["Watch out! 🪸", "Unspiked, jellyfish sting. Dodge the coral, rocks and sea floor"],
-    ["Shark! 🦈", "You can't outswim it. When it bares its teeth, spike up so it bites the spines"],
+    ["Spikes! 🐡", "Puff past the red line to spike out. Hold it too long and you pop"],
   ];
   for (const [title, hint] of tips) {
     setPuffOverlay(title, hint, null, true);
@@ -1283,8 +1286,8 @@ const PERCH_FULL: PerchLine = { face: "Relax to fly! 🚀", faceHint: "", keys: 
 /** Charge at which a poop off the perch takes off: full. */
 const TAKEOFF_CHARGE = 1;
 
-/** The flight lesson's steps, for the coach's dots: three on the perch, three in the city. */
-const LESSON_STEPS_TOTAL = 6;
+/** The flight lesson's steps, for the coach's dots: three on the perch, one in the city. */
+const LESSON_STEPS_TOTAL = 4;
 const PERCH_DOT: Partial<Record<PerchStep, number>> = { strain: 0, relax: 1, pushed: 1, fill: 2 };
 
 function enterPerchStep(step: PerchStep): void {
@@ -1416,14 +1419,14 @@ function takeOff(): void {
   game.bird.vy = Math.min(game.bird.vy, -config.pushMax);
   state = "playing";
   showScreen(null);
-  lessonCount.poops = lessonCount.hits = lessonCount.accidents = 0;
+  lessonCount.poops = lessonCount.accidents = 0;
   if (!seenTutorials.has("city")) void runCityLesson();
 }
 
 /**
  * A new player's first flight: the city stays calm (Game.calmCity: no
  * obstacles, the street bounces the bird back up) while the coach teaches
- * staying up and aiming, then the buildings come. Each step moves on once
+ * staying up, then the buildings come unannounced. Each step moves on once
  * it's done, or after a while anyway. Belongs to the run's flow token.
  */
 async function runCityLesson(): Promise<void> {
@@ -1466,24 +1469,13 @@ async function runCityLesson(): Promise<void> {
     if ((await until(() => false, 1200)) === null) return abandon();
   }
 
-  game.spawnCarNow();
-  say(4, "Poop on the car! 🎯", "Cars and people score points", null);
-  const hits = lessonCount.hits;
-  const hit = await until(() => lessonCount.hits > hits, 12_000);
-  if (hit === null) return abandon();
-  if (hit) {
-    say(5, "Splat! 🎯", "", null, true);
-    if ((await until(() => false, 1200)) === null) return abandon();
-  }
-
   // Seen from here on, so a player who crashes soon after doesn't get the whole lesson again.
   markTutorialSeen("city");
-  say(5, "Now dodge the buildings!", "Fly through the gaps", null);
   // The street stops bouncing once the bird is clear of it (or after a while), so the handoff isn't a crash.
+  // The last line stays up until then; the buildings that follow are for the player to discover.
   const clear = (): boolean => game.bird.y + BIRD_RADIUS < GROUND_Y - 120;
   if ((await until(clear, 8000)) === null) return abandon();
   game.calmCity = false;
-  if ((await until(() => false, 3500)) === null) return abandon();
   releaseCoach(owner);
 }
 
@@ -1505,6 +1497,7 @@ function updateMuteButton(): void {
   const btn = $("btn-hud-mute");
   btn.textContent = sound.muted ? "🔇" : "🔊";
   btn.setAttribute("aria-label", sound.muted ? "Unmute" : "Mute");
+  decorate(btn);
 }
 
 function togglePause(): void {
@@ -1564,55 +1557,16 @@ function onGameOver(): void {
   $("go-scandals").textContent = String(game.frontPages.length);
   $("go-kids").textContent = String(game.kidsDisarmed + game.pebblesShot);
   $("go-weddings").textContent = String(game.weddingsRuined);
-
-  // The wedding album: the last ruined wedding if there was one (that's the good one).
-  const wedding = game.weddingPhotos.filter((p) => p.ruined).at(-1) ?? game.weddingPhotos.at(-1) ?? null;
-  show($("go-wedding"), wedding !== null);
-  if (wedding) {
-    const wc = $<HTMLCanvasElement>("go-wedding-canvas");
-    const wctx = wc.getContext("2d");
-    if (wctx) {
-      wctx.setTransform(1, 0, 0, 1, 0, 0);
-      wctx.clearRect(0, 0, wc.width, wc.height);
-      wctx.scale(wc.width / 250, wc.width / 250);
-      drawWeddingPrint(wctx, 2, 2, 240, wedding, renderer.photos.get(wedding.photoId));
-    }
-  }
   $("go-balloons").textContent = String(game.balloonsPopped);
   $("go-lines").textContent = String(game.anglersSnapped);
   $("go-sharks").textContent = String(game.sharksSpiked);
 
-  // Landed by the fisherman: his trophy photo.
-  show($("go-trophy"), game.trophy !== null);
-  if (game.trophy !== null) {
-    const tc = $<HTMLCanvasElement>("go-trophy-canvas");
-    const tctx = tc.getContext("2d");
-    if (tctx) {
-      tctx.setTransform(1, 0, 0, 1, 0, 0);
-      tctx.clearRect(0, 0, tc.width, tc.height);
-      tctx.scale(tc.width / 250, tc.width / 250);
-      drawTrophyPrint(tctx, 2, 2, 240, renderer.photos.get(game.trophy));
-    }
-  }
-
-  // The last photo that got away makes tomorrow's paper.
-  const front = game.frontPages.at(-1) ?? null;
-  show($("go-frontpage"), front !== null);
-  if (front) {
-    const fp = $<HTMLCanvasElement>("go-frontpage-canvas");
-    const fctx = fp.getContext("2d");
-    if (fctx) {
-      fctx.setTransform(1, 0, 0, 1, 0, 0);
-      fctx.clearRect(0, 0, fp.width, fp.height);
-      fctx.scale(fp.width / 200, fp.height / 240);
-      drawFrontPage(fctx, 2, 2, 196, 236, front, renderer.photos);
-    }
-  }
-
   currentSnapshotUrl = mode === "face" ? snapshot.toDataURL() : null;
   show($("go-snapshot"), currentSnapshotUrl !== null);
+  show($("go-snapshot-actions"), currentSnapshotUrl !== null);
   if (currentSnapshotUrl) $<HTMLImageElement>("go-snapshot-img").src = currentSnapshotUrl;
   $("go-strain").textContent = String(strainPercent(snapshot.peakStrain));
+  showRunPhotos();
 
   // Only runs played with the face count: keyboard and touch runs can't be submitted.
   lastRun = mode !== "face" ? null : {
@@ -1632,6 +1586,57 @@ function onGameOver(): void {
   show(status, lastRun === null);
   void showBoards($("go-lb"));
   showScreen("gameover");
+}
+
+/** The game-over prints' canvases have this many pixels per logical unit, so they stay sharp. */
+const PRINT_SCALE = 2;
+
+/**
+ * The run in pictures on the game-over screen, all on one level: the finest
+ * strain (static in index.html, first), then every front page, wedding photo
+ * and the trophy photo in the order they were taken (photo ids count up).
+ */
+function showRunPhotos(): void {
+  const strip = $("go-photos");
+  for (const el of strip.querySelectorAll(".go-print:not(#go-snapshot)")) el.remove();
+  type Print = { photoId: number; title: string; kind: string; w: number; h: number; draw: (ctx: CanvasRenderingContext2D) => void };
+  const prints: Print[] = [
+    ...game.frontPages.map((t): Print => ({
+      photoId: t.photoId, title: "Tomorrow's front page", kind: "frontpage", w: 200, h: 240,
+      draw: (ctx) => drawFrontPage(ctx, 2, 2, 196, 236, t, renderer.photos),
+    })),
+    ...game.weddingPhotos.map((w): Print => ({
+      photoId: w.photoId, title: "The official wedding photo", kind: "wedding", w: 250, h: 235,
+      draw: (ctx) => drawWeddingPrint(ctx, 2, 2, 240, w, renderer.photos.get(w.photoId)),
+    })),
+  ];
+  const trophy = game.trophy;
+  if (trophy !== null) {
+    prints.push({
+      photoId: trophy, title: "Catch of the day", kind: "trophy", w: 250, h: 235,
+      draw: (ctx) => drawTrophyPrint(ctx, 2, 2, 240, renderer.photos.get(trophy)),
+    });
+  }
+  prints.sort((a, b) => a.photoId - b.photoId);
+  for (const p of prints) {
+    const figure = document.createElement("figure");
+    figure.className = `go-print ${p.kind}`;
+    figure.title = p.title;
+    const c = document.createElement("canvas");
+    c.width = p.w * PRINT_SCALE;
+    c.height = p.h * PRINT_SCALE;
+    c.setAttribute("role", "img");
+    c.setAttribute("aria-label", p.title);
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      ctx.scale(PRINT_SCALE, PRINT_SCALE);
+      p.draw(ctx);
+    }
+    figure.append(c);
+    strip.append(figure);
+  }
+  show(strip, prints.length > 0 || currentSnapshotUrl !== null);
+  strip.scrollLeft = 0;
 }
 
 /** Sends the game-over screen's run to the online leaderboard (only when the player presses Submit). */
@@ -1770,6 +1775,7 @@ function frame(now: number): void {
     accumulator = 0;
   }
 
+  renderer.mouthOpen = mode === "face" && faceFresh() && !game.demo ? mouthOpen : 0;
   renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
   const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
@@ -1876,7 +1882,6 @@ function handleGameEvents(): void {
         sound.splat(e.big);
         break;
       case "hit":
-        lessonCount.hits++;
         sound.hit(e.combo);
         buzz(12);
         break;
@@ -2083,7 +2088,7 @@ function focusHandlesEnter(): boolean {
 
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
-  // A screen's yellow button takes Enter and Space; some buttons take more keys (data-keys).
+  // Each button takes the one key on its badge: Enter for a screen's yellow button, else its own (keyhints.ts).
   if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const name = keyName(e);
     const btn = name === "Enter" && focusHandlesEnter() ? null : buttonForKey(name);
@@ -2092,6 +2097,7 @@ window.addEventListener("keydown", (e) => {
       if (performance.now() >= buttonKeysArmedAt) pressFromKey(btn);
       return;
     }
+    if (keyBlocked(name)) return;
   }
   const key = e.key.toLowerCase();
   if (e.code === "Space") {
@@ -2102,7 +2108,6 @@ window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   switch (key) {
     case "p":
-    case "escape":
       togglePause();
       break;
     case "m":
@@ -2163,6 +2168,25 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => {
   if (e.code === "Space") keyHeld = false;
 });
+
+/** The game button `target` presses, if it's an enabled one. */
+function gameButton(target: EventTarget | null): HTMLButtonElement | null {
+  const btn = target instanceof Element ? target.closest<HTMLButtonElement>("button.btn, button.hud-btn") : null;
+  return btn && !btn.disabled ? btn : null;
+}
+
+function buttonClick(): void {
+  sound.unlock();
+  sound.buttonClick();
+}
+
+// Every button clicks when pressed: on pointer down (snappier than on click), or from the keyboard (a click with detail 0).
+document.addEventListener("pointerdown", (e) => {
+  if (e.button === 0 && gameButton(e.target)) buttonClick();
+}, true);
+document.addEventListener("click", (e) => {
+  if (e.detail === 0 && gameButton(e.target)) buttonClick();
+}, true);
 
 canvas.addEventListener("pointerdown", (e) => {
   if (state !== "playing" && state !== "ready") return;
@@ -2230,6 +2254,7 @@ on("btn-calib-keyboard", () => {
   startKeyboardMode();
 });
 on("btn-calib-cancel", goToMenu);
+on("btn-perch-menu", goToMenu);
 on("btn-tune", () => void recalibrate());
 on("btn-perch-keyboard", () => {
   goLandscape();

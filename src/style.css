@@ -90,6 +90,7 @@ canvas#game {
   color: var(--ink);
   box-shadow: 0 3px 0 var(--ink);
   cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s, background-color 0.12s;
 }
 
 .hud-btn:active {
@@ -698,7 +699,47 @@ svg.face {
   color: var(--ink);
   cursor: pointer;
   box-shadow: 0 4px 0 var(--ink);
-  transition: transform 0.05s;
+  transition: transform 0.08s, box-shadow 0.08s, background-color 0.12s;
+}
+
+/* Hover: the button lifts a little and lights up. Mouse only, so taps don't leave it stuck up. */
+@media (hover: hover) {
+  .btn:not(:disabled):not(.ghost):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 0 var(--ink);
+    background: #fff3d1;
+  }
+
+  .btn.primary:not(:disabled):hover {
+    background: #ffe08f;
+  }
+
+  .btn.ghost:not(:disabled):hover {
+    text-decoration-thickness: 3px;
+    color: var(--accent);
+  }
+
+  .btn.ghost.light:not(:disabled):hover {
+    color: var(--gold);
+  }
+
+  .hud-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 0 var(--ink);
+    background: #fff;
+  }
+
+  /* Pressing still pushes it in. */
+  .btn:not(:disabled):not(.ghost):hover:active,
+  .btn:not(:disabled):not(.ghost).key-pressed {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--ink);
+  }
+
+  .hud-btn:hover:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--ink);
+  }
 }
 
 .btn:active {
@@ -755,9 +796,8 @@ kbd {
 }
 
 /* --- Key hints (keyhints.ts) ---------------------------------------------------
-   Every button with keys wears a small keycap on its corner (⏎ on the yellow
-   button, its own key on the others, none on small ghost links) and shows them all in a tooltip on hover
-   or keyboard focus. */
+   Every button with a key wears it as a small keycap on its corner: ⏎ on the
+   yellow button, its own key on the others. That key is the only one it takes. */
 
 .has-keys {
   position: relative;
@@ -783,15 +823,24 @@ kbd {
   pointer-events: none;
 }
 
-.btn.primary:not(:disabled) > .key-badge.k-default,
-.btn:not(.primary):not(.ghost):not(:disabled) > .key-badge.k-extra {
+/* ⏎ while the button is the yellow one (data-default), else its own key. */
+.has-keys.primary:not(:disabled) > .key-badge.k-default,
+.has-keys:not(.primary):not(:disabled) > .key-badge.k-own,
+.has-keys.primary:not([data-default]):not(:disabled) > .key-badge.k-own {
   display: block;
   animation: key-badge-in 0.35s cubic-bezier(0.3, 1.6, 0.6, 1) both;
 }
 
-.has-keys:hover > .key-badge,
-.has-keys:focus-visible > .key-badge {
-  visibility: hidden;
+/* The HUD buttons sit close together: a smaller keycap. */
+.hud-btn > .key-badge {
+  top: -8px;
+  right: -8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 15px;
+  border-radius: 6px;
 }
 
 @keyframes key-badge-in {
@@ -805,69 +854,6 @@ kbd {
   }
 }
 
-.key-tip {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  z-index: 10;
-  display: flex;
-  gap: 5px;
-  padding: 6px 8px;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.3;
-  white-space: nowrap;
-  text-decoration: none;
-  color: var(--ink);
-  background: var(--ink);
-  border-radius: 9px;
-  opacity: 0;
-  transform: translate(-50%, 4px);
-  transition: opacity 0.12s, transform 0.12s;
-  pointer-events: none;
-}
-
-.key-tip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  margin-left: -6px;
-  border: 6px solid transparent;
-  border-top-color: var(--ink);
-}
-
-.key-tip kbd {
-  border-color: var(--ink);
-  border-bottom-width: 2px;
-}
-
-.has-keys:hover > .key-tip,
-.has-keys:focus-visible > .key-tip {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  transition-delay: 0.25s;
-}
-
-/* Enter / Space belong to the yellow button only: a demoted one drops them, and a tip left empty hides. */
-.btn:not(.primary) .k-default,
-.btn:not(.primary):not([data-keys]):not([data-shortcut]) > .key-tip {
-  display: none;
-}
-
-/* The HUD buttons sit at the top of the screen: tip below. */
-.hud-btn > .key-tip {
-  bottom: auto;
-  top: calc(100% + 10px);
-}
-
-.hud-btn > .key-tip::after {
-  top: auto;
-  bottom: 100%;
-  border-top-color: transparent;
-  border-bottom-color: var(--ink);
-}
-
 .btn.key-pressed,
 .hud-btn.key-pressed {
   transform: translateY(3px);
@@ -875,8 +861,7 @@ kbd {
   animation: none;
 }
 
-body.touch .key-badge,
-body.touch .key-tip {
+body.touch .key-badge {
   display: none !important;
 }
 
@@ -1013,6 +998,14 @@ svg.face.calib-face {
 /* Practice poops don't score: no score until the run starts. */
 #app:has(#screen-ready:not(.hidden)) .hud-left {
   visibility: hidden;
+}
+
+/* Back to the menu, in the score's spot (hidden on the perch). */
+.perch-menu {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  pointer-events: auto;
 }
 
 /* Beside the bird on its lamp (--perch-x, set by main.ts), below the HUD. */
@@ -1243,11 +1236,16 @@ svg.face.gauge-face {
 
 /* --- Game over ----------------------------------------------------------------- */
 
-.go-grid {
+#screen-gameover .card.wide {
+  max-width: 860px;
+}
+
+/* Score on the left, the stats in two columns beside it. */
+.go-head {
   display: flex;
-  gap: 20px;
+  gap: 8px 28px;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: wrap;
 }
 
@@ -1272,13 +1270,23 @@ svg.face.gauge-face {
 }
 
 .go-table {
-  margin: 10px auto 0;
   border-collapse: collapse;
   font-size: 15px;
 }
 
+.go-table tbody {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  column-gap: 24px;
+}
+
+.go-table tr {
+  display: flex;
+  justify-content: space-between;
+}
+
 .go-table td {
-  padding: 2px 10px;
+  padding: 1px 6px;
 }
 
 .go-table td:first-child {
@@ -1291,53 +1299,131 @@ svg.face.gauge-face {
   font-weight: 800;
 }
 
-.go-snapshot {
+/*
+ * The run in pictures, all on one level and the same height. When they don't
+ * fit, they overlap like prints dropped on a table (each print shrinks its box,
+ * not its picture; the last one keeps its box so nothing hangs off the end),
+ * and hovering one lifts it on top. Past that, the row scrolls sideways.
+ */
+.go-photos {
+  --print-h: 210px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  flex-shrink: 0;
+  align-items: flex-end;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 18px 16px 16px;
+  margin: 6px -12px 0;
 }
 
-.go-snapshot-title {
-  font-weight: 800;
+/* Centred while the prints fit, without cutting off the first one when they scroll. */
+.go-photos::before,
+.go-photos::after {
+  content: "";
+  margin: auto;
 }
 
-.go-snapshot img {
-  width: 200px;
-  border: 4px solid var(--ink);
-  border-radius: 12px;
-  transform: rotate(-2deg);
-  box-shadow: 0 5px 0 var(--ink);
-  background: #000;
+.go-print {
+  position: relative;
+  margin: 0 6px;
+  flex: 0 1 auto;
+  min-width: 44px;
+  transition: transform 0.15s ease-out;
+  animation: print-drop 0.45s ease-out backwards;
 }
 
-.go-frontpage {
-  width: 200px;
-  height: 240px;
-  transform: rotate(2deg);
+.go-print:last-child {
+  flex-shrink: 0;
+}
+
+.go-print:nth-child(4n + 1) { --tilt: -2.5deg; }
+.go-print:nth-child(4n + 2) { --tilt: 1.8deg; }
+.go-print:nth-child(4n + 3) { --tilt: -1deg; }
+.go-print:nth-child(4n + 4) { --tilt: 2.6deg; }
+
+.go-print:nth-child(2) { animation-delay: 0.08s; }
+.go-print:nth-child(3) { animation-delay: 0.16s; }
+.go-print:nth-child(4) { animation-delay: 0.24s; }
+.go-print:nth-child(n + 5) { animation-delay: 0.32s; }
+
+.go-print > * {
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.15s ease-out;
+}
+
+.go-print:hover {
+  z-index: 2;
+  transform: translateY(-8px);
+}
+
+.go-print:hover > * {
+  transform: rotate(0deg) scale(1.04);
+}
+
+@keyframes print-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-24px) rotate(-6deg);
+  }
+}
+
+.go-print canvas {
+  display: block;
+  height: var(--print-h);
+  width: auto;
+}
+
+.go-print.frontpage canvas {
   filter: drop-shadow(0 5px 0 var(--ink));
 }
 
-.go-wedding {
-  width: 250px;
-  height: 235px;
-  transform: rotate(-1.5deg);
+/* The finest strain as a polaroid: white frame, wide bottom edge with the caption. */
+.go-polaroid {
+  width: max-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #fffdf7;
+  border: 3px solid var(--ink);
+  box-shadow: 0 5px 0 var(--ink);
+  padding: 8px 8px 4px;
 }
 
-.go-trophy {
-  width: 250px;
-  height: 235px;
-  transform: rotate(1.5deg);
+.go-polaroid img {
+  display: block;
+  height: calc(var(--print-h) - 62px);
+  width: auto;
+  background: #000;
+}
+
+.go-polaroid figcaption {
+  font: italic 700 15px "Comic Sans MS", "Trebuchet MS", cursive;
+  margin-top: 4px;
+  white-space: nowrap;
 }
 
 .go-strain {
   font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .go-strain b {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   color: var(--accent);
+}
+
+.go-snapshot-actions {
+  display: flex;
+  gap: 4px 10px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.go-snapshot-actions .privacy {
+  margin: 0;
 }
 
 .go-lb-form {
@@ -1677,6 +1763,10 @@ body.debug-open #cam {
   .hud-score {
     font-size: 34px;
   }
+
+  .go-photos {
+    --print-h: 150px;
+  }
 }
 
 /* Phones in landscape: little height. Compact cards, the webcam beside the calibration card. */
@@ -1838,7 +1928,7 @@ body.debug-open #cam {
     margin: 4px 0 8px;
   }
 
-  .go-grid {
+  .go-head {
     flex-wrap: nowrap;
     gap: 16px;
   }
@@ -1847,33 +1937,29 @@ body.debug-open #cam {
     font-size: 44px;
   }
 
-  /* The stats in two columns. */
   .go-table {
     font-size: 13px;
   }
 
   .go-table tbody {
-    display: grid;
-    grid-template-columns: repeat(2, auto);
     column-gap: 20px;
-  }
-
-  .go-table tr {
-    display: flex;
-    justify-content: space-between;
   }
 
   .go-table td {
     padding: 0 4px;
   }
 
-  .go-snapshot img,
-  .go-frontpage {
-    width: 120px;
+  .go-photos {
+    --print-h: 120px;
+    padding: 10px 12px 12px;
   }
 
-  .go-frontpage {
-    height: 144px;
+  .go-polaroid img {
+    height: calc(var(--print-h) - 50px);
+  }
+
+  .go-polaroid figcaption {
+    font-size: 12px;
   }
 
   .go-lb-form {

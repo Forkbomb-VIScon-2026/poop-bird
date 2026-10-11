@@ -155,6 +155,8 @@ export class Renderer {
   readonly photos = new Map<number, Photo>();
   /** "rtx": draw with real photos where we have them (rtx.ts); "classic" (the default): all drawn. */
   graphics: "classic" | "rtx" = "classic";
+  /** How far the player's mouth is open, 0..1: the (classic) bird's beak opens as far. main.ts sets it each frame. */
+  mouthOpen = 0;
   /** The photo bird and fish, with their own animation state. */
   private readonly rtxPlayer = new RtxPlayer();
 
@@ -616,42 +618,116 @@ export class Renderer {
   // --- power lines ------------------------------------------------------------
 
   /**
-   * The practice perch: the bird's nest on top of a street lamp (game.perch).
-   * This is the lamp and the inside of the nest; drawNestFront() covers the
-   * bird's belly once the bird is drawn, so it sits in the nest.
+   * The practice perch: the bird's nest on the flat cap of an old lantern
+   * street lamp (game.perch). This is the lamp and the inside of the nest;
+   * drawNestFront() covers the bird's belly once the bird is drawn, so it sits
+   * in the nest.
    */
   private drawPerch(x: number): void {
     const ctx = this.ctx;
-    const top = PERCH_Y + NEST_DEPTH + 6;
+    // The nest's bowl rests on the cap's flat top.
+    const cap = PERCH_Y + NEST_DEPTH - 2;
+    const glassTop = cap + 18;
+    const glassBottom = glassTop + 44;
+    const neck = glassBottom + 6;
     const foot = GROUND_Y + 16;
+    const iron = "#3d4a5c";
+    const ironLight = "#5a6a80";
     ctx.lineWidth = 3;
     ctx.strokeStyle = OUTLINE;
-    // Arm and the lamp hanging off it.
-    ctx.fillStyle = "#3d4a5c";
+    ctx.lineJoin = "round";
+
+    // A soft glow around the lantern.
+    const glowY = (glassTop + glassBottom) / 2;
+    const glow = ctx.createRadialGradient(x, glowY, 8, x, glowY, 80);
+    glow.addColorStop(0, "rgba(255,236,150,0.45)");
+    glow.addColorStop(1, "rgba(255,236,150,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 80, glowY - 80, 160, 160);
+
+    // Pole: a slim shaft with a collar, flaring into a fluted base.
+    ctx.fillStyle = iron;
+    ctx.fillRect(x - 6, neck, 12, foot - neck);
+    ctx.strokeRect(x - 6, neck, 12, foot - neck);
+    ctx.fillStyle = ironLight;
+    ctx.fillRect(x - 3, neck + 14, 3, foot - neck - 60);
+    ctx.fillStyle = iron;
+    roundRect(ctx, x - 10, neck + 40, 20, 8, 3);
+    ctx.fill();
+    ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x + 4, top + 26);
-    ctx.quadraticCurveTo(x + 40, top + 10, x + 56, top + 30);
-    ctx.lineTo(x + 52, top + 33);
-    ctx.quadraticCurveTo(x + 38, top + 18, x + 4, top + 34);
+    ctx.moveTo(x - 8, foot - 56);
+    ctx.lineTo(x + 8, foot - 56);
+    ctx.quadraticCurveTo(x + 10, foot - 24, x + 18, foot - 10);
+    ctx.lineTo(x - 18, foot - 10);
+    ctx.quadraticCurveTo(x - 10, foot - 24, x - 8, foot - 56);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#fff3a0";
+    roundRect(ctx, x - 22, foot - 12, 44, 14, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    // Neck: tapers from the lantern's floor into the pole.
     ctx.beginPath();
-    ctx.moveTo(x + 42, top + 32);
-    ctx.lineTo(x + 66, top + 32);
-    ctx.lineTo(x + 60, top + 46);
-    ctx.lineTo(x + 48, top + 46);
+    ctx.moveTo(x - 18, glassBottom);
+    ctx.lineTo(x + 18, glassBottom);
+    ctx.lineTo(x + 8, neck + 4);
+    ctx.lineTo(x - 8, neck + 4);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    // Pole and its base.
-    ctx.fillStyle = "#3d4a5c";
-    ctx.fillRect(x - 5, top, 10, foot - top);
-    ctx.strokeRect(x - 5, top, 10, foot - top);
-    roundRect(ctx, x - 11, foot - 18, 22, 20, 4);
+
+    // Glass: four panes, wider at the top, lit from inside.
+    const light = ctx.createLinearGradient(0, glassTop, 0, glassBottom);
+    light.addColorStop(0, "#fffbe0");
+    light.addColorStop(1, "#ffd45c");
+    ctx.fillStyle = light;
+    ctx.beginPath();
+    ctx.moveTo(x - 24, glassTop);
+    ctx.lineTo(x + 24, glassTop);
+    ctx.lineTo(x + 16, glassBottom);
+    ctx.lineTo(x - 16, glassBottom);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 8, glassTop);
+    ctx.lineTo(x - 5, glassBottom);
+    ctx.moveTo(x + 8, glassTop);
+    ctx.lineTo(x + 5, glassBottom);
+    ctx.stroke();
+    // The bulb.
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.ellipse(x, glassBottom - 14, 4, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+
+    // Cap: a hood sloping out from the glass to a wide, flat brim.
+    ctx.fillStyle = iron;
+    ctx.beginPath();
+    ctx.moveTo(x - 26, glassTop + 2);
+    ctx.lineTo(x - 36, cap + 8);
+    ctx.lineTo(x + 36, cap + 8);
+    ctx.lineTo(x + 26, glassTop + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    roundRect(ctx, x - 44, cap, 88, 9, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = ironLight;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 38, cap + 3);
+    ctx.lineTo(x + 38, cap + 3);
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineJoin = "miter";
+
     // The inside of the nest, behind the bird.
     ctx.fillStyle = "#5c3b1e";
     ctx.beginPath();
@@ -1317,16 +1393,51 @@ export class Renderer {
     ctx.stroke();
     ctx.restore();
 
-    // Beak
-    const clench = c > 0.3 ? 1 : 0;
+    // Beak: open as far as the player's mouth is, else clenched shut while straining.
+    const open = dead || stunned ? 0 : this.mouthOpen;
+    const clench = c > 0.3 && open < 0.15 ? 1 : 0;
     ctx.fillStyle = "#f78c3b";
-    ctx.beginPath();
-    ctx.moveTo(r * 0.8, -r * 0.12);
-    ctx.lineTo(r * (1.45 - clench * 0.1), r * 0.08);
-    ctx.lineTo(r * 0.8, r * 0.3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    if (open > 0.02) {
+      // Upper and lower halves hinged at the beak's base, with the mouth showing between them.
+      const hx = r * 0.92;
+      const hy = r * 0.09;
+      const len = r * 0.58;
+      const up = -open * 0.4;
+      const down = open * 0.8;
+      ctx.fillStyle = "#7a1f2b";
+      ctx.beginPath();
+      ctx.moveTo(hx - r * 0.1, hy);
+      ctx.lineTo(hx + Math.cos(up) * len * 0.6, hy + Math.sin(up) * len * 0.6);
+      ctx.lineTo(hx + Math.cos(down) * len * 0.6, hy + Math.sin(down) * len * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#f78c3b";
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = "round";
+      for (const [angle, side] of [[up, -1], [down, 1]]) {
+        ctx.save();
+        ctx.translate(hx, hy);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.15, side * r * 0.3);
+        ctx.lineTo(len, 0);
+        ctx.lineTo(-r * 0.15, -side * r * 0.02);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.lineWidth = 3;
+      ctx.lineJoin = "miter";
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(r * 0.8, -r * 0.12);
+      ctx.lineTo(r * (1.45 - clench * 0.1), r * 0.08);
+      ctx.lineTo(r * 0.8, r * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
     if (clench) {
       // Gritted beak line
       ctx.beginPath();
@@ -1771,10 +1882,6 @@ export class Renderer {
       const b = w.bride;
       outlinedText(ctx, "!", b.x, b.y - b.h - 34 + Math.sin(game.time * 30) * 2, 26, "#ff595e");
     }
-    if (w.tutorial && !w.outcome && playing && w.phase !== "kiss") {
-      const bob = Math.sin(game.time * 6) * 4;
-      outlinedText(ctx, "\u{1F48B} Drop it on the KISS!", x, y - 52 + bob, 20, "#ffd60a");
-    }
   }
 
   /**
@@ -1815,7 +1922,9 @@ export class Renderer {
     const savedBird = { ...b };
     const savedCharge = game.charge;
     const savedZap = game.zapFlash;
+    const savedMouth = this.mouthOpen;
     this.ctx = octx;
+    this.mouthOpen = 0;
     try {
       octx.setTransform(s, 0, 0, s, W / 2 - focusX * s, groundY - feet * s);
       octx.fillStyle = "#d9d4c7";
@@ -1840,6 +1949,7 @@ export class Renderer {
       Object.assign(b, savedBird);
       game.charge = savedCharge;
       game.zapFlash = savedZap;
+      this.mouthOpen = savedMouth;
     }
     octx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -2932,16 +3042,12 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Windup: a "!" over the shark, and a "SPIKE UP!" nudge by the fish while it isn't spiked. */
+  /** Windup: a "!" over the shark. */
   private drawSharkCue(s: Shark, game: Game): void {
     if (game.phase !== "playing") return;
     const ctx = this.ctx;
     if (s.state === "windup") {
       outlinedText(ctx, "!", s.x, s.y - 72 + Math.sin(game.time * 30) * 2, 34, "#ff595e");
-    }
-    if ((s.state === "windup" || s.state === "lunge") && !game.spike.spiked) {
-      const b = game.bird;
-      outlinedText(ctx, "SPIKE UP!", b.x, b.y - game.bodyRadius - 26, 20 + Math.sin(game.time * 16) * 3, "#ffd60a");
     }
   }
 

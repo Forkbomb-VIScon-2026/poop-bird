@@ -17,3 +17,5 @@ Release sounds are selected by `main.ts` using the configurable `poopSoundMiddle
 `shark_bite.mp3` is a recorded chomp (trimmed tight, since the room noise under it is voices). The yelp when it bites the spines (`shark_yelp`) and the lunge whoosh (`shark_lunge`) are still synthesized placeholders (`tmp_shark_*.mp3`); add the real `<name>.mp3` to replace them.
 
 The `power_line.mp3` recording plays as a continuous loop only when a power line is on-screen during active city gameplay. Its volume scales with the bird’s distance to the nearest wire; `powerLineAudioRange` controls the fade-in distance. The existing `zap.mp3` plays on wire collision.
+
+`button_click.wav` is the click every button makes when pressed (with the mouse, a tap or its key): a toggle-switch click, two tiny bursts of filtered noise. It's synthesized offline by `scripts/make-button-click.mjs`, so edit and re-run that to change it. It plays at a slightly random pitch each time.

@@ -283,6 +283,12 @@ export class Sound {
     this.play(`chute_open_${variant}` as SoundName, volume, delay);
   }
 
+  /** A button press: the switch click, a touch higher or lower each time so repeats don't sound canned. */
+  buttonClick(): void {
+    const played = this.play("button_click", 0.85);
+    if (played) played.source.playbackRate.value = 0.96 + Math.random() * 0.08;
+  }
+
   basketLanded(): void {
     const volume = 1;
     const delay = 0;
