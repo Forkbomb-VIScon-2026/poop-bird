@@ -2136,8 +2136,8 @@ window.addEventListener("keydown", (e) => {
       // Debug shortcut: a fisherman rows in (ocean only).
       if (debug?.visible && state === "playing") game.spawnAnglerNow();
       break;
-    case "s":
-      // Debug shortcut: a shark swims in (ocean only).
+    case "j":
+      // Debug shortcut: a shark swims in (ocean only). J for Jaws: S opens the settings.
       if (debug?.visible && state === "playing") game.spawnSharkNow();
       break;
     case "a":
