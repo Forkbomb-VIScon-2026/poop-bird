@@ -90,6 +90,7 @@ canvas#game {
   color: var(--ink);
   box-shadow: 0 3px 0 var(--ink);
   cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s, background-color 0.12s;
 }
 
 .hud-btn:active {
@@ -698,7 +699,47 @@ svg.face {
   color: var(--ink);
   cursor: pointer;
   box-shadow: 0 4px 0 var(--ink);
-  transition: transform 0.05s;
+  transition: transform 0.08s, box-shadow 0.08s, background-color 0.12s;
+}
+
+/* Hover: the button lifts a little and lights up. Mouse only, so taps don't leave it stuck up. */
+@media (hover: hover) {
+  .btn:not(:disabled):not(.ghost):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 0 var(--ink);
+    background: #fff3d1;
+  }
+
+  .btn.primary:not(:disabled):hover {
+    background: #ffe08f;
+  }
+
+  .btn.ghost:not(:disabled):hover {
+    text-decoration-thickness: 3px;
+    color: var(--accent);
+  }
+
+  .btn.ghost.light:not(:disabled):hover {
+    color: var(--gold);
+  }
+
+  .hud-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 0 var(--ink);
+    background: #fff;
+  }
+
+  /* Pressing still pushes it in. */
+  .btn:not(:disabled):not(.ghost):hover:active,
+  .btn:not(:disabled):not(.ghost).key-pressed {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--ink);
+  }
+
+  .hud-btn:hover:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--ink);
+  }
 }
 
 .btn:active {
