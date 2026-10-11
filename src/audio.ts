@@ -29,39 +29,35 @@ export class Sound {
   private lastCurse: SoundName | null = null;
   muted = false;
 
-  /** A real asset takes priority; otherwise use its named bell placeholder. */
+  /** Prefer Opus, then MP3/WAV, with placeholder fallback. */
   private async load(name: SoundName): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return;
 
     const base = `${import.meta.env.BASE_URL}assets/audio/`;
+    const extensions = ["opus", "mp3", "wav"] as const;
 
     const fetchAudio = async (path: string): Promise<AudioBuffer | null> => {
       try {
         const response = await fetch(base + path);
-        if (!response.ok || !response.headers.get("content-type")?.includes("audio")) {
-          return null;
-        }
+        if (!response.ok) return null;
         return await ctx.decodeAudioData(await response.arrayBuffer());
       } catch {
         return null;
       }
     };
 
-    const real =
-      await fetchAudio(`${name}.mp3`) ??
-      await fetchAudio(`${name}.wav`);
-
-    if (real) {
-      this.buffers.set(name, real);
-      return;
+    for (const prefix of [name, `tmp_${name}`]) {
+      for (const extension of extensions) {
+        const buffer = await fetchAudio(`${prefix}.${extension}`);
+        if (buffer) {
+          this.buffers.set(name, buffer);
+          return;
+        }
+      }
     }
 
-    console.warn(`[audio] missing ${name}.mp3/.wav; using tmp_${name}.mp3`);
-
-    const fallback = await fetchAudio(`tmp_${name}.mp3`);
-    if (fallback) this.buffers.set(name, fallback);
-    else console.warn(`[audio] missing placeholder tmp_${name}.mp3`);
+    console.warn(`[audio] missing or unsupported audio for ${name} (opus/mp3/wav)`);
   }
 
   /** Call after a user gesture to satisfy browser autoplay restrictions. */
@@ -227,9 +223,8 @@ export class Sound {
     );
   }
 
-  splash(): void {
+  splash(delay: number = 0): void {
     const volume = 1;
-    const delay = 0;
     this.play("splash", volume, delay);
   }
 
