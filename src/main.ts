@@ -781,8 +781,8 @@ async function runSwimLesson(): Promise<void> {
  * own first (Game.guideY), under a heads-up banner. false = abandoned.
  */
 async function swimToMiddle(token: number): Promise<boolean> {
-  setPuffOverlay("GET READY! 🐡", "Here come the rocks and jellyfish.", null);
-  show($("puff-calib-bar"), false);
+  // A heads-up, not a step: no progress bar.
+  coachSay(puffCoach, { title: "GET READY! 🐡", hint: "Here come the rocks and jellyfish.", face: null, bar: false });
   game.guideY = OCEAN_MID_Y;
   try {
     // At least a moment to read the banner; at most long enough to cross the whole sea.
@@ -793,7 +793,6 @@ async function swimToMiddle(token: number): Promise<boolean> {
     }
   } finally {
     game.guideY = null;
-    show($("puff-calib-bar"), true);
   }
   return true;
 }
