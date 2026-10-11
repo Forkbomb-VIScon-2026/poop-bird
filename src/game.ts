@@ -43,6 +43,7 @@
 // spiked snags it on the spines: he hauls on it until it parts, and with the
 // pull suddenly gone he topples backwards into his boat.
 
+import type { GameCommand } from "./runtime/commands";
 import type { KernelObserver } from "./runtime/kernel-audit";
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
@@ -930,6 +931,39 @@ export class Game {
     this.random = random;
     this.resize(width);
     this.reset();
+  }
+
+  /** Browser orchestration changes the world through explicit commands. */
+  command(command: GameCommand): void {
+    switch (command.type) {
+      case "reset": this.reset(); break;
+      case "resize": this.resize(command.width); break;
+      case "demo": this.startDemo(); break;
+      case "perch": this.perch(); break;
+      case "takeOff":
+        this.leavePerch();
+        this.bird.vy = Math.min(this.bird.vy, -config.pushMax);
+        break;
+      case "dive": this.diveNow(); break;
+      case "lesson":
+        if (command.stage === "city") this.calmCity = command.enabled;
+        else this.calmWater = command.enabled;
+        break;
+      case "guideFish": this.guideY = command.y; break;
+      case "spawn":
+        switch (command.kind) {
+          case "shore": this.spawnShoreNow(); break;
+          case "powerLine": this.spawnPowerLineNow(); break;
+          case "paparazzo": this.spawnPaparazzoNow(); break;
+          case "kid": this.spawnKidNow(); break;
+          case "wedding": this.spawnWeddingNow(); break;
+          case "balloon": this.spawnBalloonNow(); break;
+          case "angler": this.spawnAnglerNow(); break;
+          case "shark": this.spawnSharkNow(); break;
+          case "anchor": this.spawnAnchorDropNow(); break;
+          case "car": this.spawnCarNow(); break;
+        }
+    }
   }
 
   resize(width: number): void {
