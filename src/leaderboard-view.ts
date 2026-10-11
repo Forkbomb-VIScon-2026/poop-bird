@@ -75,7 +75,7 @@ export async function showBoards(container: HTMLElement, opts: { limit?: number;
   const reload = () => void showBoards(container, opts);
   container.replaceChildren(
     board("🏆 Top scores", "scores", boards.scores, opts.highlight ?? null, reload),
-    board("😣 Most strained faces", "faces", boards.faces, opts.highlight ?? null, reload),
+    board("😣 Most constipated faces", "faces", boards.faces, opts.highlight ?? null, reload),
   );
 }
 
@@ -98,7 +98,7 @@ function board(
     if (e.id === highlight) li.className = "me";
     li.append(span("rank", `${i + 1}.`), thumb(e), span("name", e.name));
     const value = kind === "faces" ? span("value", `${strainPercent(e.strain ?? 0)}`) : span("value", String(e.score));
-    value.title = kind === "faces" ? "Strainedness (0–100)" : `${e.stats.targets} targets · ${e.stats.distance} m`;
+    value.title = kind === "faces" ? "Constipaticity (0–100)" : `${e.stats.targets} targets · ${e.stats.distance} m`;
     li.append(value);
     const key = keys[e.id];
     if (key) {

@@ -366,8 +366,8 @@ The game-over screen and the start screen's 🏆 (**L**) show the online
 leaderboard: two boards of the runs players chose to submit.
 
 - **🏆 Top scores**, by score.
-- **😣 Most strained faces**, by how strained the run's finest-strain face
-  looks, 0–100. Only runs submitted with their face are on it.
+- **😣 Most constipated faces**, by the constipaticity of the run's finest-strain face
+  (0–100). Only runs submitted with their face are on it.
 
 Only runs played with the face count. After a keyboard or touch run the
 game-over screen says so instead of offering to submit, and the collector
@@ -381,7 +381,7 @@ player at the same machine doesn't inherit the choice. A run submitted from
 a browser has a ✕ there to take it off again (the delete key is kept in
 `localStorage`).
 
-**Strainedness** (`strain.ts` `strainedness`) is the weighted mean of the raw
+**Constipaticity** (`strain.ts` `strainedness`) is the weighted mean of the raw
 `browDown`, `eyeSquint` and ½ × `eyeBlink` blendshapes. These move on a strain
 face for nearly everyone in the face dataset, and the mouth doesn't. It
 ignores the calibration: the calibrated strain tops out at 1 for anyone who
