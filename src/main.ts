@@ -186,6 +186,10 @@ let currentSnapshotUrl: string | null = null;
 let lastRun: { score: number; stats: RunStats; face: { url: string; strain: number } | null } | null = null;
 /** Smoothed `strainedness` of the face (the finest-strain snapshot's and the leaderboard's measure). */
 let faceStrain = 0;
+/** The player pressed "Skip tutorial": the lesson running ends (lessons reset it when they start). */
+let tutorialSkipped = false;
+/** The lesson that started last, and the face lock it started under: what "Skip tutorial" skips. */
+let activeLesson: { tutorial: Tutorial; lock: number } | null = null;
 /** Tutorials shown without a face to remember them with (keyboard mode, or no face recognition here); Forget all clears them. */
 const seenWithoutFace = new Set<Tutorial>();
 
@@ -1001,6 +1005,8 @@ interface CoachLine {
   done?: boolean;
   /** Where the player is in the flight lesson: [current step, steps]. */
   dots?: readonly [number, number] | null;
+  /** A lesson's line: the "Skip tutorial" button shows. */
+  skip?: boolean;
 }
 
 /** Takes the coach over (hiding whatever an older owner showed) and returns the claim for coachSay. */
@@ -1054,6 +1060,7 @@ function coachSay(owner: number, line: CoachLine): void {
     );
   }
   show(dots, !!line.dots);
+  show($("coach-skip"), !!line.skip);
   show(el, true);
 }
 
@@ -1114,14 +1121,16 @@ async function runSwimLesson(): Promise<void> {
   const lock = faceId.lock;
   const owner = claimCoach();
   game.calmWater = true;
+  tutorialSkipped = false;
+  activeLesson = { tutorial: "ocean", lock };
   const face = mode === "face";
-  const say = (line: CoachLine): void => coachSay(owner, { ...line, face: face ? line.face : null });
+  const say = (line: CoachLine): void => coachSay(owner, { ...line, face: face ? line.face : null, skip: true });
   /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. */
   const until = async (done: () => boolean, ms: number): Promise<boolean | null> => {
     let left = ms;
     let last = performance.now();
     while (!done()) {
-      if (token !== flow || state === "gameover") return null;
+      if (token !== flow || state === "gameover" || tutorialSkipped) return null;
       const now = performance.now();
       if (state === "playing") left -= now - last;
       last = now;
@@ -1354,24 +1363,33 @@ async function runCityLesson(): Promise<void> {
   const lock = faceId.lock;
   const owner = claimCoach();
   game.calmCity = true;
+  tutorialSkipped = false;
+  activeLesson = { tutorial: "city", lock };
   const face = mode === "face";
   let line: CoachLine = { title: "" };
   const say = (title: string, hint: string, look: CoachFace | null, done = false): void => {
-    line = { title, hint, face: face ? look : null, done };
+    line = { title, hint, face: face ? look : null, done, skip: true };
     coachSay(owner, line);
   };
-  /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. Shows the too-long hint after an accident. */
-  const until = async (done: () => boolean, ms: number): Promise<boolean | null> => {
+  /**
+   * Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. Shows the too-long hint after an accident.
+   * Skipping the tutorial ends a `skippable` wait (as done) and hides the coach.
+   */
+  const until = async (done: () => boolean, ms: number, skippable = true): Promise<boolean | null> => {
     let left = ms;
     let last = performance.now();
     while (!done()) {
       if (token !== flow || state === "gameover") return null;
+      if (tutorialSkipped) {
+        releaseCoach(owner);
+        if (skippable) return true;
+      }
       const now = performance.now();
       if (state === "playing") left -= now - last;
       last = now;
       if (left <= 0) return false;
       const recent = now - lessonCount.lastAccident < 3000;
-      coachSay(owner, recent ? { ...line, hint: tooLongHint() } : line);
+      if (!tutorialSkipped) coachSay(owner, recent ? { ...line, hint: tooLongHint() } : line);
       await wait(50);
     }
     return true;
@@ -1385,7 +1403,7 @@ async function runCityLesson(): Promise<void> {
   const poops = lessonCount.poops;
   const flew = await until(() => lessonCount.poops - poops >= 3, 20_000);
   if (flew === null) return abandon();
-  if (flew) {
+  if (flew && !tutorialSkipped) {
     say("Nice flying!", "", null, true);
     if ((await until(() => false, 1200)) === null) return abandon();
   }
@@ -1395,7 +1413,8 @@ async function runCityLesson(): Promise<void> {
   // The street stops bouncing once the bird is clear of it (or after a while), so the handoff isn't a crash.
   // The last line stays up until then; the buildings that follow are for the player to discover.
   const clear = (): boolean => game.bird.y + BIRD_RADIUS < GROUND_Y - 120;
-  if ((await until(clear, 8000)) === null) return abandon();
+  // Not skippable: a skipped lesson still waits (without the coach) for the bird to be clear of the street.
+  if ((await until(clear, 8000, false)) === null) return abandon();
   game.calmCity = false;
   releaseCoach(owner);
 }
@@ -2210,6 +2229,14 @@ on("btn-again", () => {
 });
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
+on("coach-skip", () => {
+  // Not while paused: Enter there mustn't skip the lesson underneath.
+  if (state !== "playing") return;
+  if (activeLesson) markTutorialSeen(activeLesson.tutorial, activeLesson.lock);
+  tutorialSkipped = true;
+  // Space puffs and flaps: it mustn't press this button again.
+  $("coach-skip").blur();
+});
 on("btn-download", () => {
   if (!currentSnapshotUrl) return;
   const a = document.createElement("a");

@@ -241,6 +241,12 @@ canvas#game {
   display: none;
 }
 
+/* The coach lets clicks through to the game, except on its skip button. */
+.coach .coach-skip {
+  pointer-events: auto;
+  margin: 10px 0 0;
+}
+
 /* The ocean tips: more to read, so bigger. */
 .coach.tips .hint {
   font-size: clamp(18px, 2.6vw, 26px);
