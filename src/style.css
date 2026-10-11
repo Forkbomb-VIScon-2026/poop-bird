@@ -1898,10 +1898,6 @@ body.debug-open #cam {
   text-align: left;
 }
 
-.settings-card h2 {
-  text-align: center;
-}
-
 .settings-group {
   border: 3px solid var(--ink);
   border-radius: 14px;
@@ -1931,38 +1927,69 @@ body.debug-open #cam {
   opacity: 0.75;
 }
 
-/* An on/off switch; green when RTX is on. */
+/* The gear icon (an SVG, so it looks the same everywhere, unlike the emoji). */
+.gear-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin: auto;
+  color: var(--ink);
+}
+
+.settings-card h2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.settings-card h2 .gear-icon {
+  width: 1.1em;
+  height: 1.1em;
+  margin: 0;
+}
+
+/* An on/off switch in the buttons' style: ink outline, drop shadow, green when on. */
 .switch {
   appearance: none;
   flex: none;
-  width: 54px;
-  height: 30px;
+  box-sizing: border-box;
+  width: 58px;
+  height: 32px;
+  margin: 0 0 3px;
   border: 3px solid var(--ink);
   border-radius: 999px;
   background: #d9d4c7;
+  box-shadow: 0 3px 0 var(--ink);
   position: relative;
   cursor: pointer;
   transition: background 0.15s;
 }
 
+/* The knob fills the track's height (26px inside the border), so it sits centred. */
 .switch::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #fff;
-  border: 2px solid var(--ink);
+  border: 3px solid var(--ink);
   transition: transform 0.15s;
 }
 
 .switch:checked {
-  background: #76b900;
-  box-shadow: 0 0 10px rgba(118, 185, 0, 0.7);
+  background: var(--green);
 }
 
 .switch:checked::after {
-  transform: translateX(24px);
+  transform: translateX(26px);
+}
+
+.switch:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
 }
