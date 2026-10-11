@@ -45,6 +45,10 @@ and failures. This checks the Rust kernels against the running TypeScript engine
 it does not make Rust the authoritative engine. This hook is excluded from
 production builds.
 
+`await poopBird.createRustCity(width, seed)` loads the migrated attract/practice
+world in debug builds. It advances whole tick batches and returns renderable
+frames; see city-world.md for the boundary, supported scope and measured costs.
+
 ```sh
 npm run bench:simulation
 node scripts/run-ts.mjs scripts/migration/reference.ts

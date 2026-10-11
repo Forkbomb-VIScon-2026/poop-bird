@@ -31,8 +31,8 @@ the optional photo graphics, settings, shark sample and tutorial/test fixes.
 | 0 | Audit, branch, baseline fixtures and progress record | Complete |
 | 1 | Rust/WASM toolchain, crates, build/CI/Docker integration | Complete; local checks and remote check/docker jobs pass |
 | 2 | Charge, swimming, collision and RNG kernels with differential tests | Complete |
-| 3 | Commands, immutable render frames, batched bridge and audio registry | Partial: commands/frames/audio/shadow complete; world/frame ABI pending |
-| 4 | Basic city, effects, scoring, demo, perch and lessons | Pending |
+| 3 | Commands, immutable render frames, batched bridge and audio registry | Scoped city world ABI verified; full encounter/frame ABI pending |
+| 4 | Basic city, effects, scoring, demo, perch and lessons | Partial: demo/perch/idle, ordinary targets, scoring and effects verified; runs/buildings/lessons pending |
 | 5 | Power lines, kids, weddings, balloons and photo events | Pending |
 | 6 | Ocean transitions, fish, hazards, anglers and sharks | Pending |
 | 7 | Full browser lifecycle and input/audio integration; Rust default | Pending |
@@ -103,6 +103,30 @@ No placeholder or disconnected module counts as a completed milestone.
 
 ## Next implementation work
 
+2026-10-11 continuation: implemented the scoped Rust city world and safe,
+coarse commands/frame protocol (see city-world.md). Native world modules own
+demo/practice/idle simulation, targets/rage, projectiles, all effects and events.
+`poopBird.createRustCity()` loads the actual world in debug builds; browser
+checks render its frames and route practice audio events. Production still uses
+the original TypeScript engine and excludes the new debug source chunk.
+
+Complete scoped-world parity passes for three seeds and 27,300 batches, including
+6,156,276 numeric comparisons (max absolute error 3.9436e-13). Chromium verifies
+twelve whole classic/photo frames pixel for pixel against the reference. Native
+tests cover atomic input rejection, stable IDs, tick partitioning, effect bounds
+and retained storage. All prior kernel/audio/browser checks continue passing.
+
+Synthetic timing found a real boundary cost: decoded one-tick Rust batches cost
+about 0.0136 ms per amortized tick versus 0.00148 ms in TypeScript. Twelve-tick
+decoded batches are closer but still slower; raw Rust frames are faster there.
+These are Node measurements, not desktop browser frame times. Keep the Rust
+world opt-in and optimize presentation allocation before an authoritative switch.
+
+Next: ordinary city run/lesson/building/collision lifecycle with seeded full-state
+references, then advanced city/ocean encounters. Extend the versioned world/frame
+ABI deliberately. Preserve the already verified scoped worlds, safe frame copies,
+ordered events and live tuning while extending them.
+
 Bird motion is now a separate, allocation-free Rust state component: gravity,
 grace, charging fall cap, top clamp, spring/timers and rotation. Protocol 2 adds
 batched flight comparisons. 1,024 frozen motion cases include negative half-turn
@@ -122,15 +146,18 @@ frozen state in both styles and decodes 49 sound IDs. Twelve photo variants
 (six per style) are pixel-identical to `79a9cf0` in the same Chromium version.
 The new named shark sample replaces only the upstream placeholder asset.
 
-The game is still authoritative TypeScript. No complete Rust world, entity/frame
+The game is still authoritative TypeScript. No complete run-world or full-encounter
 ABI, advanced encounter migration or default engine switch is claimed. Implement
 the Rust city world against seeded snapshots next, then advanced city and ocean
 encounters, before connecting authoritative frame output and retiring legacy code.
 
 
 Latest local checks: ESLint and both TypeScript checks passed; 211 TypeScript
-unit tests in 14 files, 5 native Rust tests, 3,091 frozen WASM cases and 36,000
-live batched comparisons passed; production and debug builds passed. Chromium
+unit tests in 14 files, 8 native Rust tests, 3,091 frozen WASM cases, 36,000
+live kernel comparisons and 27,300 complete scoped-world batches passed;
+production and debug builds passed. Chromium
 smoke passed in classic/RTX styles with 57 photo assets and 49 sound IDs decoded.
 Remote CI passed check and Docker jobs at `642ef7b`; the latest bird component
-is also verified locally. No performance gain or complete migration is claimed.
+is also verified locally. CI run 38104668863 passed at `1617d55`. The new city
+checkpoint is verified locally and awaits its own remote CI. No whole-game
+performance gain or complete migration is claimed.
