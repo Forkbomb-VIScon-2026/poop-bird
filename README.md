@@ -783,6 +783,11 @@ when a change is ready to merge. Older debug-recorder clips
 
 ## The bird's voice
 
+> **Status: shelved (2026-10-11).** Built and working on the `voice` branch,
+> but we decided not to pursue it further and it was never merged or
+> deployed. To revive it: merge `main` in, put a Hugging Face token on the VM
+> (see Setup below), and open a PR.
+
 Before the first run (once the camera is on, or after picking the keyboard)
 the player can give the bird their voice: they read a short text out loud
 (about 8 s), and during the run the bird says things in their voice, in a
