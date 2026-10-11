@@ -249,7 +249,17 @@ tracker.onFrame((frame) => {
   }
   calibFrames?.push(frame.time);
   if (calibSamples && frame.features) calibSamples.push({ t: frame.time, f: frame.features });
-  if (frame.features) readRelaxed(frame.features);
+  if (frame.features) {
+    readRelaxed(frame.features);
+    if (mode === "face" && !calibration && state === "ready") {
+      startupNeutral.push(frame.features);
+      if (startupNeutral.length >= MIN_RELAXED_SAMPLES) {
+        calibration = defaultCalibration(robustFeatureStats(startupNeutral), config.defaultStrainScale);
+        calibrationIsDefault = true;
+        startupNeutral.length = 0;
+      }
+    }
+  }
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config, puffCalibration ?? calibration);
   if (debug) {
@@ -275,9 +285,13 @@ tracker.onFrame((frame) => {
 function onNewFace(): void {
   strain = initialStrainState();
   puffSignal = initialPuffState();
+  startupNeutral.length = 0;
   newFaceLock();
   // The relaxed read and any hold so far were someone else's: start over (a known face skips it).
-  if (state === "calibrating") void runCalibration();
+  if (state === "calibrating") {
+    if (waterCalibrationActive) void runWaterPuffCalibration();
+    else void runCalibration();
+  }
   // On the perch, recognition decides (recognizeFace): a new face calibrates first.
 }
 
@@ -406,7 +420,7 @@ async function recognizeFace(): Promise<void> {
   rememberFace();
   // Someone not calibrated here sat down at the perch: calibrate them first. (Mid-run
   // the run goes on; the next one starts with the calibration, see startFaceMode.)
-  if (state === "ready" && mode === "face" && !faceCalibrated()) void runCalibration(false);
+  // New faces can begin playing; their puff calibration is introduced at the water.
 }
 
 /**
@@ -571,8 +585,8 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   // A calibrated face goes straight to the perch; anyone else (or still being recognized)
   // gets the calibration screen, which lets a face that turns out to be known through.
   // Without face recognition a saved calibration is used, whoever plays.
-  if (!forceCalibrate && (faceCalibrated() || (!faceIdWorks() && calibration && !calibrationIsDefault))) startReady();
-  else await runCalibration(forceCalibrate);
+  if (forceCalibrate) await runCalibration(true);
+  else startReady();
 }
 
 function startKeyboardMode(): void {
@@ -619,6 +633,8 @@ const calib = {
 
 /** Relaxed-face samples kept (the newest): ~10 s of a 30 fps tracker. */
 const RELAXED_KEEP = 300;
+/** Passive baseline for first-flight strain controls; no onboarding screen. */
+const startupNeutral: FeatureVector[] = [];
 /** Fewest relaxed-face samples a calibration needs. */
 const MIN_RELAXED_SAMPLES = 20;
 /** The welcome lasts at least this long with a face in view (the relaxed read). */
@@ -663,7 +679,7 @@ async function runCalibration(forced = calib.forced): Promise<void> {
   calib.relaxed = [];
   rejectedCalibration = null;
   strain = initialStrainState();
-  // Both get redone: nothing of the last player's may carry over (Play anyway on the puff means none).
+  // Explicit recalibration resets the previous puff fit.
   puffCalibration = null;
   puffSignal = initialPuffState();
   if (!(await welcome(token))) return;
@@ -1197,10 +1213,12 @@ function onSubmerged(): void {
 
 /** Only one automatic puff lesson per run; retries remain inside calibratePuff. */
 let waterPuffAttempted = false;
+let waterCalibrationActive = false;
 
 /** Pause the actual underwater game, calibrate, then resume the same fish. */
 async function runWaterPuffCalibration(): Promise<void> {
   waterPuffAttempted = true;
+  waterCalibrationActive = true;
   const token = ++flow;
   game.calmWater = true;
   state = "calibrating";
@@ -1225,6 +1243,7 @@ async function runWaterPuffCalibration(): Promise<void> {
   if (token !== flow) return;
   const result = await calibratePuff(token);
   if (token !== flow || result === null) return;
+  waterCalibrationActive = false;
   puffSignal = initialPuffState();
   state = "playing";
   showScreen(null);
@@ -1315,6 +1334,7 @@ function startReady(ocean = false): void {
   heldPointers.clear();
   keyPuff = 0;
   waterPuffAttempted = false;
+  waterCalibrationActive = false;
   hideToast();
   show(hud, true);
   if (ocean) {
