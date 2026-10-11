@@ -749,6 +749,46 @@ export class RtxPlayer {
     const sx = 1 - this.wobble;
     const sy = 1 + this.wobble;
     const rot = b.rot + (game.phase === "playing" ? Math.sin(game.time * 7) * 0.05 : 0);
+
+    // Spines when puffed / spiked, drawn behind the fish photo.
+    const prickle = r * 0.12 * Math.min(1, Math.max(0, (puff - 0.5) * 2.5));
+    const spineLen = r * 0.42 * game.fish.spikes;
+    if (prickle + spineLen > 1 && !game.stunned) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(rot);
+      ctx.scale(sx, sy);
+      ctx.lineJoin = "round";
+      ctx.fillStyle = "#ece6cf";
+      ctx.strokeStyle = PHOTO_INK;
+      ctx.lineWidth = 1.8;
+      const k = (r * s.scale) / s.size;
+      const rx = (s.img.naturalWidth * 0.46) * k;
+      const ry = (s.img.naturalHeight * 0.46) * k;
+      const n = 22;
+      const half = 1.4 + r * 0.05;
+      for (let i = 0; i < n; i++) {
+        const a = -2.2 + (i / (n - 1)) * 4.4;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        const x = ca * rx * 0.92;
+        const y = sa * ry * 0.92;
+        const nl = Math.hypot(ca * ry, sa * rx) || 1;
+        const nx = (ca * ry) / nl;
+        const ny = (sa * rx) / nl;
+        const len = spineLen * (sa < 0 ? 0.8 : 1) + (sa > 0.25 ? prickle : 0);
+        if (len < 1) continue;
+        ctx.beginPath();
+        ctx.moveTo(x - ny * half, y + nx * half);
+        ctx.lineTo(x + nx * (len + r * 0.12), y + ny * (len + r * 0.12));
+        ctx.lineTo(x + ny * half, y - nx * half);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     drawSpriteOn(ctx, s, b.x, b.y, rot, r, sx, sy);
     if (s.eye) {
       const e = spritePoint(s, b.x, b.y, rot, r, sx, sy, s.eye.x, s.eye.y);
