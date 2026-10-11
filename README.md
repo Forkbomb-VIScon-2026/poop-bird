@@ -366,6 +366,17 @@ city by city (the debug panel's "Progression" group).
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
 
+### Music
+
+Each stage has its own looping track: "Clumsy Pigeon March" in the city
+(`music_city.opus`), "Bubble Oom-Pah" under water (`music_ocean.opus`), both in
+`public/assets/audio/`. They crossfade at the waterfront, when the bird turns
+into the fish and back. The music plays from the start screen through a run,
+quieter while paused (`musicPausedVolume`), not while calibrating or at game
+over, and it fades out while the shark's theme plays. **Settings → Sound →
+Music** switches it off for good (saved in localStorage); the mute button
+silences it with everything else. `musicVolume` sets its level.
+
 ## Leaderboard
 
 The game-over screen and the start screen's 🏆 (**L**) show the online
@@ -873,7 +884,7 @@ src/
   known-faces.ts  the faces this tab calibrated: matching, storage format (pure)  known-faces.test.ts
   game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
-  audio.ts      WebAudio synth sounds
+  audio.ts      sound effects (WebAudio samples) and stage music
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, your leaderboard runs
