@@ -324,6 +324,8 @@ function resetFaceId(): void {
   faceId.puff = null;
   wantFaceCrop = false;
   faceCrop = null;
+  // A failed fit was the previous face's: "Play anyway" mustn't hand it to this one.
+  rejectedCalibration = null;
 }
 
 /** The tracker locked onto a face that may be someone else: recognize it. */
@@ -385,6 +387,11 @@ async function recognizeFace(): Promise<void> {
   } else {
     faceId.status = "new";
     faceId.descriptors = samples;
+    // Someone new took over (mid-run, say): the puff calibration is someone else's. Pursed lips until they calibrate.
+    if (!faceId.puff && puffCalibration) {
+      puffCalibration = null;
+      puffSignal = initialPuffState();
+    }
   }
   rememberFace();
   // Someone not calibrated here sat down at the perch: calibrate them first. (Mid-run
@@ -654,6 +661,7 @@ async function runCalibration(forced = calib.forced): Promise<void> {
   show(hud, false);
   show(cam, true);
   calib.relaxed = [];
+  rejectedCalibration = null;
   strain = initialStrainState();
   // Both get redone: nothing of the last player's may carry over (Play anyway on the puff means none).
   puffCalibration = null;
@@ -766,6 +774,12 @@ async function calibratePuff(token: number): Promise<boolean | null> {
       puffCalibration = null;
       storageRemove(PUFF_CALIBRATION_KEY);
       puffSignal = initialPuffState();
+      // Also for the face, so recognition doesn't bring back the one they just skipped.
+      faceId.puff = null;
+      if (faceId.known) {
+        faceId.known = { ...faceId.known, puff: null };
+        rememberFace();
+      }
       return false;
     }
     const held = await holdFace(token, "puff");
