@@ -14,6 +14,6 @@ Release sounds are selected by `main.ts` using the configurable `poopSoundMiddle
 
 `shark_theme.mp3` is the shark's approach music: a 26 s excerpt of John Williams' main title from *Jaws* (1975), from the second "do-doop" (4.4 s into the track) on, normalized and faded out. It starts `sharkThemeOffset` s into the file, `sharkThemeAttack` s before the shark lunges, follows the game's clock (it re-syncs after a pause) and fades out once the shark is gone, or at once when the fish spikes it. Without it, `shark_note_low` / `shark_note_high` play a synthesized ostinato instead.
 
-The shark's chomp (`shark_bite`), yelp when it bites the spines (`shark_yelp`) and lunge whoosh (`shark_lunge`) are still synthesized placeholders (`tmp_shark_*.mp3`); add the real `<name>.mp3` to replace them.
+`shark_bite.mp3` is a recorded chomp (trimmed tight, since the room noise under it is voices). The yelp when it bites the spines (`shark_yelp`) and the lunge whoosh (`shark_lunge`) are still synthesized placeholders (`tmp_shark_*.mp3`); add the real `<name>.mp3` to replace them.
 
 The `power_line.mp3` recording plays as a continuous loop only when a power line is on-screen during active city gameplay. Its volume scales with the bird’s distance to the nearest wire; `powerLineAudioRange` controls the fade-in distance. The existing `zap.mp3` plays on wire collision.
