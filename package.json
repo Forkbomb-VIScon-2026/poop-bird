@@ -32,7 +32,7 @@
     "build:wasm": "node scripts/build-game-wasm.mjs",
     "test:rust": "cargo test --workspace --locked",
     "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings",
-    "test:wasm": "node scripts/migration/test-wasm.mjs && node scripts/run-ts.mjs scripts/migration/test-audit.ts",
+    "test:wasm": "node scripts/migration/test-wasm.mjs && node scripts/run-ts.mjs scripts/migration/test-audit.ts && node scripts/run-ts.mjs scripts/migration/test-city.ts",
     "bench:simulation": "node scripts/run-ts.mjs scripts/migration/baseline.ts",
     "test:browser": "npm run build:wasm && node scripts/migration/browser-check.mjs"
   },

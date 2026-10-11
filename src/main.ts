@@ -1722,6 +1722,12 @@ async function enableRustAudit(): Promise<void> {
   game.kernelObserver = rustAudit;
 }
 
+async function createRustCity(width = renderer.width, seed = 1234) {
+  const load = import.meta.env.MODE === "debug" ? () => import("./runtime/city-world") : null;
+  if (!load) throw new Error("Rust city preview is only available in debug builds");
+  return (await load()).loadCityRuntime(width, seed);
+}
+
 const STEP = 1 / 120;
 let accumulator = 0;
 let lastTime = performance.now();
@@ -2188,6 +2194,7 @@ if (DEBUG) {
       get lastPuffAttempt() { return lastPuffAttempt; },
       openDatasetRecorder,
       enableRustAudit,
+      createRustCity,
       get rustAudit() { return { ...rustAudit?.stats, error: rustAuditError }; },
     },
   });
