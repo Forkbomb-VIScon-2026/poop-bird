@@ -554,10 +554,11 @@ export class Renderer {
       // Roof trim
       ctx.fillStyle = "rgba(0,0,0,0.2)";
       ctx.fillRect(base.x + 2, base.y + 2, base.w - 4, 8);
-      // Windows
+      // Windows, with the bottom row kept clear of the door
+      const doorTop = GROUND_Y - 26;
       const cols = Math.max(2, Math.floor((base.w - 16) / 22));
       const cw = (base.w - 16) / cols;
-      for (let y = base.y + 20; y < GROUND_Y - 24; y += 30) {
+      for (let y = base.y + 20; y + 16 <= doorTop - 6; y += 30) {
         for (let c = 0; c < cols; c++) {
           const lit = rnd(o.seed + y * 0.37 + c * 3.1) > 0.45;
           ctx.fillStyle = lit ? "#ffe8a3" : "#3d405b";
@@ -578,7 +579,7 @@ export class Renderer {
       }
       // Door at the bottom
       ctx.fillStyle = "#3d405b";
-      ctx.fillRect(base.x + base.w / 2 - 10, GROUND_Y - 26, 20, 26);
+      ctx.fillRect(base.x + base.w / 2 - 10, doorTop, 20, GROUND_Y - doorTop);
     }
 
     for (const s of o.splats) drawSplat(ctx, o.x + s.dx, s.dy, s.r, s.seed, 1);
