@@ -595,6 +595,10 @@ svg.face {
   text-shadow: 0 2px 0 var(--ink);
 }
 
+.start-hero .tagline code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
 .light {
   color: #fff;
   text-shadow: 0 0 3px var(--ink), 0 1px 2px var(--ink);
