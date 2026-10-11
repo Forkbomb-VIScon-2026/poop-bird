@@ -214,33 +214,13 @@
         </div>
       </section>
 
-      <!-- Ready: the bird sits on a street lamp to practise. Its first poop takes off and starts the run.
-           In face mode the webcam (#cam, moved into #perch-cam-slot) and a strain gauge sit beside the bird. -->
+      <!-- Ready: the bird sits on a street lamp. Its first poop takes off and starts the run. -->
       <section id="screen-ready" class="screen hidden passthrough">
         <!-- Top left, where the score shows once the run starts. -->
         <button id="btn-perch-menu" class="btn small perch-menu" data-keys="Escape">← Menu</button>
         <div id="perch" class="perch">
           <!-- The coach (#coach) goes here while the bird is on the perch. -->
           <div id="perch-coach-slot" class="perch-coach-slot"></div>
-          <div id="perch-you" class="perch-you">
-            <div class="perch-arrow" id="perch-arrow" aria-hidden="true">
-              <svg viewBox="-4 -4 68 48">
-                <!-- Drawn twice: a thick ink outline, then the gold arrow on top. -->
-                <path d="M56 30 Q34 4 8 18 M4 20 L16 9 M4 20 L18 25" fill="none" stroke="#2b2d42" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M56 30 Q34 4 8 18 M4 20 L16 9 M4 20 L18 25" fill="none" stroke="#ffd166" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              <span>that's you!</span>
-            </div>
-            <div id="perch-cam-slot" class="perch-cam-slot"></div>
-            <div class="gauge" title="How strained your face looks">
-              <svg class="face gauge-face strained"><use href="#face-strained" /></svg>
-              <div class="gauge-bar">
-                <div id="gauge-fill" class="gauge-fill"></div>
-                <div id="gauge-line" class="gauge-line"><span>💩</span></div>
-              </div>
-              <svg class="face gauge-face relaxed"><use href="#face-relaxed" /></svg>
-            </div>
-          </div>
           <kbd id="ready-key" class="ready-key hidden"><span class="kbd-only">Space</span><span class="touch-only">👆 Tap &amp; hold</span></kbd>
           <div id="perch-help" class="perch-help">
             <span id="perch-help-text" class="perch-help-text"></span>

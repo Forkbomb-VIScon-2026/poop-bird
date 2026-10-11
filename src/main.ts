@@ -110,7 +110,7 @@ function show(el: HTMLElement, visible: boolean): void {
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
-  dockCam(mode !== "face" ? null : name === "ready" ? "perch" : name === "calibrate" ? "calib" : null);
+  dockCam(mode === "face" && name === "calibrate");
   dockCoach(name === "ready");
   // Game over gets longer: players often die mid-press, and shouldn't skip their score.
   armButtonKeys(name === "gameover" ? 800 : 300);
@@ -520,18 +520,6 @@ function updateStrainBars(): void {
   // Short grace period so a single dropped frame doesn't flash the warning.
   const lost = mode === "face" && tracker.ready && performance.now() - lastFaceSeen > 300;
   show($("cam-noface"), lost);
-  if (state === "ready" && mode === "face") updateGauge(value, active);
-}
-
-/** The perch's upright strain gauge beside the webcam: fills with the face's strain, 💩 line = strainOn. */
-function updateGauge(value: number, active: boolean): void {
-  const fill = $("gauge-fill");
-  fill.style.height = `${Math.min(1, value) * 100}%`;
-  fill.classList.toggle("active", active);
-  $("gauge-line").style.bottom = `${config.strainOn * 100}%`;
-  const gauge = fill.closest(".gauge")!;
-  gauge.classList.toggle("strained", active);
-  gauge.classList.toggle("relaxed", !active && value < config.strainOff);
 }
 
 async function startFaceMode(forceCalibrate = false): Promise<void> {
@@ -1248,10 +1236,10 @@ function startOceanRun(): void {
 let readyArmed = false;
 
 /**
- * The perch: before a run the bird sits on a street lamp and the player
- * practises on a parked car below. A new player is walked through it (strain,
- * relax, splat); after that, the first poop takes off and starts the run.
- * `ocean` (debug) skips it and dives straight in.
+ * The perch: before a run the bird sits on a street lamp until the player
+ * strains and lets go; that first poop, however small, takes off and starts
+ * the run. (Calibration already taught the strain.) `ocean` (debug) skips it
+ * and dives straight in.
  */
 function startReady(ocean = false): void {
   flow++;
@@ -1278,84 +1266,28 @@ function startReady(ocean = false): void {
   state = "ready";
   game.perch();
   const face = mode === "face";
-  show($("perch-you"), face);
   show($("perch-help"), face);
   show($("ready-key"), !face);
   perchCoach = claimCoach();
   showScreen("ready");
-  perch.enteredAt = performance.now();
-  enterPerchStep(seenTutorials.has("perch") ? "go" : "strain");
+  Object.assign(perch, { enteredAt: performance.now(), reached: false, strainSince: -1, nudge: "", hintUntil: 0 });
+  updatePerchText(perch.enteredAt);
 }
 
-/**
- * - strain / relax: a new player's guided practice poop.
- * - pushed: that poop pushed the bird up; the coach says so for a moment.
- * - fill: practice done; a full poop takes off.
- * - go: a returning player; a full poop takes off.
- * Smaller poops just hop on the lamp, so a stray strain never starts the run.
- */
-type PerchStep = "strain" | "relax" | "pushed" | "fill" | "go";
-
 const perch = {
-  step: "go" as PerchStep,
   enteredAt: 0,
-  stepSince: 0,
-  /** The face crossed the 💩 line since this step began. */
+  /** The face crossed the strain threshold since the bird sat down. */
   reached: false,
   /** When the current unbroken strain began (-1: not straining). */
   strainSince: -1,
-  /** Why the tune button is nudging (empty: it isn't). Cleared by a poop: the bar evidently works. */
+  /** Why the tune button is nudging (empty: it isn't). */
   nudge: "",
-  /** A hint that replaces the step's own until hintUntil (performance.now() ms). */
+  /** A hint that replaces the line's own until hintUntil (performance.now() ms). */
   hint: "",
   hintUntil: 0,
 };
 
-/** Each step's coach line in face mode and in keyboard mode, and the face it asks for. */
-interface PerchLine {
-  face: string;
-  faceHint: string;
-  keys: string;
-  keysHint: string;
-  look: CoachFace;
-}
-
 const HOLD = isTouch ? "Hold the screen" : "Hold Space";
-
-const PERCH_TEXT: Record<PerchStep, PerchLine> = {
-  strain: {
-    face: "Squeeze your face", faceHint: "Like you really need to go 💩",
-    keys: HOLD, keysHint: "The bird fills up", look: "strained",
-  },
-  relax: { face: "Now relax", faceHint: "", keys: "Now let go", keysHint: "", look: "relaxed" },
-  pushed: { face: "Pooping pushes you up!", faceHint: "", keys: "Pooping pushes you up!", keysHint: "", look: "relaxed" },
-  fill: {
-    face: "Squeeze longer to fly", faceHint: "Fill the bird up, then relax",
-    keys: `${HOLD} longer to fly`, keysHint: "Fill the bird up, then let go", look: "strained",
-  },
-  go: {
-    face: "Squeeze till the bird is full", faceHint: "",
-    keys: `${HOLD} till the bird is full`, keysHint: "", look: "strained",
-  },
-};
-
-/** While the bird is full: letting go now takes off. */
-const PERCH_FULL: PerchLine = { face: "Relax to fly! 🚀", faceHint: "", keys: "Let go to fly! 🚀", keysHint: "", look: "relaxed" };
-
-/** Charge at which a poop off the perch takes off: full. */
-const TAKEOFF_CHARGE = 1;
-
-/** The flight lesson's steps, for the coach's dots: three on the perch, one in the city. */
-const LESSON_STEPS_TOTAL = 4;
-const PERCH_DOT: Partial<Record<PerchStep, number>> = { strain: 0, relax: 1, pushed: 1, fill: 2 };
-
-function enterPerchStep(step: PerchStep): void {
-  perch.step = step;
-  perch.stepSince = performance.now();
-  perch.reached = false;
-  perch.hintUntil = 0;
-  updatePerchText(perch.stepSince);
-}
 
 /** Shows `hint` under the perch's line for `ms`. */
 function perchHint(hint: string, ms: number): void {
@@ -1364,32 +1296,23 @@ function perchHint(hint: string, ms: number): void {
   updatePerchText(performance.now());
 }
 
-/** The step's line, or "relax to fly" while the bird is full, with a passing hint if there is one. */
+/** The perch's one line, with a passing hint if there is one. */
 function updatePerchText(now: number): void {
-  const takeoff = perch.step === "fill" || perch.step === "go";
-  const full = takeoff && game.charge.charge >= TAKEOFF_CHARGE && !game.stunned;
-  const line = full ? PERCH_FULL : PERCH_TEXT[perch.step];
   const face = mode === "face";
-  const dot = PERCH_DOT[perch.step];
   coachSay(perchCoach, {
-    title: face ? line.face : line.keys,
-    hint: !full && now < perch.hintUntil ? perch.hint : face ? line.faceHint : line.keysHint,
-    face: face ? line.look : null,
-    done: perch.step === "pushed",
-    dots: dot === undefined ? null : [perch.step === "pushed" ? dot + 1 : dot, LESSON_STEPS_TOTAL],
+    title: face ? "Strain & let go to start" : `${HOLD} & let go to start`,
+    hint: now < perch.hintUntil ? perch.hint : "",
+    face: face ? (straining() ? "relaxed" : "strained") : null,
   });
 }
 
-/** What charges the bird on the perch: the player, once armed and the relaxed read is done. */
+/** What charges the bird on the perch: the player, once armed (not still straining from the screen before). */
 function perchStraining(): boolean {
   if (!straining()) readyArmed = true;
   return readyArmed && straining();
 }
 
-/** How long "pooping pushes you up!" stays before the next step. */
-const PUSHED_MS = 1800;
-
-/** One frame on the perch: practice physics, the steps, the tune nudge and the layout. */
+/** One frame on the perch: the bird waits for a poop, plus the tune nudge and the layout. */
 function updatePerch(dt: number): void {
   // Behind the rotate prompt everything holds, so a hold isn't mistaken for letting go.
   if (needsRotate()) {
@@ -1403,31 +1326,11 @@ function updatePerch(dt: number): void {
     accumulator -= STEP;
   }
   const now = performance.now();
-  const release = game.events.find((e) => e.type === "release");
-  const pooped = release !== undefined;
-  const full = release?.type === "release" && release.charge >= TAKEOFF_CHARGE;
+  const pooped = game.events.some((e) => e.type === "release");
   const accident = game.events.some((e) => e.type === "accident");
   handleGameEvents();
-  if (pooped) perch.nudge = "";
-  switch (perch.step) {
-    case "strain":
-      if (pooped) enterPerchStep("pushed");
-      else if (game.charge.charge >= 0.3) enterPerchStep("relax");
-      break;
-    case "relax":
-      if (pooped) enterPerchStep("pushed");
-      else if (accident) enterPerchStep("strain");
-      break;
-    case "pushed":
-      if (now - perch.stepSince > PUSHED_MS) enterPerchStep("fill");
-      break;
-    case "fill":
-    case "go":
-      if (full) return takeOff();
-      if (accident) perchHint(tooLongHint(), 3000);
-      else if (pooped) perchHint(mode === "face" ? "Squeeze longer to take off" : "Hold longer to take off", 3000);
-      break;
-  }
+  if (pooped) return takeOff();
+  if (accident) perchHint(tooLongHint(), 3000);
   updatePerchText(now);
   updatePerchNudge(now);
   // The panel starts right of the bird and its lamp (canvas units → CSS px).
@@ -1443,9 +1346,8 @@ function tooLongHint(): string {
 }
 
 /**
- * Face mode: offers tuning when the bar doesn't follow the face, i.e. it
- * never reaches the 💩 line when asked to strain, or stays over it when asked
- * to relax (or for a long time anyway).
+ * Face mode: offers tuning when straining doesn't register, i.e. the face
+ * never crosses the threshold, or stays over it for a long time.
  */
 function updatePerchNudge(now: number): void {
   if (mode !== "face") return;
@@ -1453,26 +1355,21 @@ function updatePerchNudge(now: number): void {
   if (!active) perch.strainSince = -1;
   else if (perch.strainSince < 0) perch.strainSince = now;
   if (active) perch.reached = true;
-  const inStep = now - perch.stepSince;
   const strainFor = perch.strainSince < 0 ? 0 : now - perch.strainSince;
-  const asksStrain = perch.step === "strain" || perch.step === "fill" || perch.step === "go";
-  if (perch.step !== "pushed" && faceVisible()) {
-    if (strainFor > (perch.step === "relax" ? 3000 : 6000)) perch.nudge = "Bar stuck even when you relax?";
-    else if (asksStrain && !perch.reached && inStep > (perch.step === "strain" ? 7000 : 10000)) {
-      perch.nudge = "Bar not reacting to your face?";
-    }
+  if (faceVisible()) {
+    if (strainFor > 6000) perch.nudge = "Stuck even when you relax?";
+    else if (!perch.reached && now - perch.enteredAt > 8000) perch.nudge = "Not taking off?";
   }
   const help = $("perch-help");
   help.classList.toggle("nudge", perch.nudge !== "");
   $("perch-help-text").textContent = perch.nudge;
 }
 
-/** The first full poop off the perch: the run starts, the practice doesn't count. A new player's city lesson follows. */
+/** The first poop off the perch: the run starts. A new player's city lesson follows. */
 function takeOff(): void {
-  if (perch.step === "fill") markTutorialSeen("perch");
   perch.nudge = "";
   game.leavePerch();
-  // A full push: the perch caps practice hops, not the takeoff.
+  // A full push whatever the poop: the perch caps its climb, not the takeoff.
   game.bird.vy = Math.min(game.bird.vy, -config.pushMax);
   state = "playing";
   showScreen(null);
@@ -1492,8 +1389,8 @@ async function runCityLesson(): Promise<void> {
   game.calmCity = true;
   const face = mode === "face";
   let line: CoachLine = { title: "" };
-  const say = (dot: number, title: string, hint: string, look: CoachFace | null, done = false): void => {
-    line = { title, hint, face: face ? look : null, dots: [dot, LESSON_STEPS_TOTAL], done };
+  const say = (title: string, hint: string, look: CoachFace | null, done = false): void => {
+    line = { title, hint, face: face ? look : null, done };
     coachSay(owner, line);
   };
   /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. Shows the too-long hint after an accident. */
@@ -1517,12 +1414,12 @@ async function runCityLesson(): Promise<void> {
     if (token === flow) game.calmCity = false;
   };
 
-  say(3, face ? "Squeeze & relax to stay up" : `${HOLD} & let go to stay up`, "Every poop is a flap", "strained");
+  say(face ? "Squeeze & relax to stay up" : `${HOLD} & let go to stay up`, "Every poop is a flap", "strained");
   const poops = lessonCount.poops;
   const flew = await until(() => lessonCount.poops - poops >= 3, 20_000);
   if (flew === null) return abandon();
   if (flew) {
-    say(4, "Nice flying!", "", null, true);
+    say("Nice flying!", "", null, true);
     if ((await until(() => false, 1200)) === null) return abandon();
   }
 
@@ -1536,14 +1433,11 @@ async function runCityLesson(): Promise<void> {
   releaseCoach(owner);
 }
 
-/** Moves the webcam preview beside the bird on the perch, into the calibration card, or back to its corner. */
-function dockCam(slot: "perch" | "calib" | null): void {
-  const now = cam.classList.contains("perched") ? "perch" : cam.classList.contains("in-calib") ? "calib" : null;
-  if (slot === now) return;
-  cam.classList.toggle("perched", slot === "perch");
-  cam.classList.toggle("in-calib", slot === "calib");
-  if (slot === "perch") $("perch-cam-slot").append(cam);
-  else if (slot === "calib") $("calib-cam-slot").append(cam);
+/** Moves the webcam preview into the calibration card, or back to its corner. */
+function dockCam(inCalib: boolean): void {
+  if (inCalib === cam.classList.contains("in-calib")) return;
+  cam.classList.toggle("in-calib", inCalib);
+  if (inCalib) $("calib-cam-slot").append(cam);
   else camHome.parent.insertBefore(cam, camHome.next);
 }
 
