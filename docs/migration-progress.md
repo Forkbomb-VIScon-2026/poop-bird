@@ -8,6 +8,42 @@ Baseline: `4208bf7f765c6968283ea264aa49f2a9ab3dccde` on `main`.
 Upstream integration: `79a9cf0dad3d5ca0d06fd6d832e21f075ed7a771` preserves
 the optional photo graphics, settings, shark sample and tutorial/test fixes.
 
+Continuation instructions for another model: [migration-handoff.md](migration-handoff.md).
+
+## Current checkpoint (read before the historical work log)
+
+City frame protocol v2 now verifies first-city runs, takeoff, ordinary buildings,
+crash/gameover and calm-city lessons in addition to the prior demo/perch/idle.
+The application remains authoritative TypeScript. Rust runs are debug/test-only,
+require unsupported encounter chances to be zero, and pause explicitly before
+waterfront transitions (`frame.blocked`). No full migration or speedup is claimed.
+
+Latest verification: Rust format/Clippy and both TS checks/lint pass; 12 native
+Rust tests and 211 TS tests pass; 3,091 frozen WASM cases, 36,000 live kernel
+comparisons and 51,300 scoped-world batches pass. Full-world comparison includes
+8,488,814 numeric values, max absolute error 3.9436e-13. Three seeds cover building
+splats, six crashes/gameovers and nine observed calm-city floor bounces.
+Production/debug builds pass. Chromium 153 compares twelve demo and forty
+run/lesson/crash/gameover frames pixel for pixel in classic/RTX styles, and
+routes Rust events through Web Audio with 49 real buffers decoded. Real webcam,
+audible speakers, Firefox/Safari and desktop frame-time profiling remain manual.
+
+The previous city checkpoint's CI run 38105706707 passed check/docker. Current
+checkpoint remote CI is pending publication; local Docker is unavailable.
+Implementation commit: local `d363d6f`, corresponding GitHub commit `7028d5a`;
+the commit trees match. Docs/handoff form a separate follow-up commit.
+
+New measurements include realistic two-tick batching: decoded Rust costs
+0.00700 ms per amortized tick versus 0.00130 ms for TypeScript, in a synthetic
+Node demo workload excluding rendering/MediaPipe/rAF. Raw Rust omits required
+presentation work. See city-world.md for all median/p95 values. Optimize frame
+projection before considering the authoritative switch.
+
+Next dependency: power lines/pigeons/drones/zap and balloons/passengers, then
+paparazzi/kids/front pages, weddings, waterfront and ocean. Follow the concrete
+module/test requirements in migration-handoff.md. Remove each scope guard only
+when its full replacement and differential/browser tests are connected.
+
 ## Decisions
 
 - Rust 2024 owns deterministic simulation; Canvas2D remains in TypeScript.
@@ -32,7 +68,7 @@ the optional photo graphics, settings, shark sample and tutorial/test fixes.
 | 1 | Rust/WASM toolchain, crates, build/CI/Docker integration | Complete; local checks and remote check/docker jobs pass |
 | 2 | Charge, swimming, collision and RNG kernels with differential tests | Complete |
 | 3 | Commands, immutable render frames, batched bridge and audio registry | Scoped city world ABI verified; full encounter/frame ABI pending |
-| 4 | Basic city, effects, scoring, demo, perch and lessons | Partial: demo/perch/idle, ordinary targets, scoring and effects verified; runs/buildings/lessons pending |
+| 4 | Basic city, effects, scoring, demo, perch and lessons | Verified scoped city: idle/demo/perch, ordinary targets, takeoff, buildings, scoring/effects, crash/gameover and calm-city lessons; advanced encounters and waterfront pending |
 | 5 | Power lines, kids, weddings, balloons and photo events | Pending |
 | 6 | Ocean transitions, fish, hazards, anglers and sharks | Pending |
 | 7 | Full browser lifecycle and input/audio integration; Rust default | Pending |
@@ -122,7 +158,7 @@ decoded batches are closer but still slower; raw Rust frames are faster there.
 These are Node measurements, not desktop browser frame times. Keep the Rust
 world opt-in and optimize presentation allocation before an authoritative switch.
 
-Next: ordinary city run/lesson/building/collision lifecycle with seeded full-state
+Previous checkpoint next step: ordinary city run/lesson/building/collision lifecycle with seeded full-state
 references, then advanced city/ocean encounters. Extend the versioned world/frame
 ABI deliberately. Preserve the already verified scoped worlds, safe frame copies,
 ordered events and live tuning while extending them.
@@ -152,7 +188,7 @@ the Rust city world against seeded snapshots next, then advanced city and ocean
 encounters, before connecting authoritative frame output and retiring legacy code.
 
 
-Latest local checks: ESLint and both TypeScript checks passed; 211 TypeScript
+Previous checkpoint local checks: ESLint and both TypeScript checks passed; 211 TypeScript
 unit tests in 14 files, 8 native Rust tests, 3,091 frozen WASM cases, 36,000
 live kernel comparisons and 27,300 complete scoped-world batches passed;
 production and debug builds passed. Chromium
@@ -161,3 +197,22 @@ Remote CI passed check and Docker jobs at `642ef7b`; the latest bird component
 is also verified locally. CI run 38104668863 passed at `1617d55`. The new city
 checkpoint is verified locally and awaits its own remote CI. No whole-game
 performance gain or complete migration is claimed.
+
+
+## City run checkpoint and model handoff — 2026-10-11
+
+- Added run/obstacle modules with explicit life state, pre-scroll strict contacts,
+  calm bounce, deterministic crash particles, retained object storage, takeoff
+  statistics reset and delayed gameover events. Building hits preserve projectile
+  scoring/combo and target-before-building collision order.
+- Extended the coarse frame to v2: 43 live parameters, takeoff/lesson commands,
+  phase/lesson/boundary state, stable obstacle IDs/splats and Rust-computed score.
+  Unsupported run settings reject before any mutation; waterfront pauses before
+  the first unsupported tick rather than silently omitting a transition.
+- Added native lifecycle/atomic-boundary/tangency/update-order tests and 24,000
+  run/lesson differential batches. Extended Chromium whole-frame and real audio
+  event checks. All local checks listed in Current checkpoint passed.
+- Added migration-handoff.md at the user's request and linked it from AGENTS.md.
+  It documents remaining dependency-ordered implementation slices, ownership,
+  exact setup/checks, compatibility traps, profiling limits, publishing and
+  checkpoint completion requirements for another model.

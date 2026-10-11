@@ -31,7 +31,7 @@ npm run fetch-model  # public/mediapipe/face_landmarker.task
 ```
 
 The migration branch builds game WASM before dev/build; see docs/rust-build.md.
-Read docs/migration-progress.md before continuing migration work. The legacy
+Read docs/migration-progress.md and [the migration handoff guide](docs/migration-handoff.md) before continuing migration work. The legacy
 TypeScript world remains authoritative until full parity is recorded there.
 
 Instead of downloading, you can copy the model from another checkout that
