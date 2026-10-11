@@ -67,7 +67,7 @@ No placeholder or disconnected module counts as a completed milestone.
   intentionally with `node scripts/run-ts.mjs scripts/migration/reference.ts`.
 - Reproducible synthetic simulation benchmark:
   `node scripts/run-ts.mjs scripts/migration/baseline.ts`.
-- `6335c30`: audit and frozen references. `084e86f`: Rust kernels and thin
+- `9db41e4`: audit and frozen references. `4be3530`: Rust kernels and thin
   batch validation adapter; no live world simulation has been replaced yet.
 - Installed pinned stable Rust 1.90.0, rustfmt/Clippy/WASM target and matching
   wasm-bindgen CLI 0.2.104. Both crates forbid unsafe code.
@@ -78,10 +78,10 @@ No placeholder or disconnected module counts as a completed milestone.
   integration. CI and Docker files were updated but Docker is unavailable here.
 - Explicit seeded RNG injection is being added to the TypeScript reference;
   legacy production randomness remains unchanged until engine parity is ready.
-- `3652dba`: renderer now accepts presentation data and uses local photo poses.
+- `8b47df9`: renderer now accepts presentation data and uses local photo poses.
   Six bird/wedding/trophy variants are pixel-identical to the audited renderer
   in the same Chromium run; drawing and capture accept deeply frozen state.
-- `e1cb0c9`: injected seeded reference RNG and batched kernel observer. All
+- `a54e97a`: injected seeded reference RNG and batched kernel observer. All
   24,000 live demo/ocean charge/spike steps match WASM exactly (2,000 batches).
 - Centralized fixed/random/bag/state-dependent audio event routing. Frozen
   61 original playback traces verify sample IDs, volume, delay and variant
