@@ -58,6 +58,15 @@ export const CONFIG_SPEC = {
   },
   faceRelockSeconds: { value: 2.0, min: 0.2, max: 5, step: 0.1, group: "Face lock", label: "Relock after", hint: "s without the locked face before searching the full frame again" },
 
+  // --- Face recognition (faceid.ts, known-faces.ts) -------------------------------
+  faceIdSameDistance: {
+    value: 0.45, min: 0.2, max: 0.9, step: 0.01, group: "Face ID", label: "Same person under",
+    hint: "descriptor distance (median over the samples) under which a face is one this tab calibrated (dlib says 0.6, but two different people scored 0.54 in testing; a miss only means a new read)",
+  },
+  faceIdSamples: { value: 3, min: 1, max: 8, step: 1, group: "Face ID", label: "Samples", hint: "descriptors taken to recognize a face" },
+  faceIdSpacing: { value: 0.3, min: 0, max: 2, step: 0.05, group: "Face ID", label: "Sample spacing", hint: "s between the descriptors, so they see different moments" },
+  faceIdMinFacePx: { value: 80, min: 30, max: 300, step: 5, group: "Face ID", label: "Min face width", hint: "px in the video for a descriptor (smaller faces wait)" },
+
   // --- Strain detection ----------------------------------------------------
   strainOn: { value: 0.45, min: 0.05, max: 0.95, step: 0.01, group: "Strain", label: "On threshold" },
   strainOff: { value: 0.3, min: 0.02, max: 0.9, step: 0.01, group: "Strain", label: "Off threshold" },
