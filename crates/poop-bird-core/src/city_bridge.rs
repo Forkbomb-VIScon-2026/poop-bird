@@ -4,12 +4,13 @@ use crate::{
     city::{self, Command, Event, Kind, Mode, Params, Text, World},
 };
 
-pub const PARAM_COUNT: usize = 23;
+pub const PARAM_COUNT: usize = 43;
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     Params,
     Request,
     Command,
+    UnsupportedRun,
 }
 
 pub fn params(v: &[f64]) -> Result<Params, Error> {
@@ -45,6 +46,26 @@ pub fn params(v: &[f64]) -> Result<Params, Error> {
         target_points: v[20],
         combo_max: v[21],
         combo_step: v[22],
+        scroll_max: v[23],
+        difficulty_ramp: v[24],
+        first_delay: v[25],
+        spacing: v[26],
+        spacing_min: v[27],
+        gap: v[28],
+        gap_min: v[29],
+        tall_chance: v[30],
+        tall_max: v[31],
+        hardest_city: v[32],
+        before_gate: v[33],
+        distance_per_point: v[34],
+        paparazzi_chance: v[35],
+        kid_chance: v[36],
+        wedding_chance: v[37],
+        power_line_chance: v[38],
+        balloon_chance: v[39],
+        paparazzi_min_distance: v[40],
+        kid_first_city: v[41],
+        kid_min_distance: v[42],
     })
 }
 
@@ -71,10 +92,39 @@ pub fn advance(
         return Err(Error::Request);
     }
     for c in request[4..].chunks_exact(2) {
-        if ![0.0, 1.0, 2.0, 3.0, 4.0].contains(&c[0]) || (c[0] == 1.0 && c[1] <= 0.0) {
+        if ![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0].contains(&c[0])
+            || (c[0] == 1.0 && c[1] <= 0.0)
+            || (c[0] == 6.0 && c[1] != 0.0 && c[1] != 1.0)
+        {
             return Err(Error::Command);
         }
     }
+    // Preflight the resulting mode before any mutation, including reset/resize.
+    let mut mode = world.mode;
+    for c in request[4..].chunks_exact(2) {
+        match c[0] as u32 {
+            0 | 2 => {
+                mode = if c[0] == 0.0 { Mode::Idle } else { Mode::Demo };
+            }
+            3 => mode = Mode::Practice,
+            5 => mode = Mode::Run,
+            _ => {}
+        }
+    }
+    if mode == Mode::Run
+        && [
+            p.paparazzi_chance,
+            p.kid_chance,
+            p.wedding_chance,
+            p.power_line_chance,
+            p.balloon_chance,
+        ]
+        .iter()
+        .any(|n| *n != 0.0)
+    {
+        return Err(Error::UnsupportedRun);
+    }
+    world.initialize(p);
     world.events.clear();
     for c in request[4..].chunks_exact(2) {
         world.command(match c[0] as u32 {
@@ -82,13 +132,16 @@ pub fn advance(
             1 => Command::Resize(c[1]),
             2 => Command::Demo,
             3 => Command::Perch,
-            _ => Command::SpawnCar,
+            4 => Command::SpawnCar,
+            5 => Command::TakeOff(p.charge.push_max),
+            _ => Command::Lesson(c[1] != 0.0),
         });
+        world.initialize(p);
     }
     for _ in 0..request[1] as usize {
         world.step(request[0], request[2] != 0.0, p);
     }
-    encode(world, output);
+    encode(world, p, output);
     Ok(())
 }
 
@@ -99,7 +152,7 @@ fn kind(kind: Kind) -> f64 {
         Kind::Statue => 2.0,
     }
 }
-pub fn encode(w: &World, output: &mut Vec<f64>) {
+fn encode(w: &World, p: &Params, output: &mut Vec<f64>) {
     output.clear();
     output.extend_from_slice(&[
         f64::from(city::FRAME_VERSION),
@@ -108,6 +161,7 @@ pub fn encode(w: &World, output: &mut Vec<f64>) {
             Mode::Idle => 0.0,
             Mode::Demo => 1.0,
             Mode::Practice => 2.0,
+            Mode::Run => 3.0,
         },
         w.time,
         w.run_time,
@@ -144,6 +198,17 @@ pub fn encode(w: &World, output: &mut Vec<f64>) {
         w.floaters.len() as f64,
         w.screen_splats.len() as f64,
         w.events.len() as f64,
+        match w.life {
+            bird::Life::Playing => 0.0,
+            bird::Life::Dying => 1.0,
+            bird::Life::Over => 2.0,
+        },
+        f64::from(w.calm_city),
+        w.dying_time,
+        f64::from(w.blocked),
+        w.obstacles.len() as f64,
+        f64::from(w.stage_obstacles),
+        (w.distance / p.distance_per_point.max(1.0)).floor() + w.bonus,
     ]);
     for t in &w.targets {
         output.extend_from_slice(&[
@@ -221,6 +286,27 @@ pub fn encode(w: &World, output: &mut Vec<f64>) {
     for s in &w.screen_splats {
         output.extend_from_slice(&[s.x, s.y, s.radius, s.seed, s.life]);
     }
+    for o in &w.obstacles {
+        output.extend_from_slice(&[
+            f64::from(o.id),
+            o.x,
+            o.w,
+            o.gap_top,
+            o.gap_bottom,
+            if matches!(o.bottom, city::Bottom::Building) {
+                0.0
+            } else {
+                1.0
+            },
+            f64::from(o.color),
+            o.seed,
+            f64::from(o.passed),
+            o.splats.len() as f64,
+        ]);
+        for s in &o.splats {
+            output.extend_from_slice(&[s.dx, s.dy, s.radius, s.seed]);
+        }
+    }
     for e in &w.events {
         let row = match *e {
             Event::Release { charge, sweet } => [0.0, charge, f64::from(sweet), 0.0, 0.0],
@@ -232,6 +318,8 @@ pub fn encode(w: &World, output: &mut Vec<f64>) {
             } => [2.0, points, f64::from(combo), kind(k), 0.0],
             Event::Splat(big) => [3.0, f64::from(big), 0.0, 0.0, 0.0],
             Event::Curse => [4.0, 0.0, 0.0, 0.0, 0.0],
+            Event::Crash => [5.0, 0.0, 0.0, 0.0, 0.0],
+            Event::GameOver => [6.0, 0.0, 0.0, 0.0, 0.0],
         };
         output.extend_from_slice(&row);
     }

@@ -1,6 +1,20 @@
 use super::*;
 
 impl World {
+    fn statue_fits(&self) -> bool {
+        let left = self.width + 80.0 - 23.0 - 24.0;
+        let right = self.width + 80.0 + 23.0 + 24.0;
+        let clear = |l: f64, r: f64| r < left || l > right;
+        self.obstacles.iter().all(|o| clear(o.x, o.x + o.w))
+            && self
+                .targets
+                .iter()
+                .all(|t| t.kind != Kind::Statue || clear(t.x - t.w / 2.0, t.x + t.w / 2.0))
+            && (self.mode == Mode::Demo
+                || right
+                    <= self.width + 40.0 + (self.next_obstacle_at.unwrap_or(0.0) - self.distance))
+    }
+
     pub(super) fn aim(
         &self,
         x: f64,
@@ -59,13 +73,7 @@ impl World {
         } else {
             Kind::Statue
         };
-        if kind == Kind::Statue
-            && self.targets.iter().any(|t| {
-                t.kind == Kind::Statue
-                    && !(t.x + t.w / 2.0 < self.width + 80.0 - 23.0 - 24.0
-                        || t.x - t.w / 2.0 > self.width + 80.0 + 23.0 + 24.0)
-            })
-        {
+        if kind == Kind::Statue && !self.statue_fits() {
             kind = Kind::Pedestrian;
         }
         let seed = self.random() * 1000.0;
@@ -135,9 +143,22 @@ impl World {
         }
         self.targets
             .retain(|t| t.x > -200.0 && t.x < self.width + 600.0);
-        self.spawn_acc += dt * p.spawn_rate * 3.0;
+        if self.life != bird::Life::Playing {
+            return;
+        }
+        self.spawn_acc += dt * p.spawn_rate * if self.mode == Mode::Demo { 3.0 } else { 1.0 };
         if self.spawn_acc >= 1.0 {
             self.spawn_acc -= 1.0 + (self.random() - 0.5) * 0.6;
+            // Disabled encounters still consume their eligibility rolls in the
+            // reference. Preserve that stream for ordinary city parity.
+            if self.mode == Mode::Run && !self.calm_city {
+                if self.distance >= p.paparazzi_min_distance {
+                    self.random();
+                }
+                if 1.0 >= (p.kid_first_city + 0.5).floor() && self.distance >= p.kid_min_distance {
+                    self.random();
+                }
+            }
             self.spawn_target(false, p.statue_chance);
         }
     }

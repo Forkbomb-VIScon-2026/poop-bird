@@ -2,7 +2,7 @@ use poop_bird_core::protocol;
 use poop_bird_core::{city, city_bridge};
 use wasm_bindgen::prelude::*;
 
-/// Complete attract/practice world, not an authoritative run engine yet.
+/// Scoped city world, not an authoritative full-run engine yet.
 #[wasm_bindgen]
 pub struct CityWorld {
     world: city::World,

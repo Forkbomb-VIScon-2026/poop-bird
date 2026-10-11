@@ -7,6 +7,8 @@ pub enum Event {
     Hit { points: f64, combo: u32, kind: Kind },
     Splat(bool),
     Curse,
+    Crash,
+    GameOver,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +72,8 @@ pub struct Poop {
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum ParticleColor {
+    FeatherGold = 0,
+    FeatherWhite = 1,
     FartGreen = 2,
     SweetFartGold = 3,
     MessBrown = 4,
@@ -137,4 +141,33 @@ pub struct ScreenSplat {
     pub radius: f64,
     pub seed: f64,
     pub life: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Bottom {
+    Building,
+    Tower,
+}
+#[derive(Debug)]
+pub struct Obstacle {
+    pub id: u32,
+    pub x: f64,
+    pub w: f64,
+    pub gap_top: f64,
+    pub gap_bottom: f64,
+    pub bottom: Bottom,
+    pub color: u8,
+    pub seed: f64,
+    pub passed: bool,
+    pub splats: Vec<Splat>,
+}
+impl Obstacle {
+    pub(super) fn rect(&self) -> Rect {
+        Rect {
+            x: self.x,
+            y: self.gap_bottom,
+            w: self.w,
+            h: super::GROUND - self.gap_bottom,
+        }
+    }
 }

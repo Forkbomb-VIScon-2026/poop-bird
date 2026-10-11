@@ -1,8 +1,8 @@
-//! Attract/practice city world. Run encounters and stage transitions are separate
-//! migration milestones; this world deliberately exposes no unsupported run mode.
+//! City simulation. Advanced encounters and waterfront transitions are not yet
+//! migrated; scoped runs stop explicitly before the waterfront.
 use crate::{bird, charge, rng::Rng};
 
-pub const FRAME_VERSION: u32 = 1;
+pub const FRAME_VERSION: u32 = 2;
 const GROUND: f64 = 520.0;
 const RADIUS: f64 = 22.0;
 const PERCH: f64 = 270.0;
@@ -22,6 +22,26 @@ pub struct Params {
     pub target_points: f64,
     pub combo_max: f64,
     pub combo_step: f64,
+    pub scroll_max: f64,
+    pub difficulty_ramp: f64,
+    pub first_delay: f64,
+    pub spacing: f64,
+    pub spacing_min: f64,
+    pub gap: f64,
+    pub gap_min: f64,
+    pub tall_chance: f64,
+    pub tall_max: f64,
+    pub hardest_city: f64,
+    pub before_gate: f64,
+    pub distance_per_point: f64,
+    pub paparazzi_chance: f64,
+    pub kid_chance: f64,
+    pub wedding_chance: f64,
+    pub power_line_chance: f64,
+    pub balloon_chance: f64,
+    pub paparazzi_min_distance: f64,
+    pub kid_first_city: f64,
+    pub kid_min_distance: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +49,7 @@ pub enum Mode {
     Idle,
     Demo,
     Practice,
+    Run,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -38,11 +59,15 @@ pub enum Command {
     Demo,
     Perch,
     SpawnCar,
+    TakeOff(f64),
+    Lesson(bool),
 }
 
 mod effects;
 mod entities;
+mod obstacles;
 mod projectiles;
+mod run;
 mod targets;
 pub use entities::*;
 
@@ -75,6 +100,15 @@ pub struct World {
     pub floaters: Vec<Floater>,
     pub screen_splats: Vec<ScreenSplat>,
     pub events: Vec<Event>,
+    pub life: bird::Life,
+    pub calm_city: bool,
+    pub dying_time: f64,
+    pub blocked: bool,
+    pub obstacles: Vec<Obstacle>,
+    pub stage_obstacles: u32,
+    next_obstacle_at: Option<f64>,
+    last_gap_center: f64,
+    next_obstacle: u32,
     rng: Rng,
     spawn_acc: f64,
     next_target: u32,
@@ -110,6 +144,15 @@ impl World {
             floaters: Vec::new(),
             screen_splats: Vec::new(),
             events: Vec::new(),
+            life: bird::Life::Playing,
+            calm_city: false,
+            dying_time: 0.0,
+            blocked: false,
+            obstacles: Vec::new(),
+            stage_obstacles: 0,
+            next_obstacle_at: None,
+            last_gap_center: 260.0,
+            next_obstacle: 1,
             rng: Rng::new(seed),
             spawn_acc: 0.6,
             next_target: 1,
@@ -132,6 +175,15 @@ impl World {
     }
 
     pub fn reset(&mut self) {
+        self.life = bird::Life::Playing;
+        self.calm_city = false;
+        self.dying_time = 0.0;
+        self.blocked = false;
+        self.obstacles.clear();
+        self.stage_obstacles = 0;
+        self.next_obstacle_at = None;
+        self.last_gap_center = 260.0;
+        self.next_obstacle = 1;
         self.mode = Mode::Idle;
         self.time = 0.0;
         self.run_time = 0.0;
@@ -180,6 +232,18 @@ impl World {
                 self.bird.rotation = 0.0;
             }
             Command::SpawnCar => self.spawn_target(true, 0.0),
+            Command::TakeOff(push) => {
+                self.bird.velocity = self.bird.velocity.min(-push);
+                self.mode = Mode::Run;
+                self.bonus = 0.0;
+                self.combo = 0;
+                self.best_combo = 0;
+                self.targets_hit = 0;
+                self.dropped = 0;
+                self.accidents = 0;
+                self.floaters.clear();
+            }
+            Command::Lesson(enabled) => self.calm_city = enabled,
         }
     }
 
@@ -201,7 +265,9 @@ impl World {
     }
 
     pub fn step(&mut self, dt: f64, held: bool, p: &Params) {
+        self.initialize(p);
         match self.mode {
+            Mode::Run => self.step_run(dt, held, p),
             Mode::Idle => {
                 self.time += dt;
                 self.speed = 0.0;

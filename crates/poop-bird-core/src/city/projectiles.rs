@@ -255,6 +255,23 @@ impl World {
             }
             return true;
         }
+        if let Some(i) = self
+            .obstacles
+            .iter()
+            .position(|o| circle_rect(poop.x, poop.y, poop.radius, o.rect()))
+        {
+            let seed = self.random() * 1000.0;
+            let o = &mut self.obstacles[i];
+            o.splats.push(Splat {
+                dx: poop.x - o.x,
+                dy: poop.y,
+                radius: poop.radius * 1.2,
+                seed,
+            });
+            self.splat_particles(poop.x, poop.y, poop.radius, false);
+            self.events.push(Event::Splat(poop.big));
+            return true;
+        }
         let ground = GROUND + 55.0;
         if poop.y + poop.radius >= ground {
             let y = ground - 4.0 + self.random() * 14.0;
@@ -269,7 +286,7 @@ impl World {
                 self.decals.remove(0);
             }
             self.splat_particles(poop.x, ground, poop.radius, false);
-            if self.combo > 1 {
+            if self.combo > 1 && self.life == bird::Life::Playing {
                 self.floaters.push(Floater {
                     x: poop.x,
                     y: ground - 30.0,

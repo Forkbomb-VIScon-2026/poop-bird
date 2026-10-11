@@ -82,7 +82,7 @@ try {
     // Five known IDs lack assets. The other 49 IDs include both shark fallbacks.
     const deadline = performance.now() + 10000;
     while (sound.buffers.size < 49 && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
-    let cityPixels = 0;
+    let cityPixels = 0, runPixels = 0, runCrash = false, runOver = false;
     for (const graphics of ["classic", "rtx"]) {
       const a = document.createElement("canvas"), b = document.createElement("canvas");
       a.width = b.width = 1000; a.height = b.height = 600;
@@ -107,6 +107,35 @@ try {
           for (let i = 0; i < actual.length; i++) if (actual[i] !== expected[i]) throw new Error(`${graphics} Rust city pixel mismatch at ${i}`);
           cityPixels++;
         }
+        const originalConfig = { ...window.poopBird.config };
+        try {
+          Object.assign(window.poopBird.config, { powerLineChance: 0, balloonChance: 0, weddingChance: 0, paparazziChance: 0, kidChance: 0, cityObstaclesBeforeGate: 100000 });
+          for (const lesson of [false, true]) {
+            reference.reset(); reference.perch(); reference.command({ type: "takeOff" }); reference.calmCity = lesson;
+            rust.advance(0, 0, false, [{ type: "reset" }, { type: "perch" }, { type: "takeOff" }, { type: "lesson", enabled: lesson }]);
+            for (let batch = 0; batch < 900; batch++) {
+              const held = !lesson && batch < 500 && (reference.charge.charge > 0 ? reference.charge.charge < 0.5 : reference.bird.y > 130 && reference.bird.vy > 0);
+              reference.straining = held; reference.step(1 / 120); reference.step(1 / 120);
+              const frame = rust.advance(1 / 120, 2, held);
+              for (const event of frame.events) {
+                sound.event(event, window.poopBird.config);
+                runCrash ||= event.type === "crash"; runOver ||= event.type === "gameover";
+              }
+              reference.events.length = 0;
+              if (batch % 100 !== 0 && frame.events.every(e => e.type !== "crash" && e.type !== "gameover")) continue;
+              freeze(frame);
+              const random = Math.random;
+              try {
+                Math.random = new SeededRng(99).next; referenceRenderer.draw(reference, 1 / 60);
+                Math.random = new SeededRng(99).next; rustRenderer.draw(frame, 1 / 60);
+              } finally { Math.random = random; }
+              const expected = a.getContext("2d").getImageData(0, 0, 1000, 600).data;
+              const actual = b.getContext("2d").getImageData(0, 0, 1000, 600).data;
+              for (let i = 0; i < actual.length; i++) if (actual[i] !== expected[i]) throw new Error(`${graphics} Rust run pixel mismatch ${lesson}:${batch} at ${i}`);
+              runPixels++;
+            }
+          }
+        } finally { Object.assign(window.poopBird.config, originalConfig); }
         rust.advance(0, 0, false, [{ type: "reset" }, { type: "perch" }]);
         let accident = false;
         for (let i = 0; i < 40; i++) {
@@ -118,12 +147,13 @@ try {
       } finally { rust.dispose(); }
     }
     return { photos: photos.map(photo => [photo.width, photo.height]), photoAssets: pictures.length, decoded: sound.buffers.size,
-      cityPixels,
+      cityPixels, runPixels, runCrash, runOver,
       audit: window.poopBird.rustAudit };
   });
   assert.deepEqual(detail.photos, [[200, 200], [320, 240], [320, 240]]);
   assert.equal(detail.decoded, 49);
   assert.equal(detail.cityPixels, 12);
+  assert.ok(detail.runPixels >= 36 && detail.runCrash && detail.runOver);
   assert.equal(detail.audit.error, null);
   assert.equal(detail.audit.maxError, 0);
   assert.deepEqual(errors, []);

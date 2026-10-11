@@ -11,7 +11,7 @@ import { config } from "../../src/config";
 
 await init({ module_or_path: await readFile("public/game-wasm/poop_bird_wasm_bg.wasm") });
 const percentile = (values: number[], fraction: number) => values.slice().sort((a, b) => a - b)[Math.floor((values.length - 1) * fraction)];
-for (const ticks of [1, 12]) {
+for (const ticks of [1, 2, 12]) {
   for (const engine of ["typescript", "rust-wasm", "rust-wasm-raw"] as const) {
     const durations: number[] = [], stepCosts: number[] = [];
     let checksum = 0;
