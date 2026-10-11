@@ -463,6 +463,7 @@ export class Sound {
 
   sharkBite(): void { this.play("shark_bite"); }
   sharkYelp(): void { this.play("shark_yelp"); }
+  sharkLunge(): void { this.play("shark_lunge"); }
 
   /** One note of the synthesized two-note ostinato, louder as it closes in. Only without a shark_theme recording. */
   sharkNote(high: boolean, volume: number): void {

@@ -578,6 +578,7 @@ export interface ScreenSplat {
 export type GameEvent =
   | { type: "sharkNote"; high: boolean; volume: number }
   | { type: "sharkWindup" }
+  | { type: "sharkLunge" }
   | { type: "sharkSpiked"; points: number; combo: number }
   | { type: "chomp" }
   | { type: "release"; charge: number; sweet: boolean }
@@ -1841,6 +1842,7 @@ export class Game {
         if (this.sharkTheme !== null ? this.sharkTheme >= config.sharkThemeAttack : s.t >= config.sharkWindup) {
           this.setSharkState(s, "lunge");
           this.shake = Math.max(this.shake, 4);
+          this.events.push({ type: "sharkLunge" });
         }
         break;
       }

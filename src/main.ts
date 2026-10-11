@@ -2026,6 +2026,9 @@ function handleGameEvents(): void {
         break;
       case "sharkWindup":
         break;
+      case "sharkLunge":
+        sound.sharkLunge();
+        break;
       case "sharkSpiked":
         sound.sharkYelp();
         sound.hit(e.combo);
