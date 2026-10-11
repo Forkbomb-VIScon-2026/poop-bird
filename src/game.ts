@@ -1728,6 +1728,12 @@ export class Game {
     if (this.sharkTheme === null) return;
     // The clock runs on while dying too, so the music doesn't jump; main.ts stops it at game over.
     this.sharkTheme += dt;
+    // The swim lesson (calm water, no spikes) came up before the shark: call it off for now, it comes back later.
+    if (!this.shark && this.calmWater) {
+      this.sharkTheme = null;
+      this.sharkPlanned = true;
+      return;
+    }
     // The far quay came up first (only a late debug shark): no shark, the music fades.
     if (!this.shark && this.shore?.kind === "exit") {
       this.sharkTheme = null;
@@ -1749,6 +1755,8 @@ export class Game {
   /** Debug: the shark's music starts now, and the shark follows as it would in a run (ocean only). */
   spawnSharkNow(): void {
     if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.shark || this.sharkTheme !== null) return;
+    // Not during the swim lesson: the fish can't spike yet.
+    if (this.calmWater) return;
     this.startSharkTheme();
   }
 

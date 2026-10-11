@@ -467,6 +467,14 @@ describe("sharks", () => {
     expect(late).toBe(0);
   });
 
+  it("stays away during the swim lesson, while the fish can't spike", () => {
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    game.calmWater = true;
+    game.spawnSharkNow();
+    expect(game.sharkTheme).toBeNull();
+  });
+
   it("eats a fish that isn't spiked", () => {
     const game = sharkAttack();
     waitAndPuff(game, config.oceanHoverPuff);
