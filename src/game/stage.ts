@@ -8,20 +8,17 @@
 import { initialChargeState } from "../charge";
 import { config } from "../config";
 import { applyWaterDrag, initialSpikeState } from "../swim";
-import { bubbleTrail, splash } from "./effects";
-import { updateSpring } from "./fish";
+import { springStretch } from "./bird";
+import { bubbleTrail, burst, splash } from "./effects";
 import type { Game } from "./game";
-import { OCEAN_DEPTH, type Stage, SURFACE_Y, VIEW_H, WATER_Y } from "./world";
+import { OCEAN_DEPTH, SURFACE_Y, VIEW_H, WATER_Y, type Stage } from "./world";
 
 /** Ocean y where the fish settles after the dive. */
 const DIVE_DEPTH = 240;
-
 /** How far past the quay's edge the bird is when the game takes over and dives it in. */
 export const DIVE_TAKEOVER = 60;
-
 /** How far ahead the far quay is when the game takes over and leaps the fish out. */
 export const EXIT_TAKEOVER = 320;
-
 /** City y the leaping bird glides to and holds until it's over the street. */
 const LEAP_HEIGHT = 230;
 
@@ -90,7 +87,7 @@ export function updateTransition(g: Game, dt: number): void {
 
   if (tr.to === "ocean") updateDive(g, tr, dt);
   else updateBreach(g, tr, dt);
-  updateSpring(g, dt);
+  springStretch(g, dt);
   b.flap = Math.max(0, b.flap - dt);
 
   // The camera follows the creature through the surface, then settles on the new stage.
@@ -242,17 +239,9 @@ function swapStage(g: Game, to: Stage): void {
   if (to === "ocean") {
     // The bird gulps water and turns into a deflated fish: feathers float off in a burst of bubbles.
     g.fish.puff = 0;
-    for (let i = 0; i < 30; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 40 + Math.random() * 160;
-      const feather = i < 10;
-      g.particles.push({
-        x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40,
-        life: 0.6 + Math.random() * 0.7, maxLife: 1.3, size: feather ? 3 + Math.random() * 3 : 2 + Math.random() * 5,
-        color: feather ? "#ffd166" : Math.random() < 0.6 ? "#e0fbfc" : "#ffffff",
-        gravity: feather ? -60 : -220, world: true,
-      });
-    }
+    const gulp = { speed: [40, 200], lift: -40, life: [0.6, 1.3], maxLife: 1.3 } as const;
+    burst(g, b.x, b.y, 10, { ...gulp, size: [3, 6], color: "#ffd166", gravity: -60 });
+    burst(g, b.x, b.y, 20, { ...gulp, size: [2, 7], color: () => (Math.random() < 0.6 ? "#e0fbfc" : "#ffffff"), gravity: -220 });
     g.events.push({ type: "submerged" });
   } else {
     // Out of the water and back to a bird, mid-leap.

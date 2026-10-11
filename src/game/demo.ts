@@ -11,7 +11,6 @@ export const DEMO_MAX_RISE = 300;
 
 /** Attract mode: how far (screen vx, px/s) off a poop's natural fall the autopilot still lets go for a target. */
 const DEMO_RELEASE_SLACK = 25;
-
 /** Attract mode: the most a falling poop gets nudged (px/s) toward its target. */
 export const DEMO_MAX_NUDGE = 40;
 

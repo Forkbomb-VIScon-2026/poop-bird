@@ -68,9 +68,6 @@ function poopHits(g: Game, p: Poop): boolean {
     if (!circleRect(p.x, p.y, p.r, rect)) continue;
     t.splats.push({ dx: p.x - t.x, dy: Math.max(-t.h, p.y - t.y), r: p.r * 1.3, seed: Math.random() * 1000 });
     t.hitFlash = 0.3;
-    g.combo++;
-    g.bestCombo = Math.max(g.bestCombo, g.combo);
-    g.targetsHit++;
     const camera = t.pap?.state === "watching";
     if (camera) smashCamera(g, t);
     const armed = kidArmed(t);
@@ -85,11 +82,9 @@ function poopHits(g: Game, p: Poop): boolean {
           : t.kind === "parachutist"
             ? config.balloonPassengerMultiplier
             : t.kind === "car" ? 1 : t.kind === "statue" ? 2 : 1.5;
-    const points = Math.round(config.targetPoints * kindMult * g.comboMultiplier * (p.big ? 2 : 1));
-    g.bonus += points;
+    const points = g.scoreHit(kindMult, p.big ? 2 : 1);
     if (wed?.ruin && t.wedding) ruinWedding(g, t.wedding, points);
-    const label = g.combo > 1 ? `+${points}  x${g.comboMultiplier.toFixed(1)}` : `+${points}`;
-    g.floaters.push({ x: p.x, y: t.y - t.h - 10, text: label, color: "#ffe14d", size: 26, life: 1.1, maxLife: 1.1 });
+    g.floater(p.x, t.y - t.h - 10, g.scoreLabel(points), "#ffe14d", 26, 1.1);
     splatParticles(g, p.x, p.y, p.r, true);
     g.events.push({ type: "hit", points, combo: g.combo, kind: t.kind });
     g.events.push({ type: "splat", big: p.big });
@@ -109,10 +104,7 @@ function poopHits(g: Game, p: Poop): boolean {
   // Harbour water: a plop and a ring of spray, nothing to splat.
   if (g.overWater(p.x) && p.y >= WATER_Y + 4) {
     splash(g, p.x, WATER_Y, -1, 6 + Math.round(p.r));
-    if (g.combo > 1 && g.phase === "playing") {
-      g.floaters.push({ x: p.x, y: WATER_Y - 30, text: "combo lost", color: "#ffd6d6", size: 16, life: 0.8, maxLife: 0.8 });
-    }
-    g.combo = 0;
+    g.dropCombo(p.x, WATER_Y - 30, g.phase === "playing");
     g.events.push({ type: "splat", big: false });
     return true;
   }
@@ -123,10 +115,7 @@ function poopHits(g: Game, p: Poop): boolean {
     g.decals.push({ x: p.x, y: groundHit - 4 + Math.random() * 14, r: p.r * 1.6, seed: Math.random() * 1000 });
     if (g.decals.length > 60) g.decals.shift();
     splatParticles(g, p.x, groundHit, p.r, false);
-    if (g.combo > 1 && g.phase === "playing") {
-      g.floaters.push({ x: p.x, y: groundHit - 30, text: "combo lost", color: "#ffd6d6", size: 16, life: 0.8, maxLife: 0.8 });
-    }
-    g.combo = 0;
+    g.dropCombo(p.x, groundHit - 30, g.phase === "playing");
     g.events.push({ type: "splat", big: p.big });
     return true;
   }

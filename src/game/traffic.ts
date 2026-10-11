@@ -8,25 +8,20 @@ import { GROUND_Y } from "./world";
 export const NEAR_LANE_Y = GROUND_Y + 74;
 
 export const FAR_LANE_Y = GROUND_Y + 46;
-
 /** The car models (RTX photos); the last one is the city bus. */
 export const CAR_MODELS = 7;
 
 export const BUS_MODEL = CAR_MODELS - 1;
-
 /** Bumper-to-bumper gap (px) a car keeps to the one ahead when stopped. */
 const CAR_GAP = 26;
-
 /** On top of that, a moving car keeps this many seconds of its speed to the one ahead. */
 const CAR_HEADWAY = 0.8;
-
 /** How fast cars speed up and brake (px/s²). */
 const CAR_ACCEL = 80;
-
 const CAR_BRAKE = 280;
 
 /** How long a car looks (px): RTX photos are drawn wider than the car's hitbox, the bus most of all. */
-export function carLength(t: Target): number {
+export function carLength(t: Pick<Target, "w" | "model">): number {
   return t.w * (t.model === BUS_MODEL ? 2.3 : 1.5);
 }
 

@@ -6,10 +6,10 @@
 
 import { config } from "../config";
 import { pick } from "../random";
-import { splatParticles } from "./effects";
+import { burst, splatParticles } from "./effects";
 import type { Game } from "./game";
 import type { Poop } from "./poops";
-import { PERSON_COLORS, type Target } from "./street";
+import { makeTarget, PERSON_COLORS, type Target } from "./street";
 import { circleRect, GROUND_Y, type Rect } from "./world";
 
 /**
@@ -66,14 +66,10 @@ const CHUTE_COLORS = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f78c6b"];
 
 /** Balloon envelope half-width and half-height (its centre is Balloon.x, .y). */
 export const BALLOON_RX = 60;
-
 export const BALLOON_RY = 70;
-
 /** Gap between the bottom of the envelope and the top of the basket (the ropes). */
 export const BALLOON_ROPES = 56;
-
 export const BASKET_W = 50;
-
 export const BASKET_H = 32;
 
 /** The basket's collision rectangle (also its drawn body). */
@@ -166,15 +162,10 @@ function popBalloon(g: Game, b: Balloon, byBird: boolean): void {
   b.dropV = -30;
   b.rag = { x: b.x, y: b.y + BALLOON_RY * 0.3, vy: -40, landed: false };
   g.balloonsPopped++;
-  g.combo++;
-  g.bestCombo = Math.max(g.bestCombo, g.combo);
-  g.targetsHit++;
-  const points = Math.round(config.targetPoints * config.balloonPopMultiplier * g.comboMultiplier);
-  g.bonus += points;
-  g.shake = Math.max(g.shake, 9);
-  g.floaters.push({ x: b.x, y: b.y - 20, text: "POP!", color: "#fff", size: 46, life: 0.9, maxLife: 0.9 });
-  const label = g.combo > 1 ? `+${points}  x${g.comboMultiplier.toFixed(1)}` : `+${points}`;
-  g.floaters.push({ x: b.x, y: b.y + 22, text: label, color: "#ffe14d", size: 26, life: 1.2, maxLife: 1.2 });
+  const points = g.scoreHit(config.balloonPopMultiplier);
+  g.shakeAtLeast(9);
+  g.floater(b.x, b.y - 20, "POP!", "#fff", 46, 0.9);
+  g.floater(b.x, b.y + 22, g.scoreLabel(points), "#ffe14d", 26, 1.2);
   // Shreds of envelope.
   for (let i = 0; i < 44; i++) {
     const a = Math.random() * Math.PI * 2;
@@ -188,27 +179,23 @@ function popBalloon(g: Game, b: Balloon, byBird: boolean): void {
     });
   }
   // The hot air escapes upward.
-  for (let i = 0; i < 16; i++) {
-    g.particles.push({
-      x: b.x + (Math.random() - 0.5) * BALLOON_RX, y: b.y + (Math.random() - 0.5) * BALLOON_RY,
-      vx: (Math.random() - 0.5) * 60, vy: -80 - Math.random() * 120,
-      life: 0.7 + Math.random() * 0.5, maxLife: 1.2, size: 8 + Math.random() * 10,
-      color: "rgba(255,190,110,0.35)", gravity: -80, world: true,
-    });
-  }
+  burst(g, b.x, b.y, 16, {
+    spread: [BALLOON_RX, BALLOON_RY], vx: [-30, 30], vy: [-80, -200], life: [0.7, 1.2], maxLife: 1.2, size: [8, 18],
+    color: "rgba(255,190,110,0.35)", gravity: -80,
+  });
   // Everyone out!
   const basket = basketRect(b);
   const n = b.passengers.length;
   b.passengers.forEach((p, i) => {
     const off = i - (n - 1) / 2;
     const x = b.x + off * 12;
-    g.targets.push({
+    g.targets.push(makeTarget({
       x, y: basket.y + 10, w: 26, h: 46, kind: "parachutist",
       speed: g.speed * config.balloonChuteWind + off * 45,
-      color: p.color, seed: p.seed, splats: [], hitFlash: 0, facing: off < 0 ? -1 : 1, pap: null, kid: null,
+      color: p.color, seed: p.seed, facing: off < 0 ? -1 : 1,
       chute: { open: false, t: 0, openAt: 0.3 + i * 0.18 + Math.random() * 0.1, vy: -170 - Math.random() * 60, canopy: pick(CHUTE_COLORS) },
-    });
-    g.floaters.push({ x: x + off * 20, y: basket.y - 30 - i * 14, text: "AAAH!", color: "#fff", size: 16, life: 0.9, maxLife: 0.9 });
+    }));
+    g.floater(x + off * 20, basket.y - 30 - i * 14, "AAAH!", "#fff", 16, 0.9);
   });
   b.passengers = [];
   if (byBird) {
@@ -217,14 +204,14 @@ function popBalloon(g: Game, b: Balloon, byBird: boolean): void {
     bird.vy = Math.min(bird.vy, -config.balloonLift);
     bird.stretchV += 8;
     bird.flap = 0.35;
-    g.floaters.push({ x: bird.x, y: bird.y - 44, text: "HOT AIR!", color: "#ffb703", size: 22, life: 0.9, maxLife: 0.9 });
+    g.floater(bird.x, bird.y - 44, "HOT AIR!", "#ffb703", 22, 0.9);
   }
   g.events.push({ type: "balloonPop", points, combo: g.combo });
 }
 
 function basketLanded(g: Game, b: Balloon): void {
   const r = basketRect(b);
-  g.shake = Math.max(g.shake, 6);
+  g.shakeAtLeast(6);
   for (let i = 0; i < 18; i++) {
     const a = -Math.PI * Math.random();
     const s = 60 + Math.random() * 160;
@@ -241,25 +228,18 @@ function basketLanded(g: Game, b: Balloon): void {
 /** Flew into a basket: wicker everywhere, run over. */
 function basketCrash(g: Game): void {
   g.crash();
-  g.message = { text: pick(BASKET_MESSAGES), life: 2.2 };
-  const b = g.bird;
-  for (let i = 0; i < 20; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 100 + Math.random() * 220;
-    g.particles.push({
-      x: b.x, y: b.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 80,
-      life: 0.6 + Math.random() * 0.4, maxLife: 1, size: 2 + Math.random() * 3,
-      color: Math.random() < 0.5 ? "#c68b59" : "#8b5a2b", gravity: 700, world: true,
-    });
-  }
+  g.say(BASKET_MESSAGES);
+  burst(g, g.bird.x, g.bird.y, 20, {
+    speed: [100, 320], lift: -80, life: [0.6, 1], maxLife: 1, size: [2, 5], color: ["#c68b59", "#8b5a2b"], gravity: 700,
+  });
 }
 
 function threaded(g: Game): void {
   const points = Math.round(config.targetPoints * config.balloonThreadMultiplier);
   g.bonus += points;
   const b = g.bird;
-  g.floaters.push({ x: b.x, y: b.y - 50, text: "THREADED IT!", color: "#7ae582", size: 26, life: 1.3, maxLife: 1.3 });
-  g.floaters.push({ x: b.x, y: b.y - 22, text: `+${points}`, color: "#ffe14d", size: 22, life: 1.1, maxLife: 1.1 });
+  g.floater(b.x, b.y - 50, "THREADED IT!", "#7ae582", 26, 1.3);
+  g.floater(b.x, b.y - 22, `+${points}`, "#ffe14d", 22, 1.1);
   g.events.push({ type: "threaded", points });
 }
 

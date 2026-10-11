@@ -3,7 +3,7 @@
 // the wires are targets (and some turn out to be drones).
 
 import { config, ramp } from "../config";
-import { splatParticles } from "./effects";
+import { burst, splatParticles } from "./effects";
 import type { Game } from "./game";
 import type { Poop } from "./poops";
 import { GROUND_Y, type Rect } from "./world";
@@ -64,7 +64,6 @@ export const ZAP_MESSAGES = [
 
 /** Wire half-thickness for collisions (the bird's hit radius is added). */
 const WIRE_HIT = 2;
-
 /** Pigeon hit radius for poops. */
 export const PIGEON_R = 16;
 
@@ -200,20 +199,15 @@ function updateWreck(g: Game, w: DroneWreck, dt: number, speed: number): void {
   w.landed += dt;
   // The exposed wires keep shorting out.
   if (Math.random() < dt * 4) {
-    for (let i = 0; i < 4; i++) {
-      const a = -Math.PI * (0.2 + Math.random() * 0.6);
-      g.particles.push({
-        x: w.x + 2, y: w.y - 14, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
-        life: 0.3, maxLife: 0.3, size: 1.2 + Math.random(), color: Math.random() < 0.5 ? "#fff3b0" : "#9bf6ff",
-        gravity: 600, world: true,
-      });
-    }
+    burst(g, w.x + 2, w.y - 14, 4, {
+      angle: [-Math.PI * 0.2, -Math.PI * 0.8], speed: 120, life: 0.3, maxLife: 0.3, size: [1.2, 2.2], color: ["#fff3b0", "#9bf6ff"], gravity: 600,
+    });
   }
 }
 
 /** A falling drone hits the street: it breaks open in a shower of sparks and parts. */
 function crashDrone(g: Game, w: DroneWreck): void {
-  g.shake = Math.max(g.shake, 6);
+  g.shakeAtLeast(6);
   for (let i = 0; i < 22; i++) {
     const a = -Math.PI * Math.random();
     const s = 80 + Math.random() * 220;
@@ -225,7 +219,7 @@ function crashDrone(g: Game, w: DroneWreck): void {
       gravity: 800, world: true,
     });
   }
-  g.floaters.push({ x: w.x, y: w.y - 60, text: "BIRDS AREN'T REAL!", color: "#9bf6ff", size: 22, life: 1.6, maxLife: 1.6 });
+  g.floater(w.x, w.y - 60, "BIRDS AREN'T REAL!", "#9bf6ff", 22, 1.6);
   g.events.push({ type: "droneCrashed" });
 }
 
@@ -247,13 +241,8 @@ export function poopHitsPigeon(g: Game, p: Poop): boolean {
         pg.flyer = { x: pos.x, y: pos.y, vx: 40 + Math.random() * 80, vy: -140 };
       }
       for (const other of l.pigeons) if (other !== pg && other.span === pg.span && !other.flyer && !other.wreck) other.startle = 0.35;
-      g.combo++;
-      g.bestCombo = Math.max(g.bestCombo, g.combo);
-      g.targetsHit++;
-      const points = Math.round(config.targetPoints * config.pigeonMultiplier * g.comboMultiplier * (p.big ? 2 : 1));
-      g.bonus += points;
-      const label = g.combo > 1 ? `+${points}  x${g.comboMultiplier.toFixed(1)}` : `+${points}`;
-      g.floaters.push({ x: pos.x, y: pos.y - 40, text: label, color: "#ffe14d", size: 26, life: 1.1, maxLife: 1.1 });
+      const points = g.scoreHit(config.pigeonMultiplier, p.big ? 2 : 1);
+      g.floater(pos.x, pos.y - 40, g.scoreLabel(points), "#ffe14d", 26, 1.1);
       splatParticles(g, p.x, p.y, p.r, true);
       g.events.push({ type: "hit", points, combo: g.combo, kind: "pigeon" });
       g.events.push({ type: "splat", big: p.big });

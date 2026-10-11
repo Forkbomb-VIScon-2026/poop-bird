@@ -6,11 +6,12 @@
 
 import { config, ramp } from "../config";
 import { pick } from "../random";
+import { burst } from "./effects";
 import type { Game } from "./game";
 import { obstacleRects } from "./obstacles";
 import type { Poop } from "./poops";
 import { PIGEON_R, pigeonPos, poleRect } from "./power-lines";
-import { PERSON_COLORS, type Target } from "./street";
+import { makeTarget, PERSON_COLORS, type Target } from "./street";
 import { weddingAhead } from "./wedding";
 import { BIRD_RADIUS, circleRect, GROUND_Y, type Rect } from "./world";
 
@@ -57,7 +58,6 @@ const BONK_MESSAGES = ["BONK!", "Right in the beak!", "Headshot!", "Ow ow ow", "
 
 /** Pebble radius (drawn and for collisions). */
 export const PEBBLE_R = 5;
-
 /** A kid stops shooting once he's this close to (or behind) the bird. */
 const KID_MIN_AHEAD = 70;
 
@@ -88,15 +88,15 @@ export function spawnKid(g: Game): void {
   g.lastKidAt = g.distance;
   // One shot in the first city with kids, one more in each city after.
   const later = Math.max(0, g.cityStage - Math.round(config.kidFirstCity));
-  g.targets.push({
+  g.targets.push(makeTarget({
     x: g.width + 40, y: GROUND_Y + 20, w: 34, h: 62, kind: "kid", speed: -config.kidWalkSpeed,
-    color: pick(PERSON_COLORS), seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, chute: null,
+    color: pick(PERSON_COLORS), seed: Math.random() * 1000, facing: -1,
     kid: {
       state: "walking", t: 0, pull: 0, windup: 1,
       shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + later),
       aimVx: 0, aimVy: 0, twang: 0,
     },
-  });
+  }));
 }
 
 function setKidState(t: Target, state: KidState): void {
@@ -205,7 +205,7 @@ export function disarmKid(g: Game, t: Target): void {
   setKidState(t, "crying");
   t.speed = config.kidWalkSpeed * 3;
   t.facing = 1;
-  g.floaters.push({ x: t.x, y: t.y - t.h - 44, text: "DISARMED!", color: "#7ae582", size: 24, life: 1.3, maxLife: 1.3 });
+  g.floater(t.x, t.y - t.h - 44, "DISARMED!", "#7ae582", 24, 1.3);
   g.events.push({ type: "kidCried" });
 }
 
@@ -248,7 +248,7 @@ function pebbleHits(g: Game, p: Pebble): boolean {
     if (!p.dodged && p.x < b.x - 30 && p.closest < g.hitRadius + PEBBLE_R + 28) {
       p.dodged = true;
       g.bonus += Math.round(config.targetPoints * 0.5);
-      g.floaters.push({ x: b.x, y: b.y - 46, text: "CLOSE ONE!", color: "#bde0fe", size: 20, life: 0.9, maxLife: 0.9 });
+      g.floater(b.x, b.y - 46, "CLOSE ONE!", "#bde0fe", 20, 0.9);
     }
   }
   // Buildings and poles are cover: it pings off.
@@ -257,14 +257,10 @@ function pebbleHits(g: Game, p: Pebble): boolean {
   for (const l of g.powerLines) for (let i = 0; i < l.poles; i++) rects.push(poleRect(l, i));
   for (const r of rects) {
     if (!circleRect(p.x, p.y, PEBBLE_R, r)) continue;
-    for (let i = 0; i < 8; i++) {
-      const a = Math.random() * Math.PI * 2;
-      g.particles.push({
-        x: p.x, y: p.y, vx: Math.cos(a) * 160 - p.vx * 0.2, vy: Math.sin(a) * 160,
-        life: 0.25, maxLife: 0.25, size: 1.5 + Math.random() * 1.5, color: Math.random() < 0.5 ? "#fff3b0" : "#adb5bd",
-        gravity: 500, world: false,
-      });
-    }
+    // Sparks, thrown back the way it came.
+    burst(g, p.x, p.y, 8, {
+      speed: 160, drift: -p.vx * 0.2, life: 0.25, maxLife: 0.25, size: [1.5, 3], color: ["#fff3b0", "#adb5bd"], gravity: 500, world: false,
+    });
     g.events.push({ type: "ricochet" });
     return true;
   }
@@ -276,7 +272,7 @@ function pebbleHits(g: Game, p: Pebble): boolean {
       const reach = PEBBLE_R + PIGEON_R;
       if ((pos.x - p.x) ** 2 + (pos.y - PIGEON_R - p.y) ** 2 >= reach * reach) continue;
       pg.flyer = { x: pos.x, y: pos.y, vx: 60 + Math.random() * 60, vy: -160 };
-      g.floaters.push({ x: pos.x, y: pos.y - 40, text: "COO!", color: "#fff", size: 18, life: 0.8, maxLife: 0.8 });
+      g.floater(pos.x, pos.y - 40, "COO!", "#fff", 18, 0.8);
       g.events.push({ type: "ricochet" });
       return true;
     }
@@ -286,26 +282,17 @@ function pebbleHits(g: Game, p: Pebble): boolean {
 
 function shootDownPebble(g: Game, p: Pebble, poop: Poop): void {
   g.pebblesShot++;
-  g.combo++;
-  g.bestCombo = Math.max(g.bestCombo, g.combo);
-  g.targetsHit++;
-  const points = Math.round(config.targetPoints * config.kidParryMultiplier * g.comboMultiplier);
-  g.bonus += points;
-  g.shake = Math.max(g.shake, 7);
+  const points = g.scoreHit(config.kidParryMultiplier);
+  g.shakeAtLeast(7);
   const x = (p.x + poop.x) / 2;
   const y = (p.y + poop.y) / 2;
-  g.floaters.push({ x, y: y - 30, text: "INTERCEPTED!", color: "#7ae582", size: 26, life: 1.2, maxLife: 1.2 });
-  g.floaters.push({ x, y: y - 2, text: `+${points}`, color: "#ffe14d", size: 22, life: 1.1, maxLife: 1.1 });
+  g.floater(x, y - 30, "INTERCEPTED!", "#7ae582", 26, 1.2);
+  g.floater(x, y - 2, `+${points}`, "#ffe14d", 22, 1.1);
   // A mid-air burst of poop and gravel.
-  for (let i = 0; i < 26; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 80 + Math.random() * 260;
-    g.particles.push({
-      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
-      life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 2 + Math.random() * 4,
-      color: pick(["#6b3e14", "#8b5a2b", "#ffe14d", "#adb5bd"]), gravity: 800, world: true,
-    });
-  }
+  burst(g, x, y, 26, {
+    speed: [80, 340], lift: -60, life: [0.5, 0.9], maxLife: 0.9, size: [2, 6],
+    color: ["#6b3e14", "#8b5a2b", "#ffe14d", "#adb5bd"], gravity: 800,
+  });
   g.events.push({ type: "pebbleShot", points, combo: g.combo });
 }
 
@@ -316,28 +303,15 @@ function bonk(g: Game, p: Pebble): void {
   g.charge = { charge: 0, fullHold: 0, stun: config.kidBonkStun, needsRelease: true };
   b.vy = Math.max(b.vy, config.kidKnockback);
   b.stretchV -= 10;
-  g.shake = Math.max(g.shake, 12);
-  if (g.combo > 1) {
-    g.floaters.push({ x: b.x, y: b.y + 40, text: "combo lost", color: "#ffd6d6", size: 16, life: 0.8, maxLife: 0.8 });
-  }
-  g.combo = 0;
-  g.message = { text: pick(BONK_MESSAGES), life: 1.6 };
+  g.shakeAtLeast(12);
+  g.dropCombo(b.x, b.y + 40);
+  g.say(BONK_MESSAGES, 1.6);
   // Loose feathers and an impact burst.
-  for (let i = 0; i < 12; i++) {
-    g.particles.push({
-      x: b.x + (Math.random() - 0.5) * 20, y: b.y + (Math.random() - 0.5) * 20,
-      vx: (Math.random() - 0.5) * 160 + p.vx * 0.15, vy: -60 - Math.random() * 120,
-      life: 1 + Math.random() * 0.6, maxLife: 1.6, size: 3 + Math.random() * 3,
-      color: Math.random() < 0.6 ? "#ffd166" : "#fff", gravity: 160, world: true,
-    });
-  }
-  for (let i = 0; i < 10; i++) {
-    const a = Math.random() * Math.PI * 2;
-    g.particles.push({
-      x: p.x, y: p.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220,
-      life: 0.2, maxLife: 0.2, size: 2.5, color: "#fff", gravity: 0, world: false,
-    });
-  }
+  burst(g, b.x, b.y, 12, {
+    spread: [20, 20], vx: [-80, 80], drift: p.vx * 0.15, vy: [-60, -180], life: [1, 1.6], maxLife: 1.6, size: [3, 6],
+    color: () => (Math.random() < 0.6 ? "#ffd166" : "#fff"), gravity: 160,
+  });
+  burst(g, p.x, p.y, 10, { speed: 220, life: 0.2, maxLife: 0.2, size: 2.5, color: "#fff", gravity: 0, world: false });
   const kid = p.from.kid;
   if (kid && kid.state !== "crying") {
     p.from.speed = 0;

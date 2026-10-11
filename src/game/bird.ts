@@ -2,6 +2,7 @@
 
 import { stepCharge } from "../charge";
 import { config } from "../config";
+import { burst } from "./effects";
 import type { Game } from "./game";
 import { obstacleRects, obstacleSpan } from "./obstacles";
 import { spawnPoop } from "./poops";
@@ -51,36 +52,24 @@ function release(g: Game, charge: number, push: number, sweet: boolean): void {
       gravity: -30, world: true,
     });
   }
-  if (sweet) {
-    g.floaters.push({ x: b.x, y: b.y - 40, text: "PERFECT PUSH!", color: "#ffd000", size: 30, life: 1.1, maxLife: 1.1 });
-  } else if (charge >= 0.95) {
-    g.floaters.push({ x: b.x, y: b.y - 40, text: "BIG ONE!", color: "#fff", size: 24, life: 0.8, maxLife: 0.8 });
-  } else if (charge < 0.12) {
-    g.floaters.push({ x: b.x - 20, y: b.y + 10, text: "pfft", color: "#e9f5db", size: 16, life: 0.6, maxLife: 0.6 });
-  }
+  if (sweet) g.floater(b.x, b.y - 40, "PERFECT PUSH!", "#ffd000", 30, 1.1);
+  else if (charge >= 0.95) g.floater(b.x, b.y - 40, "BIG ONE!", "#fff", 24, 0.8);
+  else if (charge < 0.12) g.floater(b.x - 20, b.y + 10, "pfft", "#e9f5db", 16, 0.6);
   g.events.push({ type: "release", charge, sweet });
 }
 
 function accident(g: Game): void {
   const b = g.bird;
   g.accidents++;
-  const text = ACCIDENT_MESSAGES[Math.floor(Math.random() * ACCIDENT_MESSAGES.length)];
-  g.message = { text, life: 2.2 };
+  const text = g.say(ACCIDENT_MESSAGES);
   g.shake = 18;
   b.stretchV -= 12;
   // A big messy blob and a spray of mess.
   spawnPoop(g, b.x, b.y + BIRD_RADIUS, 16, 60, true);
-  for (let i = 0; i < 50; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 80 + Math.random() * 380;
-    g.particles.push({
-      x: b.x, y: b.y,
-      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 100,
-      life: 0.6 + Math.random() * 0.8, maxLife: 1.4,
-      size: 3 + Math.random() * 7, color: Math.random() < 0.7 ? "#7a4a1e" : "#5c3310",
-      gravity: 900, world: true,
-    });
-  }
+  burst(g, b.x, b.y, 50, {
+    speed: [80, 460], lift: -100, life: [0.6, 1.4], maxLife: 1.4, size: [3, 10],
+    color: () => (Math.random() < 0.7 ? "#7a4a1e" : "#5c3310"), gravity: 900,
+  });
   for (let i = 0; i < 6; i++) {
     g.screenSplats.push({
       x: Math.random() * g.width, y: Math.random() * VIEW_H,
@@ -111,12 +100,7 @@ export function updateBird(g: Game, dt: number): void {
 
   if (g.stunned) b.rot += dt * 14;
   else if (g.phase === "dying") b.rot += (1.4 - b.rot) * Math.min(1, dt * 6);
-  else {
-    const targetRot = Math.max(-0.5, Math.min(0.7, b.vy / 700));
-    // Unwind tumble rotation to the nearest full turn.
-    const wound = b.rot - Math.round(b.rot / (Math.PI * 2)) * Math.PI * 2;
-    b.rot = wound + (targetRot - wound) * Math.min(1, dt * 10);
-  }
+  else easeRotation(g, Math.max(-0.5, Math.min(0.7, b.vy / 700)), dt * 10);
 
   // Over the harbour: the game takes over and dives the bird in (right away if it touches the water).
   const s = g.shore;
@@ -134,12 +118,10 @@ export function updateBird(g: Game, dt: number): void {
   }
   if (g.phase === "playing" && hitsObstacle(g)) g.crash();
   if (g.phase === "playing" && touchesWire(g)) g.zap();
+  // A charred bird smokes.
   if (g.zapped && Math.random() < dt * 25) {
-    g.particles.push({
-      x: b.x + (Math.random() - 0.5) * 20, y: b.y - 10,
-      vx: (Math.random() - 0.5) * 30, vy: -40 - Math.random() * 40,
-      life: 0.9, maxLife: 0.9, size: 4 + Math.random() * 6, color: "rgba(90,90,90,0.6)",
-      gravity: -40, world: true,
+    burst(g, b.x, b.y - 10, 1, {
+      spread: 20, vx: [-15, 15], vy: [-40, -80], life: 0.9, maxLife: 0.9, size: [4, 10], color: "rgba(90,90,90,0.6)", gravity: -40,
     });
   }
 }
@@ -147,14 +129,28 @@ export function updateBird(g: Game, dt: number): void {
 /** Squash & stretch spring, and the relief and flap timers. */
 export function animateBird(g: Game, dt: number): void {
   const b = g.bird;
-  const k = 220;
-  const damp = 14;
-  b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
-  b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
+  springStretch(g, dt);
   b.relief = Math.max(0, b.relief - dt);
   b.flap = Math.max(0, b.flap - dt);
 }
 
+/** The squash & stretch spring (bird and fish): `stretch` springs back to 1. */
+export function springStretch(g: Game, dt: number): void {
+  const b = g.bird;
+  const k = 220;
+  const damp = 14;
+  b.stretchV += (-(b.stretch - 1) * k - b.stretchV * damp) * dt;
+  b.stretch = Math.max(0.6, Math.min(1.5, b.stretch + b.stretchV * dt));
+}
+
+/** Turns the bird (or fish) toward `target` by `rate` (0..1) of the way, unwinding a tumble to the nearest full turn first. */
+export function easeRotation(g: Game, target: number, rate: number): void {
+  const b = g.bird;
+  const wound = b.rot - Math.round(b.rot / (Math.PI * 2)) * Math.PI * 2;
+  b.rot = wound + (target - wound) * Math.min(1, rate);
+}
+
+/** The bird (or fish) touches an obstacle or a pole. */
 export function hitsObstacle(g: Game): boolean {
   const { x, y } = g.bird;
   const r = g.hitRadius;

@@ -8,9 +8,9 @@ import { config } from "../config";
 import { pick } from "../random";
 import { initialSpikeState } from "../swim";
 import { bubbleTrail, ripple, splash } from "./effects";
-import { updateSpring } from "./fish";
+import { springStretch } from "./bird";
 import type { Game } from "./game";
-import { GROUND_Y, SURFACE_Y } from "./world";
+import { enterState, GROUND_Y, SURFACE_Y } from "./world";
 
 /**
  * The fisherman's state. Rowing: his boat comes in along the surface. Casting:
@@ -55,24 +55,18 @@ export interface Angler {
 }
 
 const CAUGHT_MESSAGES = ["CATCH OF THE DAY!", "REELED IN!", "Fish and chips!", "Hook, line and sinker", "Dinner is served", "Should've puffed!"];
-
 const SNAPPED_TEXT = ["LINE CUT!", "SNAPPED!", "SNIP!"];
 
 /** The fisherman's rod tip is this far ahead (left) of his boat's centre. */
 export const ANGLER_TIP_DX = 117;
-
 /** Hook radius for collisions. */
 export const HOOK_R = 7;
-
 /** Seconds he hauls on a line snagged on the spines before it parts. */
 export const ANGLER_TUG_TIME = 0.35;
-
 /** Seconds the fisherman lies on his back in the boat after the line snaps, before he sits up again. */
 export const ANGLER_TOPPLE_TIME = 1.4;
-
 /** How far behind (right of) the boat's centre his hat lands in the water. */
 export const ANGLER_HAT_DX = 110;
-
 /** Extra room after the fisherman's slot before the next ocean obstacle. */
 export const ANGLER_ROOM = 320;
 
@@ -104,10 +98,6 @@ export function spawnAngler(g: Game): number {
   return ANGLER_ROOM;
 }
 
-function setAnglerState(a: Angler, state: AnglerState): void {
-  a.state = state;
-  a.t = 0;
-}
 
 export function updateAngler(g: Game, dt: number, speed: number): void {
   const a = g.angler;
@@ -125,14 +115,14 @@ export function updateAngler(g: Game, dt: number, speed: number): void {
     case "rowing":
       a.hookX = tipX;
       if (!playing) break;
-      if (tipX - b.x < 160) setAnglerState(a, "leaving");
-      else if (tipX - b.x < config.anglerCastRange && tipX < g.width - 20) setAnglerState(a, "casting");
+      if (tipX - b.x < 160) enterState(a, "leaving");
+      else if (tipX - b.x < config.anglerCastRange && tipX < g.width - 20) enterState(a, "casting");
       break;
     case "casting":
       a.hookX = tipX;
       // The rod whips forward, then the bobber plops in and the hook sinks to where the fish is now.
       if (a.t >= 0.5) {
-        setAnglerState(a, "fishing");
+        enterState(a, "fishing");
         a.hookY = SURFACE_Y;
         a.hookVy = 0;
         a.target = Math.max(SURFACE_Y + 60, Math.min(GROUND_Y - 40, b.y));
@@ -155,7 +145,7 @@ export function updateAngler(g: Game, dt: number, speed: number): void {
       // Spines snag the line above it.
       const reach = r * config.oceanJellyPopReach * 0.8;
       if (g.spike.spiked && Math.abs(a.hookX - b.x) < reach && b.y < a.hookY - 14 && b.y + reach > SURFACE_Y) {
-        setAnglerState(a, "tugging");
+        enterState(a, "tugging");
         a.cutX = b.x;
         a.cutY = b.y;
         a.click = 0;
@@ -166,9 +156,9 @@ export function updateAngler(g: Game, dt: number, speed: number): void {
         if (!a.dodged && a.closest < r + HOOK_R + 26) {
           a.dodged = true;
           g.bonus += Math.round(config.targetPoints * config.anglerCloseMultiplier);
-          g.floaters.push({ x: b.x, y: b.y - 46, text: "CLOSE ONE!", color: "#bde0fe", size: 20, life: 0.9, maxLife: 0.9 });
+          g.floater(b.x, b.y - 46, "CLOSE ONE!", "#bde0fe", 20, 0.9);
         }
-        setAnglerState(a, "leaving");
+        enterState(a, "leaving");
       }
       break;
     }
@@ -230,14 +220,14 @@ export function updateAngler(g: Game, dt: number, speed: number): void {
 
 /** The fish touched the hook: the world holds still and he reels it in. */
 function hookFish(g: Game, a: Angler): void {
-  setAnglerState(a, "hooked");
+  enterState(a, "hooked");
   a.reel = 0;
   a.click = 0;
   a.fromY = g.bird.y;
   g.combo = 0;
   g.shake = 8;
   g.bird.stretchV -= 8;
-  g.floaters.push({ x: g.bird.x, y: g.bird.y - 50, text: "HOOKED!", color: "#ff595e", size: 26, life: 0.9, maxLife: 0.9 });
+  g.floater(g.bird.x, g.bird.y - 50, "HOOKED!", "#ff595e", 26, 0.9);
   g.events.push({ type: "anglerHooked" });
 }
 
@@ -264,19 +254,19 @@ export function reelFish(g: Game, a: Angler, dt: number): void {
   }
   a.hookX = b.x + r * 0.9;
   a.hookY = b.y;
-  updateSpring(g, dt);
+  springStretch(g, dt);
 }
 
 /** He got it: out of the water it goes, and the run is over. */
 function landFish(g: Game, a: Angler): void {
-  setAnglerState(a, "landed");
+  enterState(a, "landed");
   g.phase = "dying";
   g.dyingTime = 0;
   g.spike = initialSpikeState();
   g.shake = 10;
   g.bird.vy = -200;
-  g.message = { text: pick(CAUGHT_MESSAGES), life: 2.6 };
-  const photoId = g.nextPhotoId++;
+  g.say(CAUGHT_MESSAGES, 2.6);
+  const photoId = g.newPhotoId();
   g.trophy = photoId;
   g.events.push({ type: "anglerLanded", photoId });
 }
@@ -286,20 +276,15 @@ function landFish(g: Game, a: Angler): void {
  * gone he topples backwards into his boat, and his hat flies off.
  */
 function snapLine(g: Game, a: Angler): void {
-  setAnglerState(a, "snapped");
+  enterState(a, "snapped");
   a.hookVy = 0;
   a.stubY = a.cutY;
   a.hatX = a.x;
   g.anglersSnapped++;
-  g.combo++;
-  g.bestCombo = Math.max(g.bestCombo, g.combo);
-  g.targetsHit++;
-  const points = Math.round(config.targetPoints * config.anglerSnapMultiplier * g.comboMultiplier);
-  g.bonus += points;
+  const points = g.scoreHit(config.anglerSnapMultiplier);
   const b = g.bird;
-  g.floaters.push({ x: b.x, y: b.y - 60, text: pick(SNAPPED_TEXT), color: "#ffd60a", size: 28, life: 1.2, maxLife: 1.2 });
-  const label = g.combo > 1 ? `+${points}  x${g.comboMultiplier.toFixed(1)}` : `+${points}`;
-  g.floaters.push({ x: b.x, y: b.y - 30, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
-  g.shake = Math.max(g.shake, 6);
+  g.floater(b.x, b.y - 60, pick(SNAPPED_TEXT), "#ffd60a", 28, 1.2);
+  g.floater(b.x, b.y - 30, g.scoreLabel(points), "#ffe14d", 24, 1.1);
+  g.shakeAtLeast(6);
   g.events.push({ type: "lineSnapped", points });
 }

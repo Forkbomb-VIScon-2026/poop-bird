@@ -12,29 +12,29 @@
 // the ocean the bird is a pufferfish driven by `puffInput` instead of
 // `straining`.
 
-import { type ChargeState, initialChargeState, inSweetSpot } from "../charge";
+import { initialChargeState, inSweetSpot, type ChargeState } from "../charge";
 import { config, ramp } from "../config";
 import { pick } from "../random";
 import { initialSpikeState, popProgress, popWarning, puffScale, type SpikeState } from "../swim";
-import { type Angler, ANGLER_ROOM, spawnAngler, updateAngler } from "./angler";
-import { type Balloon, BALLOON_RX, spawnBalloon, updateBalloons } from "./balloons";
+import { ANGLER_ROOM, spawnAngler, updateAngler, type Angler } from "./angler";
+import { BALLOON_RX, spawnBalloon, updateBalloons, type Balloon } from "./balloons";
 import { animateBird, updateBird, updateCharge } from "./bird";
 import { aimPoop, autopilot, DEMO_MAX_NUDGE, DEMO_MAX_RISE } from "./demo";
-import { type Decal, type Floater, type Particle, type ScreenSplat, updateEffects } from "./effects";
+import { burst, updateEffects, type Decal, type Floater, type Particle, type ScreenSplat } from "./effects";
 import type { GameEvent } from "./events";
 import { updateFish, updateSpike } from "./fish";
-import { type Jelly, updateJellies } from "./jellies";
-import { type Pebble, spawnKid, updatePebbles } from "./kids";
-import { type Obstacle, updateObstacles } from "./obstacles";
+import { updateJellies, type Jelly } from "./jellies";
+import { spawnKid, updatePebbles, type Pebble } from "./kids";
+import { updateObstacles, type Obstacle } from "./obstacles";
 import { spawnOceanObstacle } from "./ocean-obstacles";
 import { spawnPaparazzo, type Tabloid } from "./paparazzi";
-import { type Poop, updatePoops } from "./poops";
-import { poleX, type PowerLine, spawnPowerLine, updatePowerLines, ZAP_MESSAGES } from "./power-lines";
-import { type Shark, startSharkTheme, updateShark, updateSharkTheme } from "./shark";
-import { DIVE_TAKEOVER, type Shore, spawnShore, type StageTransition, startTransition, updateShore, updateTransition } from "./stage";
-import { spawnTarget, type Target, updateTargets } from "./street";
-import { type Bouquet, type Dove, spawnWedding, updateBouquet, updateWedding, type Wedding, type WeddingPhoto } from "./wedding";
-import { BIRD_RADIUS, type GamePhase, GROUND_Y, OCEAN_DEPTH, PERCH_Y, type Stage, WATER_Y } from "./world";
+import { updatePoops, type Poop } from "./poops";
+import { poleX, spawnPowerLine, updatePowerLines, ZAP_MESSAGES, type PowerLine } from "./power-lines";
+import { startSharkTheme, updateShark, updateSharkTheme, type Shark } from "./shark";
+import { DIVE_TAKEOVER, spawnShore, startTransition, updateShore, updateTransition, type Shore, type StageTransition } from "./stage";
+import { spawnTarget, updateTargets, type Target } from "./street";
+import { spawnWedding, updateBouquet, updateWedding, type Bouquet, type Dove, type Wedding, type WeddingPhoto } from "./wedding";
+import { BIRD_RADIUS, GROUND_Y, OCEAN_DEPTH, PERCH_Y, WATER_Y, type GamePhase, type Stage } from "./world";
 
 /** Fastest climb (px/s) off the practice perch, so a practice poop is a hop, not a launch. */
 const PERCH_MAX_RISE = 280;
@@ -171,6 +171,8 @@ export class Game {
   zapped = false;
   /** Seconds left of the electrocution flash (skeleton flicker). */
   zapFlash = 0;
+
+  // Spawn bookkeeping, kept by the feature modules.
 
   /** Distance at which the next obstacle spawns. */
   nextObstacleAt = 0;
@@ -537,6 +539,9 @@ export class Game {
     }
   }
 
+  // --- shared by the feature modules ------------------------------------------
+
+  /** The run ends (the bird or fish goes down). Tests replace it to make the bird immortal. */
   crash(cause: "crash" | "zap" | "chomp" = "crash"): void {
     if (this.demo) return;
     this.phase = "dying";
@@ -547,41 +552,96 @@ export class Game {
     this.bird.vy = Math.max(this.bird.vy, 120);
     this.message = null;
     const ocean = this.stage === "ocean";
-    for (let i = 0; i < 24; i++) {
-      const a = Math.random() * Math.PI * 2;
-      this.particles.push({
-        x: this.bird.x, y: this.bird.y,
-        vx: Math.cos(a) * 200, vy: Math.sin(a) * 200 - 80,
-        life: 0.8, maxLife: 0.8, size: 4 + Math.random() * 3,
-        color: ocean ? (Math.random() < 0.5 ? "#caf0f8" : "#fff") : Math.random() < 0.5 ? "#ffd166" : "#fff",
-        gravity: ocean ? -200 : 600, world: false,
-      });
-    }
+    burst(this, this.bird.x, this.bird.y, 24, {
+      speed: 200, lift: -80, life: 0.8, maxLife: 0.8, size: [4, 7],
+      color: ocean ? ["#caf0f8", "#fff"] : ["#ffd166", "#fff"], gravity: ocean ? -200 : 600, world: false,
+    });
     this.events.push({ type: cause });
   }
 
+  /** The bird touched a wire. Tests replace it to make the bird immortal. */
   zap(): void {
     this.crash("zap");
     this.zapped = true;
     this.zapFlash = 0.7;
     this.shake = 16;
-    this.message = { text: pick(ZAP_MESSAGES), life: 2.2 };
-    const b = this.bird;
-    for (let i = 0; i < 36; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 150 + Math.random() * 350;
-      this.particles.push({
-        x: b.x, y: b.y,
-        vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.25 + Math.random() * 0.35, maxLife: 0.6, size: 2 + Math.random() * 3,
-        color: pick(["#fff", "#fff3b0", "#ffd60a", "#9bf6ff"]), gravity: 300, world: false,
-      });
-    }
+    this.say(ZAP_MESSAGES);
+    burst(this, this.bird.x, this.bird.y, 36, {
+      speed: [150, 500], life: [0.25, 0.6], maxLife: 0.6, size: [2, 5],
+      color: ["#fff", "#fff3b0", "#ffd60a", "#9bf6ff"], gravity: 300, world: false,
+    });
+  }
+
+  /**
+   * A hit that counts toward the combo (and, with `counts`, the targets hit).
+   * Pays targetPoints × `mult` × the combo multiplier × `extra` and returns it.
+   */
+  scoreHit(mult: number, extra = 1, counts = true): number {
+    this.combo++;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    if (counts) this.targetsHit++;
+    const points = Math.round(config.targetPoints * mult * this.comboMultiplier * extra);
+    this.bonus += points;
+    return points;
+  }
+
+  /** "+120  x1.5" while there's a combo, else "+120". */
+  scoreLabel(points: number): string {
+    return this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
+  }
+
+  /** The combo is gone; "combo lost" shows at (x, y) if there was one (and `show`). */
+  dropCombo(x: number, y: number, show = true): void {
+    if (this.combo > 1 && show) this.floater(x, y, "combo lost", "#ffd6d6", 16, 0.8);
+    this.combo = 0;
+  }
+
+  /** Text rising from (x, y) for `life` s. */
+  floater(x: number, y: number, text: string, color: string, size: number, life: number): void {
+    this.floaters.push({ x, y, text, color, size, life, maxLife: life });
+  }
+
+  /** Shows a random line of `lines` as the big message for `life` s, and returns it. */
+  say(lines: readonly string[], life = 2.2): string {
+    const text = pick(lines);
+    this.message = { text, life };
+    return text;
+  }
+
+  /** Shakes the screen at least this hard. */
+  shakeAtLeast(shake: number): void {
+    this.shake = Math.max(this.shake, shake);
+  }
+
+  /** The id of a new photo (main.ts captures the image for it). */
+  newPhotoId(): number {
+    return this.nextPhotoId++;
+  }
+
+  /** The next obstacle comes no sooner than `room` px of travel from here. */
+  delayNextObstacle(room: number): void {
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + room);
+  }
+
+  // --- debug spawns (also the city lesson's first car) ------------------------
+
+  /** Something can be spawned now: mid-run, no transition, and in `stage` if given. */
+  private canSpawn(stage?: Stage): boolean {
+    return this.phase === "playing" && !this.transition && (!stage || this.stage === stage);
+  }
+
+  /** Clears the obstacles less than `margin` px from the right edge (and with `all`, power lines and balloons). */
+  private clearAhead(margin: number, all = false): void {
+    const edge = this.width - margin;
+    this.obstacles = this.obstacles.filter((o) => o.x < edge);
+    if (!all) return;
+    this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < edge);
+    this.balloons = this.balloons.filter((b) => b.x + BALLOON_RX < edge);
   }
 
   /** Debug: the shark's music starts now, and the shark follows as it would in a run (ocean only). */
   spawnSharkNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.shark || this.sharkTheme !== null) return;
+    if (!this.canSpawn("ocean") || this.shark || this.sharkTheme !== null) return;
     // Not during the swim lesson: the fish can't spike yet.
     if (this.calmWater) return;
     startSharkTheme(this);
@@ -589,83 +649,74 @@ export class Game {
 
   /** Debug: a fisherman rows in right now (ocean only). */
   spawnAnglerNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.angler) return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
+    if (!this.canSpawn("ocean") || this.angler) return;
+    this.clearAhead(260);
     this.jellies = this.jellies.filter((j) => j.x < this.width - 200);
     spawnAngler(this);
-    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + ANGLER_ROOM + config.oceanSpacingMin);
+    this.delayNextObstacle(ANGLER_ROOM + config.oceanSpacingMin);
   }
 
   /** Debug: dive into the ocean right away, skipping the city: the harbour opens up under the bird. */
   diveNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
-    this.shore = { x: this.bird.x - DIVE_TAKEOVER, kind: "dive" };
+    if (!this.canSpawn("city")) return;
+    const shore: Shore = { x: this.bird.x - DIVE_TAKEOVER, kind: "dive" };
+    this.shore = shore;
     this.obstacles = [];
     this.powerLines = [];
     this.balloons = [];
-    this.targets = this.targets.filter((t) => t.x + t.w / 2 < this.shore!.x);
+    this.targets = this.targets.filter((t) => t.x + t.w / 2 < shore.x);
     startTransition(this, "ocean");
   }
 
   /** Debug: the stage's waterfront comes next, right now. */
   spawnShoreNow(): void {
-    if (this.phase !== "playing" || this.transition || this.gateSpawned) return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
-    this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < this.width - 260);
-    this.balloons = this.balloons.filter((b) => b.x + BALLOON_RX < this.width - 260);
+    if (!this.canSpawn() || this.gateSpawned) return;
+    this.clearAhead(260, true);
     spawnShore(this);
   }
 
   /** Debug: spawn a power line right now (city only). */
   spawnPowerLineNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 150);
-    const length = spawnPowerLine(this);
-    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + length + config.obstacleSpacingMin);
+    if (!this.canSpawn("city")) return;
+    this.clearAhead(150);
+    this.delayNextObstacle(spawnPowerLine(this) + config.obstacleSpacingMin);
   }
 
   /** Debug: a balloon floats in right now (city only). */
   spawnBalloonNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 150);
-    const length = spawnBalloon(this);
-    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + length + config.obstacleSpacingMin);
+    if (!this.canSpawn("city")) return;
+    this.clearAhead(150);
+    this.delayNextObstacle(spawnBalloon(this) + config.obstacleSpacingMin);
   }
 
   /** Debug: a boat that drops its anchor comes in right now (ocean only). */
   spawnAnchorDropNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.angler || this.gateSpawned) return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 260);
+    if (!this.canSpawn("ocean") || this.angler || this.gateSpawned) return;
+    this.clearAhead(260);
     spawnOceanObstacle(this, true);
-    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + config.oceanSpacingMin);
+    this.delayNextObstacle(config.oceanSpacingMin);
   }
 
   /** A car drives on right now (the city lesson's first target). */
   spawnCarNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
-    spawnTarget(this, "car");
+    if (this.canSpawn("city")) spawnTarget(this, "car");
   }
 
   /** Debug: a paparazzo walks on right now. */
   spawnPaparazzoNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
-    spawnPaparazzo(this);
+    if (this.canSpawn("city")) spawnPaparazzo(this);
   }
 
   /** Debug: a slingshot kid walks on right now. */
   spawnKidNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "city") return;
-    spawnKid(this);
+    if (this.canSpawn("city")) spawnKid(this);
   }
 
   /** Debug: a wedding right now (city only). */
   spawnWeddingNow(): void {
-    if (this.phase !== "playing" || this.transition || this.stage !== "city" || this.wedding) return;
-    this.obstacles = this.obstacles.filter((o) => o.x < this.width - 280);
-    this.powerLines = this.powerLines.filter((l) => poleX(l, l.poles - 1) < this.width - 280);
-    this.balloons = this.balloons.filter((b) => b.x + BALLOON_RX < this.width - 280);
+    if (!this.canSpawn("city") || this.wedding) return;
+    this.clearAhead(280, true);
     this.targets = this.targets.filter((t) => t.kind === "car" || t.x < this.width - 280);
-    const extra = spawnWedding(this);
-    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + extra + config.obstacleSpacingMin);
+    this.delayNextObstacle(spawnWedding(this) + config.obstacleSpacingMin);
   }
 }

@@ -7,10 +7,11 @@
 
 import { config, ramp } from "../config";
 import { pick } from "../random";
+import { burst } from "./effects";
 import type { Game } from "./game";
 import { kidArmed } from "./kids";
-import { type Obstacle, pickGapCenter } from "./obstacles";
-import type { Target, TargetKind } from "./street";
+import { pickGapCenter, type Obstacle } from "./obstacles";
+import { makeTarget, type Target, type TargetKind } from "./street";
 import { FAR_LANE_Y } from "./traffic";
 import { GROUND_Y } from "./world";
 
@@ -85,9 +86,7 @@ const COUPLES = [
 ];
 
 const RUIN_MESSAGES = ["OBJECTION!", "SPEAK NOW!", "UNHOLY MATRIMONY!", "TILL DEATH DO US PART!", "SOMETHING BROWN!"];
-
 const EARLY_MESSAGES = ["Not the dress!", "Wait for the kiss!", "Too early!", "Rude!"];
-
 const BOUQUET_MESSAGES = ["BRIDEZILLA!", "Right in the face!", "Hell hath no fury…", "She's got an arm!"];
 
 /** Pastel outfits for the wedding guests. */
@@ -95,17 +94,12 @@ const GUEST_COLORS = ["#ff8fab", "#a2d2ff", "#cdb4db", "#ffc8dd", "#bde0fe", "#b
 
 /** The church: a tower with a spire in the middle of a lower nave. */
 export const CHURCH_W = 170;
-
 export const CHURCH_TOWER_W = 56;
-
 export const CHURCH_SPIRE_H = 66;
-
 /** Room below the gap the church needs (spire, tower and nave). */
 const CHURCH_MIN_H = 200;
-
 /** Bouquet radius (drawn and for collisions). */
 export const BOUQUET_R = 12;
-
 /** Seconds the furious bride winds up before she throws. */
 export const WEDDING_WINDUP = 0.9;
 
@@ -170,10 +164,8 @@ export function spawnWedding(g: Game): number {
   g.obstacles.push(church);
 
   const coupleX = churchX - WEDDING_COUPLE_DX;
-  const person = (kind: TargetKind, dx: number, w: number, h: number, color: string, facing: 1 | -1): Target => ({
-    x: coupleX + dx, y: GROUND_Y + 20, w, h, kind, speed: 0, color, seed: Math.random() * 1000,
-    splats: [], hitFlash: 0, facing, pap: null, kid: null,
-  });
+  const person = (kind: TargetKind, dx: number, w: number, h: number, color: string, facing: 1 | -1): Target =>
+    makeTarget({ x: coupleX + dx, y: GROUND_Y + 20, w, h, kind, speed: 0, color, seed: Math.random() * 1000, facing });
   const colors = [...GUEST_COLORS].sort(() => Math.random() - 0.5);
   const wedding: Wedding = {
     phase: "arriving", t: 0, count: 0, outcome: null,
@@ -189,10 +181,10 @@ export function spawnWedding(g: Game): number {
     church,
   };
   // The getaway car, parked in front of the church.
-  const car: Target = {
+  const car = makeTarget({
     x: churchX + CHURCH_W / 2, y: FAR_LANE_Y, w: 92, h: 40, kind: "car", speed: 0, cruise: 0, model: 0, color: "#fdfcf7",
-    seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null,
-  };
+    seed: Math.random() * 1000, facing: -1,
+  });
   const party = [wedding.photographer, ...wedding.guests, wedding.groom, wedding.bride, car];
   for (const t of party) t.wedding = wedding;
   g.targets.push(...party);
@@ -266,13 +258,13 @@ export function weddingHit(g: Game, t: Target, w: Wedding): { mult: number; ruin
     if (w.phase === "kiss" && !w.outcome) return { mult: config.weddingKissMultiplier, ruin: true };
     if (w.phase === "arriving" || w.phase === "countdown") {
       w.early = true;
-      g.floaters.push({ x: t.x, y: t.y - t.h - 50, text: pick(EARLY_MESSAGES), color: "#ffd6e0", size: 20, life: 1.1, maxLife: 1.1 });
+      g.floater(t.x, t.y - t.h - 50, pick(EARLY_MESSAGES), "#ffd6e0", 20, 1.1);
     }
     return { mult: config.weddingCoupleMultiplier, ruin: false };
   }
   if (t.kind === "photographer") {
     if (!w.outcome) {
-      g.floaters.push({ x: t.x, y: t.y - t.h - 50, text: "LENS SMUDGED!", color: "#7ae582", size: 20, life: 1.2, maxLife: 1.2 });
+      g.floater(t.x, t.y - t.h - 50, "LENS SMUDGED!", "#7ae582", 20, 1.2);
     }
     return { mult: 2, ruin: false };
   }
@@ -284,19 +276,14 @@ export function ruinWedding(g: Game, w: Wedding, points: number): void {
   w.outcome = "ruined";
   setWeddingPhase(w, "after");
   g.weddingsRuined++;
-  g.shake = Math.max(g.shake, 14);
-  g.message = { text: pick(RUIN_MESSAGES), life: 2.2 };
+  g.shakeAtLeast(14);
+  g.say(RUIN_MESSAGES);
   const x = weddingX(w);
   // The veil and the groom's top hat fly off.
-  for (let i = 0; i < 18; i++) {
-    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2;
-    const s = 120 + Math.random() * 220;
-    g.particles.push({
-      x, y: w.bride.y - w.bride.h * 0.8, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      life: 0.7 + Math.random() * 0.5, maxLife: 1.2, size: 2 + Math.random() * 4,
-      color: pick(["#ffffff", "#ffe5ec", "#ffb3c6", "#6b3e14"]), gravity: 500, world: true,
-    });
-  }
+  burst(g, x, w.bride.y - w.bride.h * 0.8, 18, {
+    angle: [-Math.PI / 2 - 1, -Math.PI / 2 + 1], speed: [120, 340], life: [0.7, 1.2], maxLife: 1.2, size: [2, 6],
+    color: ["#ffffff", "#ffe5ec", "#ffb3c6", "#6b3e14"], gravity: 500,
+  });
   g.events.push({ type: "weddingRuined", points });
   takeWeddingPhoto(g, w);
 }
@@ -307,16 +294,12 @@ function marry(g: Game, w: Wedding): void {
   setWeddingPhase(w, "after");
   const x = weddingX(w);
   const y = w.bride.y - w.bride.h;
-  g.floaters.push({ x, y: y - 60, text: "♥ JUST MARRIED ♥", color: "#ffb3c6", size: 24, life: 1.6, maxLife: 1.6 });
-  for (let i = 0; i < 70; i++) {
-    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
-    const s = 150 + Math.random() * 300;
-    g.particles.push({
-      x: x + (Math.random() - 0.5) * 140, y: y + 20, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      life: 1 + Math.random() * 0.8, maxLife: 1.8, size: 2 + Math.random() * 3,
-      color: pick(["#ff8fab", "#ffd166", "#a2d2ff", "#b9fbc0", "#ffffff", "#cdb4db"]), gravity: 260, world: true,
-    });
-  }
+  g.floater(x, y - 60, "♥ JUST MARRIED ♥", "#ffb3c6", 24, 1.6);
+  // Confetti.
+  burst(g, x, y + 20, 70, {
+    angle: [-Math.PI / 2 - 1.2, -Math.PI / 2 + 1.2], speed: [150, 450], spread: 140, life: [1, 1.8], maxLife: 1.8, size: [2, 5],
+    color: ["#ff8fab", "#ffd166", "#a2d2ff", "#b9fbc0", "#ffffff", "#cdb4db"], gravity: 260,
+  });
   for (let i = 0; i < 6; i++) {
     g.doves.push({
       x: x + (Math.random() - 0.5) * 80, y: y - 20 - Math.random() * 30,
@@ -328,7 +311,7 @@ function marry(g: Game, w: Wedding): void {
 }
 
 function takeWeddingPhoto(g: Game, w: Wedding): void {
-  const photoId = g.nextPhotoId++;
+  const photoId = g.newPhotoId();
   const photo: WeddingPhoto = { photoId, ruined: w.outcome === "ruined", names: w.names };
   w.flash = 0.3;
   g.flash = Math.max(g.flash, 0.55);
@@ -373,11 +356,11 @@ export function updateBouquet(g: Game, dt: number): void {
   q.x += q.vx * dt;
   q.y += q.vy * dt;
   q.rot += dt * (q.angry ? 14 : 4);
+  // A trail of sparkles (or angry pink).
   if (Math.random() < dt * 25) {
-    g.particles.push({
-      x: q.x, y: q.y, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40,
-      life: 0.5, maxLife: 0.5, size: 1.5 + Math.random() * 2,
-      color: q.angry ? "#ff8fab" : pick(["#fff3b0", "#ffffff", "#ffb3c6"]), gravity: 120, world: false,
+    burst(g, q.x, q.y, 1, {
+      vx: [-20, 20], vy: [-20, 20], life: 0.5, maxLife: 0.5, size: [1.5, 3.5],
+      color: q.angry ? "#ff8fab" : ["#fff3b0", "#ffffff", "#ffb3c6"], gravity: 120, world: false,
     });
   }
   if (q.y > GROUND_Y + 40 || q.x < -80 || q.x > g.width + 80 || q.y < -400) {
@@ -393,26 +376,18 @@ export function updateBouquet(g: Game, dt: number): void {
 }
 
 function petalBurst(g: Game, x: number, y: number, n: number): void {
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 60 + Math.random() * 220;
-    g.particles.push({
-      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40,
-      life: 0.7 + Math.random() * 0.7, maxLife: 1.4, size: 2.5 + Math.random() * 3,
-      color: pick(["#ff8fab", "#ffb3c6", "#ffffff", "#fb6f92", "#b9fbc0"]), gravity: 220, world: true,
-    });
-  }
+  burst(g, x, y, n, {
+    speed: [60, 280], lift: -40, life: [0.7, 1.4], maxLife: 1.4, size: [2.5, 5.5],
+    color: ["#ff8fab", "#ffb3c6", "#ffffff", "#fb6f92", "#b9fbc0"], gravity: 220,
+  });
 }
 
 function catchBouquet(g: Game, q: Bouquet): void {
   g.bouquetsCaught++;
-  g.combo++;
-  g.bestCombo = Math.max(g.bestCombo, g.combo);
-  const points = Math.round(config.targetPoints * config.weddingBouquetMultiplier * g.comboMultiplier);
-  g.bonus += points;
+  const points = g.scoreHit(config.weddingBouquetMultiplier, 1, false);
   g.bird.stretchV += 8;
-  g.floaters.push({ x: q.x, y: q.y - 46, text: "YOU'RE NEXT! \u{1F48D}", color: "#ffb3c6", size: 26, life: 1.4, maxLife: 1.4 });
-  g.floaters.push({ x: q.x, y: q.y - 16, text: `+${points}`, color: "#ffe14d", size: 22, life: 1.1, maxLife: 1.1 });
+  g.floater(q.x, q.y - 46, "YOU'RE NEXT! \u{1F48D}", "#ffb3c6", 26, 1.4);
+  g.floater(q.x, q.y - 16, `+${points}`, "#ffe14d", 22, 1.1);
   petalBurst(g, q.x, q.y, 24);
   g.events.push({ type: "bouquetCaught", points });
 }
@@ -422,8 +397,8 @@ function bouquetHit(g: Game, q: Bouquet): void {
   const b = g.bird;
   b.vy = Math.max(b.vy, config.weddingBouquetKnock);
   b.stretchV -= 10;
-  g.shake = Math.max(g.shake, 10);
-  g.message = { text: pick(BOUQUET_MESSAGES), life: 1.6 };
+  g.shakeAtLeast(10);
+  g.say(BOUQUET_MESSAGES, 1.6);
   petalBurst(g, q.x, q.y, 30);
   g.events.push({ type: "bouquetHit" });
 }

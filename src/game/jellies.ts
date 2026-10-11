@@ -3,6 +3,7 @@
 import { config } from "../config";
 import { pick } from "../random";
 import { anglerBusy } from "./angler";
+import { burst } from "./effects";
 import type { Game } from "./game";
 import { obstacleSpan } from "./obstacles";
 import { sharkBusy } from "./shark";
@@ -74,23 +75,10 @@ export function updateJellies(g: Game, dt: number, speed: number): void {
 }
 
 function popJelly(g: Game, j: Jelly): void {
-  g.combo++;
-  g.bestCombo = Math.max(g.bestCombo, g.combo);
-  g.targetsHit++;
   g.jelliesPopped++;
-  const points = Math.round(config.targetPoints * config.oceanJellyMultiplier * g.comboMultiplier);
-  g.bonus += points;
-  const label = g.combo > 1 ? `+${points}  x${g.comboMultiplier.toFixed(1)}` : `+${points}`;
-  g.floaters.push({ x: j.x, y: j.y - 30, text: label, color: "#ffe14d", size: 26, life: 1.1, maxLife: 1.1 });
-  for (let i = 0; i < 18; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 60 + Math.random() * 180;
-    g.particles.push({
-      x: j.x, y: j.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      life: 0.4 + Math.random() * 0.4, maxLife: 0.8, size: 2 + Math.random() * 4,
-      color: `hsla(${j.hue},90%,80%,1)`, gravity: -60, world: true,
-    });
-  }
+  const points = g.scoreHit(config.oceanJellyMultiplier);
+  g.floater(j.x, j.y - 30, g.scoreLabel(points), "#ffe14d", 26, 1.1);
+  burst(g, j.x, j.y, 18, { speed: [60, 240], life: [0.4, 0.8], maxLife: 0.8, size: [2, 6], color: `hsla(${j.hue},90%,80%,1)`, gravity: -60 });
   j.r = 0; // removed by the caller
   g.events.push({ type: "jellyPopped", points, combo: g.combo });
 }

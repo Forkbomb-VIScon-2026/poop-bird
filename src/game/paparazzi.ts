@@ -4,9 +4,10 @@
 
 import { config } from "../config";
 import { pick } from "../random";
+import { burst, UPWARD } from "./effects";
 import type { Game } from "./game";
 import { kidArmed } from "./kids";
-import type { Target } from "./street";
+import { makeTarget, type Target } from "./street";
 import { weddingAhead } from "./wedding";
 import { GROUND_Y } from "./world";
 
@@ -69,14 +70,13 @@ export function spawnPaparazzo(g: Game): void {
   g.lastPaparazzoAt = g.distance;
   const tutorial = g.paparazziSeen++ === 0;
   const x = g.width + 60;
-  g.targets.push({
+  g.targets.push(makeTarget({
     x, y: GROUND_Y + 20, w: 56, h: 66, kind: "paparazzo",
     // The first one walks along with the bird, so there's time to figure him out.
     speed: tutorial ? config.paparazziTutorialWalk : 0,
-    color: "#6d6875", seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1,
+    color: "#6d6875", seed: Math.random() * 1000, facing: -1,
     pap: { state: "watching", timer: 0, startX: x, tutorial, aim: -2.4, flash: 0, beep: 0 },
-    kid: null, chute: null,
-  });
+  }));
 }
 
 export function updatePaparazzo(g: Game, t: Target, dt: number): void {
@@ -112,11 +112,11 @@ function snap(g: Game, t: Target): void {
   p.timer = 1;
   p.flash = 0.25;
   t.speed = 0;
-  const photoId = g.nextPhotoId++;
+  const photoId = g.newPhotoId();
   g.flash = 1;
-  g.shake = Math.max(g.shake, 6);
+  g.shakeAtLeast(6);
   g.polaroid = { photoId, life: 2.2, maxLife: 2.2 };
-  g.message = { text: pick(SNAP_MESSAGES), life: 1.4 };
+  g.say(SNAP_MESSAGES, 1.4);
   const tabloid: Tabloid = { photoId, headline: pick(HEADLINES) };
   g.frontPages.push(tabloid);
   g.pendingTabloids.push(tabloid);
@@ -129,18 +129,10 @@ export function smashCamera(g: Game, t: Target): void {
   p.state = "smashed";
   t.speed = 0;
   g.camerasSmashed++;
-  // Lens shards
-  const camX = t.x;
-  const camY = t.y - t.h * 0.72;
-  for (let i = 0; i < 16; i++) {
-    const a = -Math.PI * Math.random();
-    const s = 80 + Math.random() * 200;
-    g.particles.push({
-      x: camX, y: camY, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 1.5 + Math.random() * 2.5,
-      color: Math.random() < 0.5 ? "#caf0f8" : "#adb5bd", gravity: 800, world: true,
-    });
-  }
-  g.floaters.push({ x: t.x, y: t.y - t.h - 44, text: "NO PHOTOS!", color: "#7ae582", size: 24, life: 1.3, maxLife: 1.3 });
+  // Lens shards, from the camera at his shoulder.
+  burst(g, t.x, t.y - t.h * 0.72, 16, {
+    angle: UPWARD, speed: [80, 280], life: [0.5, 0.9], maxLife: 0.9, size: [1.5, 4], color: ["#caf0f8", "#adb5bd"], gravity: 800,
+  });
+  g.floater(t.x, t.y - t.h - 44, "NO PHOTOS!", "#7ae582", 24, 1.3);
   g.events.push({ type: "cameraSmashed" });
 }

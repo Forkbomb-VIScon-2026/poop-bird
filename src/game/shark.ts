@@ -5,9 +5,9 @@
 import { config } from "../config";
 import { pick } from "../random";
 import { anglerBusy } from "./angler";
-import { bubbleAt } from "./effects";
+import { bubbleAt, burst } from "./effects";
 import type { Game } from "./game";
-import { GROUND_Y, SURFACE_Y } from "./world";
+import { enterState, GROUND_Y, SURFACE_Y } from "./world";
 
 /**
  * The shark's state. Stalking: it swims in from ahead, drifting to the fish's
@@ -40,18 +40,14 @@ export interface Shark {
 
 /** The shark's nose (and jaws) is this far ahead of its body centre. */
 export const SHARK_NOSE = 72;
-
 /** Bite radius around the nose. */
 const SHARK_JAW_R = 20;
-
 /** Extra room after the shark swims in before the next ocean obstacle, so it attacks in open water. */
 const SHARK_ROOM = 340;
-
 /** Seconds before the shark swims in that no new obstacles spawn (the last ones scroll past before it lunges). */
 const SHARK_CLEAR_TIME = 3.5;
 
 const SHARK_SPIKED_TEXT = ["OUCH!", "NOT TODAY!", "SPIKY SNACK!", "BITE ME!", "TOO PRICKLY!"];
-
 const CHOMP_MESSAGES = ["CHOMP!", "Snack time", "Should've puffed!", "Fish fingers", "Gulp."];
 
 /** True while the shark is hunting (or about to show up): no jellyfish get in its way. */
@@ -113,12 +109,7 @@ function spawnShark(g: Game): void {
     state: "stalking", t: 0, x: g.width + 140, y, vx: 0, vy: 0,
     heading: Math.PI, jaw: 0, beat: 0, beats: 0, seed: Math.random() * 1000,
   };
-  g.nextObstacleAt = Math.max(g.nextObstacleAt, g.distance + SHARK_ROOM + config.oceanSpacingMin);
-}
-
-function setSharkState(s: Shark, state: SharkState): void {
-  s.state = state;
-  s.t = 0;
+  g.delayNextObstacle(SHARK_ROOM + config.oceanSpacingMin);
 }
 
 /** Where the shark's nose (and its bite) is. */
@@ -134,7 +125,7 @@ export function updateShark(g: Game, dt: number): void {
   const hunting = g.phase === "playing" && g.stage === "ocean" && !g.transition && g.angler?.state !== "hooked";
   if (!hunting && (s.state === "stalking" || s.state === "windup" || s.state === "lunge")) {
     // The run ended some other way: it loses interest and swims on.
-    setSharkState(s, "leaving");
+    enterState(s, "leaving");
     s.vx = -220;
     s.vy = 0;
   }
@@ -147,8 +138,10 @@ export function updateShark(g: Game, dt: number): void {
     const nose = sharkNose(s);
     return Math.atan2(b.y - nose.y, Math.min(-20, b.x - nose.x));
   };
-  const keepInWater = (): void => {
-    s.y = Math.max(SURFACE_Y + 34, Math.min(GROUND_Y - 30, s.y));
+  // Moves at its velocity, staying in the water.
+  const swim = (): void => {
+    s.x += s.vx * dt;
+    s.y = Math.max(SURFACE_Y + 34, Math.min(GROUND_Y - 30, s.y + s.vy * dt));
   };
 
   // Its theme: low, high, low, high… slow and soft far off, faster and louder
@@ -173,13 +166,11 @@ export function updateShark(g: Game, dt: number): void {
       s.vx = -Math.max(40, Math.min(600, toGo / Math.max(0.3, left)));
       const want = b.y + Math.sin(s.t * 1.7 + s.seed) * 30;
       s.vy = (want - s.y) * 1.4;
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      keepInWater();
+      swim();
       turnToward(Math.PI + Math.max(-0.35, Math.min(0.35, s.vy / 300)), 3);
       s.jaw = Math.max(0, s.jaw - dt * 2);
       if (sharkNose(s).x - b.x < config.sharkLungeRange) {
-        setSharkState(s, "windup");
+        enterState(s, "windup");
         g.events.push({ type: "sharkWindup" });
       }
       break;
@@ -188,15 +179,13 @@ export function updateShark(g: Game, dt: number): void {
       // Holds back a little, lines up on the fish and opens wide.
       s.vx = 50;
       s.vy = (b.y - s.y) * 3;
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      keepInWater();
+      swim();
       turnToward(aimAtFish(), 5);
       s.jaw = Math.min(1, s.jaw + dt * 3);
       // Lunges on the music's cue (or after the windup, if the clock is gone).
       if (g.sharkTheme !== null ? g.sharkTheme >= config.sharkThemeAttack : s.t >= config.sharkWindup) {
-        setSharkState(s, "lunge");
-        g.shake = Math.max(g.shake, 4);
+        enterState(s, "lunge");
+        g.shakeAtLeast(4);
         g.events.push({ type: "sharkLunge" });
       }
       break;
@@ -208,9 +197,7 @@ export function updateShark(g: Game, dt: number): void {
       const speed = config.sharkLungeSpeed;
       s.vx = Math.cos(s.heading) * speed;
       s.vy = Math.sin(s.heading) * speed;
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      keepInWater();
+      swim();
       s.jaw = 1;
       const r = g.hitRadius;
       const n = sharkNose(s);
@@ -221,7 +208,7 @@ export function updateShark(g: Game, dt: number): void {
         if (spiked) spikeShark(g, s);
         else chomp(g, s);
       } else if (n.x < b.x - r - 40) {
-        setSharkState(s, "leaving");
+        enterState(s, "leaving");
       }
       break;
     }
@@ -229,9 +216,7 @@ export function updateShark(g: Game, dt: number): void {
       // Swims off with its meal, jaws shut, a burp of bubbles now and then.
       s.vx = -260;
       s.vy = Math.sin(s.t * 3) * 30;
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      keepInWater();
+      swim();
       turnToward(Math.PI, 4);
       s.jaw = Math.max(0, s.jaw - dt * 8);
       if (Math.random() < dt * 6) bubbleAt(g, sharkNose(s).x, s.y - 6, 2);
@@ -250,9 +235,7 @@ export function updateShark(g: Game, dt: number): void {
     case "leaving":
       s.vx += (-260 - s.vx) * Math.min(1, dt * 2);
       s.vy *= Math.exp(-dt * 2);
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      keepInWater();
+      swim();
       turnToward(Math.PI, 3);
       s.jaw = Math.max(0, s.jaw - dt * 3);
       break;
@@ -268,43 +251,30 @@ export function updateShark(g: Game, dt: number): void {
 
 /** It bit into the spines: it yelps and flees, and the fish gets knocked back a little. */
 function spikeShark(g: Game, s: Shark): void {
-  setSharkState(s, "fleeing");
+  enterState(s, "fleeing");
   // Beaten: its music cuts out right away.
   g.sharkTheme = null;
   s.vx = 120;
   s.vy = -60;
   g.sharksSpiked++;
-  g.combo++;
-  g.bestCombo = Math.max(g.bestCombo, g.combo);
-  g.targetsHit++;
-  const points = Math.round(config.targetPoints * config.sharkMultiplier * g.comboMultiplier);
-  g.bonus += points;
+  const points = g.scoreHit(config.sharkMultiplier);
   const b = g.bird;
   const n = sharkNose(s);
-  g.floaters.push({ x: n.x, y: n.y - 50, text: pick(SHARK_SPIKED_TEXT), color: "#ffd60a", size: 30, life: 1.2, maxLife: 1.2 });
-  const label = g.combo > 1 ? `+${points}  x${g.comboMultiplier.toFixed(1)}` : `+${points}`;
-  g.floaters.push({ x: n.x, y: n.y - 20, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
-  g.shake = Math.max(g.shake, 10);
+  g.floater(n.x, n.y - 50, pick(SHARK_SPIKED_TEXT), "#ffd60a", 30, 1.2);
+  g.floater(n.x, n.y - 20, g.scoreLabel(points), "#ffe14d", 24, 1.1);
+  g.shakeAtLeast(10);
   b.vy += 80 * Math.sign(b.y - s.y || 1);
   b.stretchV -= 8;
-  for (let i = 0; i < 20; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const sp = 80 + Math.random() * 200;
-    g.particles.push({
-      x: n.x, y: n.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-      life: 0.3 + Math.random() * 0.4, maxLife: 0.7, size: 2 + Math.random() * 4,
-      color: Math.random() < 0.5 ? "#ffd60a" : "#ffffff", gravity: 0, world: true,
-    });
-  }
+  burst(g, n.x, n.y, 20, { speed: [80, 280], life: [0.3, 0.7], maxLife: 0.7, size: [2, 6], color: ["#ffd60a", "#ffffff"], gravity: 0 });
   g.events.push({ type: "sharkSpiked", points, combo: g.combo });
 }
 
 /** Not spiked: gulp. The run is over and the shark swims off with the fish. */
 function chomp(g: Game, s: Shark): void {
-  setSharkState(s, "chomped");
+  enterState(s, "chomped");
   g.eaten = true;
   g.combo = 0;
   g.crash("chomp");
-  g.message = { text: pick(CHOMP_MESSAGES), life: 2.2 };
+  g.say(CHOMP_MESSAGES);
   g.shake = 14;
 }

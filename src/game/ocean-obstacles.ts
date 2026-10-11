@@ -4,9 +4,10 @@
 
 import { config, ramp } from "../config";
 import { pick } from "../random";
+import { burst } from "./effects";
 import type { Game } from "./game";
-import { type BottomKind, type Obstacle, pickGapCenter } from "./obstacles";
-import { GROUND_Y, type Rect, SURFACE_Y } from "./world";
+import { pickGapCenter, type BottomKind, type Obstacle } from "./obstacles";
+import { enterState, GROUND_Y, SURFACE_Y, type Rect } from "./world";
 
 /**
  * A boat dropping its anchor. Hanging: like any anchor, until the fish comes
@@ -30,23 +31,17 @@ export interface AnchorDrop {
 }
 
 const CORAL_COLORS = ["#ff7f6e", "#ff9f43", "#f368e0", "#ee5a6f", "#ffb86b"];
-
 const ROCK_COLORS = ["#6b7b8c", "#7d6e63", "#5f6f7a"];
-
 /** Waterlogged timber, greyed and greened by the years. */
 const WRECK_COLORS = ["#8a6440", "#7b5b3a", "#74604a"];
 
 /** A shipwreck's hull: how high its deck stands above the sea floor. */
 export const WRECK_HULL_H = 62;
-
 /** Its broken mast's height above the deck (the mast's tip is the gap's bottom edge). */
 export const WRECK_MAST_MIN = 24;
-
 export const WRECK_MAST_MAX = 96;
-
 /** The hull's bow and stern curve in: this much of each end doesn't count for collisions. */
 export const WRECK_END_INSET = 18;
-
 export const WRECK_MAST_W = 12;
 
 /**
@@ -60,28 +55,19 @@ export function wreckGeometry(o: Obstacle): { deck: number; facing: 1 | -1; mast
 
 /** The anchor's boat: width, and how far its hull reaches below the surface (its deck is BOAT_FREEBOARD above). */
 export const BOAT_W = 150;
-
 export const BOAT_DRAFT = 22;
-
 export const BOAT_FREEBOARD = 18;
-
 /** The anchor hangs with its crown at the gap's top edge. */
 export const ANCHOR_W = 60;
-
 export const ANCHOR_H = 66;
-
 /** The shortest chain between the hull and the anchor's ring. */
 const ANCHOR_MIN_CHAIN = 16;
-
 /** The highest an anchored obstacle's gap can start. */
 const ANCHOR_TOP_MIN = SURFACE_Y + BOAT_DRAFT + ANCHOR_MIN_CHAIN + ANCHOR_H;
-
 /** A dropping anchor needs at least this many seconds of warning, or the boat doesn't drop it. */
 const ANCHOR_DROP_MIN_WARN = 0.5;
-
 /** Seconds between the clanks of a dropping anchor's chain during the warning. */
 export const ANCHOR_RATTLE_EVERY = 0.22;
-
 /** How far a dropped anchor's crown digs into the sand of the sea floor. */
 const ANCHOR_SAND_DEPTH = 6;
 
@@ -134,7 +120,7 @@ export function anchorRects(o: Obstacle): Rect[] {
  * the surface: over coral or a rock (a gap between them), or over open water
  * (dive under it). Now and then the sea floor holds an old shipwreck
  * instead: a long, low hull with one broken mast. Some boats drop their
- * anchor as the fish comes near (`forceDrop`: g one does). Returns the
+ * anchor as the fish comes near (`forceDrop`: this one does). Returns the
  * extra room a wreck's long hull needs before the next obstacle.
  */
 export function spawnOceanObstacle(g: Game, forceDrop = false): number {
@@ -195,8 +181,7 @@ export function updateAnchorDrops(g: Game, dt: number, speed: number): void {
     if (d.state === "hanging") {
       const onScreen = cx + BOAT_W / 2 < g.width;
       if (onScreen && eta <= config.oceanAnchorDropWarn + fall + config.oceanAnchorDropLead) {
-        d.state = "warning";
-        d.t = 0;
+        enterState(d, "warning");
         g.events.push({ type: "anchorWarn" });
       }
     } else if (d.state === "warning") {
@@ -206,8 +191,7 @@ export function updateAnchorDrops(g: Game, dt: number, speed: number): void {
         g.events.push({ type: "anchorRattle" });
       }
       if (eta <= fall + config.oceanAnchorDropLead) {
-        d.state = "falling";
-        d.t = 0;
+        enterState(d, "falling");
         d.y = o.gapTop;
         d.chain = ANCHOR_RIP_Y;
         anchorSnapped(g, cx);
@@ -233,8 +217,7 @@ export function updateAnchorDrops(g: Game, dt: number, speed: number): void {
       }
       if (wasUp && d.y >= d.to) anchorLanded(g, o, cx);
       if (k >= 1) {
-        d.state = "down";
-        d.t = 0;
+        enterState(d, "down");
       }
     }
   }
@@ -242,16 +225,10 @@ export function updateAnchorDrops(g: Game, dt: number, speed: number): void {
 
 /** The chain rips just below the hull: bits of rust and a burst of bubbles at the break. */
 function anchorSnapped(g: Game, cx: number): void {
-  for (let i = 0; i < 14; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 60 + Math.random() * 160;
-    g.particles.push({
-      x: cx, y: ANCHOR_RIP_Y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      life: 0.3 + Math.random() * 0.4, maxLife: 0.7, size: 2 + Math.random() * 3,
-      color: pick(["#56616d", "#aa5a28", "#e0fbfc"]), gravity: 120, world: true,
-    });
-  }
-  g.shake = Math.max(g.shake, 4);
+  burst(g, cx, ANCHOR_RIP_Y, 14, {
+    speed: [60, 220], life: [0.3, 0.7], maxLife: 0.7, size: [2, 5], color: ["#56616d", "#aa5a28", "#e0fbfc"], gravity: 120,
+  });
+  g.shakeAtLeast(4);
   g.events.push({ type: "anchorSnapped" });
 }
 
@@ -269,6 +246,6 @@ function anchorLanded(g: Game, o: Obstacle, cx: number): void {
       gravity: 140, world: true,
     });
   }
-  g.shake = Math.max(g.shake, 7);
+  g.shakeAtLeast(7);
   g.events.push({ type: "anchorLanded" });
 }

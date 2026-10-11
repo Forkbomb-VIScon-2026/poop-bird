@@ -7,7 +7,6 @@
 // water level. `Game.cameraY` is the top of the view in city coordinates.
 
 export const VIEW_H = 600;
-
 export const GROUND_Y = 520;
 
 export const BIRD_RADIUS = 22;
@@ -17,13 +16,10 @@ export const PERCH_Y = 270;
 
 /** Ocean: the water surface (a soft ceiling). The sea floor is GROUND_Y. */
 export const SURFACE_Y = 36;
-
 /** City: the harbour's water level, a step below the quay (GROUND_Y). */
 export const WATER_Y = GROUND_Y + 16;
-
 /** How far the ocean sits below the city: ocean y + OCEAN_DEPTH = city y. */
 export const OCEAN_DEPTH = WATER_Y - SURFACE_Y;
-
 /** Ocean y halfway between the surface and the sea floor. */
 export const OCEAN_MID_Y = (SURFACE_Y + GROUND_Y) / 2;
 
@@ -52,4 +48,10 @@ export function circleRect(cx: number, cy: number, r: number, rect: Rect): boole
   const dx = cx - nx;
   const dy = cy - ny;
   return dx * dx + dy * dy < r * r;
+}
+
+/** Switches a state machine (shark, fisherman, anchor drop…) to `state` and restarts its clock. */
+export function enterState<S>(e: { state: S; t: number }, state: S): void {
+  e.state = state;
+  e.t = 0;
 }

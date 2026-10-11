@@ -3,19 +3,18 @@
 
 import { config } from "../config";
 import { pick } from "../random";
-import { type Chute, updateParachutist } from "./balloons";
+import { updateParachutist, type Chute } from "./balloons";
 import type { Game } from "./game";
-import { type Kid, kidDue, spawnKid, updateKid } from "./kids";
+import { kidDue, spawnKid, updateKid, type Kid } from "./kids";
 import { obstacleSpan } from "./obstacles";
-import { type Paparazzo, paparazzoDue, spawnPaparazzo, updatePaparazzo } from "./paparazzi";
+import { paparazzoDue, spawnPaparazzo, updatePaparazzo, type Paparazzo } from "./paparazzi";
 import { poleX } from "./power-lines";
-import { BUS_MODEL, CAR_COLORS, CAR_MODELS, driveCars, FAR_LANE_Y, keepCarsApart, laneRoom, NEAR_LANE_Y } from "./traffic";
-import { type Wedding, weddingAhead } from "./wedding";
+import { CAR_COLORS, CAR_MODELS, carLength, driveCars, FAR_LANE_Y, keepCarsApart, laneRoom, NEAR_LANE_Y } from "./traffic";
+import { weddingAhead, type Wedding } from "./wedding";
 import { GROUND_Y, type Rect, type Splat } from "./world";
 
 /** × the target spawn rate in attract mode, so there's always someone to hit. */
 const DEMO_SPAWN_SCALE = 3;
-
 /** Share of attract-mode targets that are cars (vs 0.5 in a run), so the faster spawning doesn't jam the road. */
 const DEMO_CAR_SHARE = 0.2;
 
@@ -63,6 +62,11 @@ export interface Rage {
 const CURSES = ["#@$%!", "%&#@!!", "$#!*@", "@#%&$!", "*!#@%"];
 
 export const PERSON_COLORS = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#6c5ce7", "#fd79a8", "#00b894"];
+
+/** A fresh target (unsplatted, no special role unless `t` gives it one). */
+export function makeTarget(t: Pick<Target, "x" | "y" | "w" | "h" | "kind" | "speed" | "color" | "seed" | "facing"> & Partial<Target>): Target {
+  return { splats: [], hitFlash: 0, pap: null, kid: null, chute: null, ...t };
+}
 
 export function targetRect(t: Target): Rect {
   return { x: t.x - t.w / 2, y: t.y - t.h, w: t.w, h: t.h };
@@ -136,30 +140,30 @@ export function spawnTarget(g: Game, only?: "car"): void {
   const seed = Math.random() * 1000;
   if (kind === "car") {
     const model = Math.floor(Math.random() * CAR_MODELS);
-    const len = 92 * (model === BUS_MODEL ? 2.3 : 1.5);
+    const len = carLength({ w: 92, model });
     const x = g.width + 40 + len / 2;
-    // Take the other lane if g one is busy at the corner. With both busy no car comes,
+    // Take the other lane if this one is busy at the corner. With both busy no car comes,
     // unless one has to: then it joins the shorter queue, further off-screen.
     const prefer: 1 | -1 = Math.random() < 0.6 ? 1 : -1;
     const room = { [prefer]: laneRoom(g, prefer, x, len), [-prefer]: laneRoom(g, -prefer as 1 | -1, x, len) };
     const dir: 1 | -1 = room[prefer] <= room[-prefer] ? prefer : (-prefer as 1 | -1);
     if (room[dir] > x && !only) return;
     const cruise = 40 + Math.random() * 90;
-    t = {
+    t = makeTarget({
       x: room[dir], y: dir === 1 ? NEAR_LANE_Y : FAR_LANE_Y, w: 92, h: 40, kind, speed: dir * cruise, cruise, model,
-      color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir, pap: null, kid: null, chute: null,
-    };
+      color: pick(CAR_COLORS), seed, facing: dir,
+    });
   } else if (kind === "pedestrian") {
     const dir = Math.random() < 0.5 ? 1 : -1;
-    t = {
+    t = makeTarget({
       x: g.width + 60, y: GROUND_Y + 20, w: 24, h: 52, kind, speed: dir * (18 + Math.random() * 30),
-      color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
-    };
+      color: pick(PERSON_COLORS), seed, facing: dir as 1 | -1,
+    });
   } else {
-    t = {
+    t = makeTarget({
       x: g.width + 80, y: GROUND_Y + 20, w: 46, h: 96, kind, speed: 0,
-      color: "#8fa3a8", seed, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null, chute: null,
-    };
+      color: "#8fa3a8", seed, facing: -1,
+    });
   }
   g.targets.push(t);
 }
@@ -185,7 +189,7 @@ function statueFits(g: Game, x: number, w: number): boolean {
     if ((t.kind === "statue" || t.pap) && !clear(t.x - t.w / 2, t.x + t.w / 2)) return false;
   }
   // The next obstacle spawns at width + 40 once we've travelled up to
-  // nextObstacleAt; by then g statue will have scrolled that far left.
+  // nextObstacleAt; by then this statue will have scrolled that far left.
   if (!g.demo && right > g.width + 40 + (g.nextObstacleAt - g.distance)) return false;
   return true;
 }

@@ -8,7 +8,7 @@ import { pick } from "../random";
 import { anglerBusy, anglerDue, spawnAngler } from "./angler";
 import { spawnBalloon } from "./balloons";
 import type { Game } from "./game";
-import { type AnchorDrop, anchorRects, BOAT_W, spawnOceanObstacle, updateAnchorDrops, WRECK_END_INSET, WRECK_MAST_W, wreckGeometry } from "./ocean-obstacles";
+import { anchorRects, BOAT_W, spawnOceanObstacle, updateAnchorDrops, WRECK_END_INSET, WRECK_MAST_W, wreckGeometry, type AnchorDrop } from "./ocean-obstacles";
 import type { Tabloid } from "./paparazzi";
 import { powerLinesAllowed, spawnPowerLine } from "./power-lines";
 import { sharkClearing, sharkThemeDue, startSharkTheme } from "./shark";
@@ -44,11 +44,8 @@ const BUILDING_COLORS = ["#c8553d", "#588b8b", "#8e7dbe", "#d4a373", "#6d8a96", 
 
 /** The roadside billboard: a board at the bottom of the gap on steel legs (see obstacleRects). */
 export const BILLBOARD_W = 230;
-
 export const BILLBOARD_H = 140;
-
 const BILLBOARD_MIN_LEGS = 40;
-
 /** The legs' frame covers the middle of the board's width; the board overhangs on both sides. */
 export const BILLBOARD_LEGS_INSET = 0.16;
 
@@ -99,7 +96,7 @@ function bottomRects(o: Obstacle): Rect[] {
 }
 
 /**
- * A shark or the fisherman is still to come or under way g ocean stage: the far quay waits for them.
+ * A shark or the fisherman is still to come or under way this ocean stage: the far quay waits for them.
  * With both, the stage runs long enough to fit the fisherman and then the shark.
  */
 function oceanSetPieceAhead(g: Game): boolean {
@@ -118,11 +115,11 @@ export function updateObstacles(g: Game, dt: number, speed: number): void {
   if (g.phase !== "playing" || g.demo) return;
   if (g.calmWater && g.stage === "ocean") {
     // Nothing spawns; the first obstacle stays a full delay ahead.
-    g.nextObstacleAt = Math.max(g.nextObstacleAt, g.distance + config.oceanFirstObstacleDelay);
+    g.delayNextObstacle(config.oceanFirstObstacleDelay);
     return;
   }
   if (g.calmCity && g.stage === "city") {
-    g.nextObstacleAt = Math.max(g.nextObstacleAt, g.distance + config.firstObstacleDelay);
+    g.delayNextObstacle(config.firstObstacleDelay);
     return;
   }
 
