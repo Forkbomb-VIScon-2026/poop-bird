@@ -121,7 +121,9 @@ fish do what the player expects, and nothing calibrates mid-game.
    countdown and a progress bar.
 2. "Puff your cheeks like a pufferfish 🐡", the same way (held for
    `oceanCalibrationSeconds`, 3.5 s), then "And let it out" for
-   `oceanLessonLetOutSeconds` (5 s).
+   `oceanLessonLetOutSeconds` (5 s). The let-out follows the hold without a
+   button (the face right after a puff is what it records), so the hold's
+   last 1.5 s say "Next: let it out".
 
 The player is never asked for a relaxed face. The screen opens with a short
 welcome ("Hi! 👋 Let's get the game to know your face", just the webcam, no
