@@ -940,6 +940,11 @@ body.touch .key-badge {
   background: #ddd;
 }
 
+/* The welcome (the relaxed read): no example face yet, so nobody practises one. */
+#screen-calibrate.welcome .calib-example {
+  display: none;
+}
+
 #cam.in-calib {
   position: relative;
   right: auto;

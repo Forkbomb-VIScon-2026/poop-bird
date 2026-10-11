@@ -411,6 +411,10 @@ function adoptKnownFace(face: KnownFace): void {
     puffCalibration = face.puff;
     puffSignal = initialPuffState();
     adopted = true;
+  } else if (!face.puff && !faceId.puff && puffCalibration) {
+    // They skipped the puff: pursed lips alone, not whoever's puff was active.
+    puffCalibration = null;
+    puffSignal = initialPuffState();
   }
   if (adopted) showToast("👋 Welcome back! You're still calibrated", 2500);
 }
@@ -598,10 +602,8 @@ function wait(ms: number): Promise<void> {
 
 /** What the calibration screen is doing, and its relaxed-face read. */
 const calib = {
-  /** Read the relaxed face from the tracker (not while straining or puffing, nor right after). */
+  /** Read the relaxed face from the tracker: only during the welcome, before any example face shows. */
   relaxing: false,
-  /** performance.now() before which the face may still be recovering from a strain or puff. */
-  relaxAfter: 0,
   relaxed: [] as FeatureVector[],
   /** The button was pressed (cleared when a phase starts waiting for it). */
   pressed: false,
@@ -614,8 +616,10 @@ const calib = {
 const RELAXED_KEEP = 300;
 /** Fewest relaxed-face samples a calibration needs. */
 const MIN_RELAXED_SAMPLES = 20;
-/** How long a face takes to settle back after a strain or puff hold. */
-const RECOVER_MS = 1500;
+/** The welcome lasts at least this long with a face in view (the relaxed read). */
+const WELCOME_MS = 2000;
+/** Longest the welcome waits for recognition to decide, once the relaxed read is done. */
+const WELCOME_RECOGNITION_MS = 4000;
 /** Failed tries of a phase before "Play anyway" shows. */
 const TRIES_BEFORE_SKIP = 2;
 
@@ -623,7 +627,7 @@ const examples = { strain: calibStrainedUrl, puff: calibPuffedUrl };
 
 /** Called by the tracker with each face frame: the relaxed-face read. */
 function readRelaxed(features: FeatureVector): void {
-  if (!calib.relaxing || state !== "calibrating" || performance.now() < calib.relaxAfter) return;
+  if (!calib.relaxing || state !== "calibrating") return;
   calib.relaxed.push(features);
   if (calib.relaxed.length > RELAXED_KEEP) calib.relaxed.splice(0, calib.relaxed.length - RELAXED_KEEP);
 }
@@ -650,10 +654,11 @@ async function runCalibration(forced = calib.forced): Promise<void> {
   show(hud, false);
   show(cam, true);
   calib.relaxed = [];
-  calib.relaxAfter = 0;
-  calib.relaxing = true;
   strain = initialStrainState();
+  // Both get redone: nothing of the last player's may carry over (Play anyway on the puff means none).
+  puffCalibration = null;
   puffSignal = initialPuffState();
+  if (!(await welcome(token))) return;
   const strained = await calibrateStrain(token);
   const puffed = strained === null ? null : await calibratePuff(token);
   if (token === flow) calib.relaxing = false;
@@ -662,6 +667,61 @@ async function runCalibration(forced = calib.forced): Promise<void> {
   puffSignal = initialPuffState();
   startReady();
   showToast(strained && puffed ? "All set! 💪 The bird and the fish know your face now" : "Let's go! Recalibrate (C) any time", 3500);
+}
+
+/**
+ * The screen opens with a welcome and no example face, so nobody practises a
+ * face yet: the relaxed face is read meanwhile (WELCOME_MS of a face in view)
+ * and then kept as it is, and recognition gets a moment to decide (a known
+ * face goes on to the perch). false = abandoned, or the face was known.
+ */
+async function welcome(token: number): Promise<boolean> {
+  $("calib-step").textContent = "Calibration";
+  $("calib-prompt").textContent = "Hi! 👋 Let's get the game to know your face";
+  $("calib-hint").textContent = "Just look at the camera for a moment…";
+  screens.calibrate.classList.add("welcome");
+  show($("calib-buttons"), false);
+  show($("calib-run"), true);
+  $("calib-count").textContent = "";
+  const progress = $("calib-progress");
+  progress.style.width = "0%";
+  calibStatus("", "");
+  calib.relaxing = true;
+  let faceFor = 0;
+  let doneAt = -1;
+  let last = performance.now();
+  try {
+    for (; ;) {
+      await wait(50);
+      if (token !== flow) return false;
+      const now = performance.now();
+      if (faceVisible()) faceFor += now - last;
+      last = now;
+      if (!calib.forced && faceCalibrated()) {
+        calib.relaxing = false;
+        startReady();
+        showToast("👋 Welcome back! You're still calibrated", 2500);
+        return false;
+      }
+      const read = Math.min(faceFor / WELCOME_MS, calib.relaxed.length / MIN_RELAXED_SAMPLES, 1);
+      progress.style.width = `${read * 100}%`;
+      if (read < 1) {
+        calibStatus(faceVisible() ? "" : "Looking for your face… 👀", "");
+        continue;
+      }
+      calib.relaxing = false;
+      if (doneAt < 0) doneAt = now;
+      const deciding = faceId.status === "running" || faceId.status === "idle";
+      if (!calib.forced && deciding && faceIdWorks() && now - doneAt < WELCOME_RECOGNITION_MS) {
+        calibStatus("Have we met? Checking… 🤔", "");
+        continue;
+      }
+      return true;
+    }
+  } finally {
+    calib.relaxing = false;
+    screens.calibrate.classList.remove("welcome");
+  }
 }
 
 /** The strain phase, until a good calibration (true) or "Play anyway" (false). null = abandoned (or skipped by recognition). */
@@ -702,7 +762,12 @@ async function calibratePuff(token: number): Promise<boolean | null> {
     const go = await calibrationIntro(token, "puff", tries);
     if (!go) return null;
     // Play anyway: pursed lips alone (the pucker range) drive the fish.
-    if (go === "skip") return false;
+    if (go === "skip") {
+      puffCalibration = null;
+      storageRemove(PUFF_CALIBRATION_KEY);
+      puffSignal = initialPuffState();
+      return false;
+    }
     const held = await holdFace(token, "puff");
     if (!held) return null;
     const after = await letOut(token);
@@ -755,8 +820,8 @@ const CALIB_TEXT = {
 };
 
 /**
- * Shows a phase's instructions and waits for the button (while the relaxed
- * face is read). "go" once pressed and there's enough of a relaxed read;
+ * Shows a phase's instructions and waits for the button. "go" once pressed
+ * with a face in view;
  * "skip" for Play anyway; null = abandoned, or the face turned out to be
  * calibrated already (then it's on the perch).
  */
@@ -776,26 +841,18 @@ async function calibrationIntro(token: number, phase: "strain" | "puff", tries: 
   if (!tries) calibStatus("", "");
   armButtonKeys(300);
   calib.pressed = calib.skipped = false;
-  calib.relaxing = true;
   for (; ;) {
     await wait(50);
     if (token !== flow) return null;
-    // A face this tab knows (recognized while they read this): straight to the perch.
+    // A face this tab knows (recognized late, while they read this): straight to the perch.
     if (!calib.forced && phase === "strain" && !tries && faceCalibrated()) {
-      calib.relaxing = false;
       startReady();
       showToast("👋 Welcome back! You're still calibrated", 2500);
       return null;
     }
     if (calib.skipped) return "skip";
-    const enough = calib.relaxed.length >= MIN_RELAXED_SAMPLES;
-    if (!tries) {
-      if (!faceVisible()) calibStatus("Looking for your face… 👀", "");
-      else if (faceId.status === "running" && !calib.forced) calibStatus("Have we met? Checking… 🤔", "");
-      else if (calib.pressed && !enough) calibStatus("Look at the camera for a moment…", "");
-      else calibStatus("", "");
-    }
-    if (calib.pressed && enough && faceVisible()) return "go";
+    if (!tries) calibStatus(faceVisible() ? "" : "Looking for your face… 👀", "");
+    if (calib.pressed && faceVisible()) return "go";
     if (calib.pressed && !faceVisible()) calibStatus("I can't see you. Face the camera, then press again.", "bad");
     if (!faceVisible()) calib.pressed = false;
   }
@@ -814,7 +871,6 @@ function calibStatus(text: string, kind: "" | "bad"): void {
  * calibrationSettle s don't count). null = abandoned.
  */
 async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samples: FeatureVector[]; coverage: number } | null> {
-  calib.relaxing = false;
   show($("calib-buttons"), false);
   calibStatus("", "");
   show($("calib-run"), true);
@@ -850,7 +906,6 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
     sound.setBurble(-1);
     card.classList.remove("holding");
     stopSampling(mine.samples);
-    calib.relaxAfter = performance.now() + RECOVER_MS;
   }
   progress.style.width = "100%";
   count.textContent = "✓";

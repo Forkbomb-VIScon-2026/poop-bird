@@ -123,14 +123,17 @@ fish do what the player expects, and nothing calibrates mid-game.
    `oceanCalibrationSeconds`, 3.5 s), then "And let it out" for
    `oceanLessonLetOutSeconds` (5 s).
 
-The player is never asked for a relaxed face: it's read in the background from
-the moment a face shows, while they read the screen (not during a hold or the
-1.5 s after one). A phase whose fit fails its quality check says why ("That
+The player is never asked for a relaxed face. The screen opens with a short
+welcome ("Hi! 👋 Let's get the game to know your face", just the webcam, no
+example face yet, so nobody practises one): the relaxed face is read there
+(2 s of a face in view, with a progress bar) and then kept as it is, retries
+included. A phase whose fit fails its quality check says why ("That
 looked a lot like your normal face. Strain harder!") and the button becomes
 **Try again**; after two failed tries **Play anyway** shows too (strain: the
-failed fit, or a guess from the relaxed face; puff: pursed lips only). While
-recognition is still deciding, the screen says "Have we met? Checking… 🤔";
-a face it knows goes straight on to the perch ("👋 Welcome back!").
+failed fit, or a guess from the relaxed face; puff: pursed lips only). If
+recognition is still deciding after the read, the welcome waits up to 4 s
+more ("Have we met? Checking… 🤔"); a face it knows goes straight on to the
+perch ("👋 Welcome back!").
 
 Every run then starts on the **perch**: the bird sits in its nest on top of a
 street lamp, with the player's webcam beside it and a big arrow from the
@@ -480,9 +483,9 @@ webcam), and the wiring in `src/main.ts`.
    right), plus `mouthRollLower`, `mouthRollUpper`, `mouthShrugUpper` and
    `mouthShrugLower`.
 2. **Calibration** (the calibration screen, per face, see "How it plays").
-   Neutral is the background read of the relaxed face (up to the newest ~10 s,
-   at least 20 samples), as robust statistics (median and MAD), so a smile or a
-   word while reading the screen doesn't move it. Strain is the "STRAIN!"
+   Neutral is the welcome's read of the relaxed face (2 s, at least 20
+   samples), as robust statistics (median and MAD), so a smile or a word
+   doesn't move it. Strain is the "STRAIN!"
    hold, whose first `calibrationSettle` (0.7 s) is ignored so reaction time
    doesn't pollute the data (mean and standard deviation).
 
@@ -509,8 +512,7 @@ webcam), and the wiring in `src/main.ts`.
    if the summed weights are below
    `minCalibrationChange`, if fewer than 60% of strain frames would cross the
    on threshold, or if more than 25% of neutral frames would stay above the
-   off threshold (the background read includes whatever the face did while
-   reading the screen, so this also catches a strain that looks like a smile).
+   off threshold.
    The player sees why and can retry, after two tries play anyway, or switch
    to keyboard. Only a calibration that passes replaces the saved one.
 7. **No face.** Short dropouts (up to `faceLossGrace`, 0.25 s) keep the last
@@ -633,7 +635,7 @@ separated their puffs from their relaxed face), while pursed lips light up
    face for `oceanCalibrationSeconds` (3.5 s), with an example photo next to
    their webcam, then "And let it out" for `oceanLessonLetOutSeconds` (5 s);
    the first `calibrationSettle` of each is dropped. "Not puffing" is the
-   background read of the relaxed face plus the let-out step. The let-out
+   welcome's read of the relaxed face plus the let-out step. The let-out
    step matters most: a face just after a puff doesn't go back to the relaxed
    face from before it (the mouth stays narrower, the lips pressed or a bit
    pursed, the mouth corners up). When the calibration only knew the relaxed
