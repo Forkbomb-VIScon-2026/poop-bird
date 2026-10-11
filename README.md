@@ -251,8 +251,8 @@ city by city (the debug panel's "Progression" group).
   Tunables are in the debug panel's "Fisherman" group.
 - **Sharks:** most ocean stages (`sharkChance`) have a shark instead of the
   fisherman. Its music starts a couple of obstacles in (`sharkSlot`), well
-  before it shows up: `shark_theme.mp3` from `sharkThemeOffset` (4 s) on,
-  timed so the shark lunges `sharkThemeAttack` (12.5 s) later, and kept in
+  before it shows up: `shark_theme.mp3` (the Jaws theme, from the second
+  "do-doop"), timed so the shark lunges `sharkThemeAttack` (12.1 s) in, and kept in
   sync across pauses (`Game.sharkTheme` is the clock). No new obstacles spawn
   in the last seconds before it arrives. Without that file, a synthesized
   two-note "dun-dun" plays instead, speeding up as it closes in. The shark
