@@ -90,6 +90,7 @@ canvas#game {
   color: var(--ink);
   box-shadow: 0 3px 0 var(--ink);
   cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s, background-color 0.12s;
 }
 
 .hud-btn:active {
@@ -698,7 +699,47 @@ svg.face {
   color: var(--ink);
   cursor: pointer;
   box-shadow: 0 4px 0 var(--ink);
-  transition: transform 0.05s;
+  transition: transform 0.08s, box-shadow 0.08s, background-color 0.12s;
+}
+
+/* Hover: the button lifts a little and lights up. Mouse only, so taps don't leave it stuck up. */
+@media (hover: hover) {
+  .btn:not(:disabled):not(.ghost):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 0 var(--ink);
+    background: #fff3d1;
+  }
+
+  .btn.primary:not(:disabled):hover {
+    background: #ffe08f;
+  }
+
+  .btn.ghost:not(:disabled):hover {
+    text-decoration-thickness: 3px;
+    color: var(--accent);
+  }
+
+  .btn.ghost.light:not(:disabled):hover {
+    color: var(--gold);
+  }
+
+  .hud-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 0 var(--ink);
+    background: #fff;
+  }
+
+  /* Pressing still pushes it in. */
+  .btn:not(:disabled):not(.ghost):hover:active,
+  .btn:not(:disabled):not(.ghost).key-pressed {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--ink);
+  }
+
+  .hud-btn:hover:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--ink);
+  }
 }
 
 .btn:active {
@@ -755,9 +796,8 @@ kbd {
 }
 
 /* --- Key hints (keyhints.ts) ---------------------------------------------------
-   Every button with keys wears a small keycap on its corner (⏎ on the yellow
-   button, its own key on the others, none on small ghost links) and shows them all in a tooltip on hover
-   or keyboard focus. */
+   Every button with a key wears it as a small keycap on its corner: ⏎ on the
+   yellow button, its own key on the others. That key is the only one it takes. */
 
 .has-keys {
   position: relative;
@@ -783,15 +823,24 @@ kbd {
   pointer-events: none;
 }
 
-.btn.primary:not(:disabled) > .key-badge.k-default,
-.btn:not(.primary):not(.ghost):not(:disabled) > .key-badge.k-extra {
+/* ⏎ while the button is the yellow one (data-default), else its own key. */
+.has-keys.primary:not(:disabled) > .key-badge.k-default,
+.has-keys:not(.primary):not(:disabled) > .key-badge.k-own,
+.has-keys.primary:not([data-default]):not(:disabled) > .key-badge.k-own {
   display: block;
   animation: key-badge-in 0.35s cubic-bezier(0.3, 1.6, 0.6, 1) both;
 }
 
-.has-keys:hover > .key-badge,
-.has-keys:focus-visible > .key-badge {
-  visibility: hidden;
+/* The HUD buttons sit close together: a smaller keycap. */
+.hud-btn > .key-badge {
+  top: -8px;
+  right: -8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 15px;
+  border-radius: 6px;
 }
 
 @keyframes key-badge-in {
@@ -805,69 +854,6 @@ kbd {
   }
 }
 
-.key-tip {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  z-index: 10;
-  display: flex;
-  gap: 5px;
-  padding: 6px 8px;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.3;
-  white-space: nowrap;
-  text-decoration: none;
-  color: var(--ink);
-  background: var(--ink);
-  border-radius: 9px;
-  opacity: 0;
-  transform: translate(-50%, 4px);
-  transition: opacity 0.12s, transform 0.12s;
-  pointer-events: none;
-}
-
-.key-tip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  margin-left: -6px;
-  border: 6px solid transparent;
-  border-top-color: var(--ink);
-}
-
-.key-tip kbd {
-  border-color: var(--ink);
-  border-bottom-width: 2px;
-}
-
-.has-keys:hover > .key-tip,
-.has-keys:focus-visible > .key-tip {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  transition-delay: 0.25s;
-}
-
-/* Enter / Space belong to the yellow button only: a demoted one drops them, and a tip left empty hides. */
-.btn:not(.primary) .k-default,
-.btn:not(.primary):not([data-keys]):not([data-shortcut]) > .key-tip {
-  display: none;
-}
-
-/* The HUD buttons sit at the top of the screen: tip below. */
-.hud-btn > .key-tip {
-  bottom: auto;
-  top: calc(100% + 10px);
-}
-
-.hud-btn > .key-tip::after {
-  top: auto;
-  bottom: 100%;
-  border-top-color: transparent;
-  border-bottom-color: var(--ink);
-}
-
 .btn.key-pressed,
 .hud-btn.key-pressed {
   transform: translateY(3px);
@@ -875,8 +861,7 @@ kbd {
   animation: none;
 }
 
-body.touch .key-badge,
-body.touch .key-tip {
+body.touch .key-badge {
   display: none !important;
 }
 

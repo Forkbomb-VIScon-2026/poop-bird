@@ -8,7 +8,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, VIEW_H, wireAt } from "./game";
-import { buttonForKey, decorate, decorateAll, keyName, pressFromKey } from "./keyhints";
+import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import { BOARD_KEEP, strainPercent, type RunStats } from "./leaderboard";
@@ -1505,6 +1505,7 @@ function updateMuteButton(): void {
   const btn = $("btn-hud-mute");
   btn.textContent = sound.muted ? "🔇" : "🔊";
   btn.setAttribute("aria-label", sound.muted ? "Unmute" : "Mute");
+  decorate(btn);
 }
 
 function togglePause(): void {
@@ -2083,7 +2084,7 @@ function focusHandlesEnter(): boolean {
 
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
-  // A screen's yellow button takes Enter and Space; some buttons take more keys (data-keys).
+  // Each button takes the one key on its badge: Enter for a screen's yellow button, else its own (keyhints.ts).
   if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const name = keyName(e);
     const btn = name === "Enter" && focusHandlesEnter() ? null : buttonForKey(name);
@@ -2092,6 +2093,7 @@ window.addEventListener("keydown", (e) => {
       if (performance.now() >= buttonKeysArmedAt) pressFromKey(btn);
       return;
     }
+    if (keyBlocked(name)) return;
   }
   const key = e.key.toLowerCase();
   if (e.code === "Space") {
@@ -2102,7 +2104,6 @@ window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   switch (key) {
     case "p":
-    case "escape":
       togglePause();
       break;
     case "m":
