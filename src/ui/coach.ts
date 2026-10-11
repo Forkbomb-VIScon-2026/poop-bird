@@ -2,7 +2,7 @@
 // swim lesson each claim it while they run; only the latest claim can change
 // or hide it, so an older flow that's still winding down can't clobber it.
 
-import { $, show } from "./dom";
+import { $, homeOf, show } from "./dom";
 
 export type CoachFace = "relaxed" | "strained" | "puffed";
 
@@ -24,7 +24,7 @@ export interface CoachLine {
 /** The coach belongs to whoever claimed it last (claimCoach). */
 let coachOwner = 0;
 /** Where the coach lives when it isn't docked on the perch. */
-const coachHome = { parent: $("coach").parentElement!, next: $("coach").nextElementSibling };
+const coachHome = homeOf($("coach"));
 
 /** Takes the coach over (hiding whatever an older owner showed) and returns the claim for coachSay. */
 export function claimCoach(): number {
@@ -39,7 +39,6 @@ export function releaseCoach(owner: number): void {
 
 function coachHide(): void {
   show($("coach"), false);
-  showTimeline(null);
 }
 
 /** Shows `line` on the coach, if `owner` still has it. Cheap to call every frame. */
@@ -81,11 +80,6 @@ export function coachSay(owner: number, line: CoachLine): void {
   show(el, true);
 }
 
-/** The step progress bar under the coach's line, 0..1. */
-export function coachProgress(fraction: number): void {
-  $("coach-progress").style.width = `${fraction * 100}%`;
-}
-
 /**
  * Moves the coach beside the bird on the perch, or back over the game. Leaving
  * the perch hides the perch's line (`perchOwner`'s claim).
@@ -96,31 +90,7 @@ export function dockCoach(perched: boolean, perchOwner: number): void {
   el.classList.toggle("docked", perched);
   if (perched) $("perch-coach-slot").append(el);
   else {
-    coachHome.parent.insertBefore(el, coachHome.next);
+    coachHome.before(el);
     releaseCoach(perchOwner);
   }
-}
-
-/** A timeline of steps under the coach (the puff calibration's; null hides it). */
-export function showTimeline(steps: readonly { label: string; kind: string }[] | null): void {
-  const el = $("coach-timeline");
-  el.replaceChildren(
-    ...(steps ?? []).map((s) => {
-      const li = document.createElement("li");
-      li.textContent = s.label;
-      li.className = s.kind === "puff" ? "puff" : "relax";
-      return li;
-    }),
-  );
-  show(el, !!steps);
-}
-
-/** Highlights step `i` of the timeline; the ones before are done. */
-export function markTimeline(i: number): void {
-  $("coach-timeline")
-    .querySelectorAll("li")
-    .forEach((li, j) => {
-      li.classList.toggle("done", j < i);
-      li.classList.toggle("now", j === i);
-    });
 }

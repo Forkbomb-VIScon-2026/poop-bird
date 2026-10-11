@@ -1,6 +1,7 @@
 // What the drawing functions share: the View they draw into, and the house style.
 
 import type { RtxPlayer } from "../rtx";
+import type { TargetSplatter } from "./target-splats";
 
 /**
  * What a drawing function draws into: the Renderer. `ctx` is swapped for the
@@ -16,6 +17,8 @@ export interface View {
   /** How far the player's mouth is open, 0..1: the (classic) bird's beak opens as far. */
   mouthOpen: number;
   readonly rtxPlayer: RtxPlayer;
+  /** Sticks the poop on targets to their actual shape. */
+  readonly splatter: TargetSplatter;
 }
 
 /** A captured photo: a face crop from the webcam, or a crop of the game canvas around the bird. */

@@ -66,7 +66,7 @@ function poopHits(g: Game, p: Poop): boolean {
   for (const t of g.targets) {
     const rect = targetRect(t);
     if (!circleRect(p.x, p.y, p.r, rect)) continue;
-    t.splats.push({ dx: p.x - t.x, dy: Math.max(-t.h, p.y - t.y), r: p.r * 1.3, seed: Math.random() * 1000 });
+    t.splats.push({ dx: p.x - t.x, dy: Math.max(-t.h, p.y - t.y), r: p.r * 1.3, seed: Math.random() * 1000, at: g.time });
     t.hitFlash = 0.3;
     const camera = t.pap?.state === "watching";
     if (camera) smashCamera(g, t);

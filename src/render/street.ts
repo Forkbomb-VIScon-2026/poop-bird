@@ -1,18 +1,13 @@
 // The street's targets: cars, pedestrians (and their rage) and statues; the specials draw in their own modules.
 
-import type { Rage, Splat, Target } from "../game";
+import type { Rage, Target } from "../game";
 import { drawPhoto as drawRtxPhoto, RTX, rtxCar, rtxWalker } from "../rtx";
 import { drawParachutist } from "./balloons";
-import { drawSplat } from "./effects";
 import { drawKid } from "./kids";
 import { drawPaparazzo } from "./paparazzi";
 import { circle, line, roundRect } from "./shapes";
 import { OUTLINE, type View } from "./view";
 import { drawBride, drawGetawayDecor, drawGroom, drawGuest, drawWeddingPhotographer } from "./wedding";
-
-function drawTargetSplats(ctx: CanvasRenderingContext2D, splats: Splat[]): void {
-  for (const s of splats) drawSplat(ctx, s.dx, s.dy, s.r, s.seed, 1);
-}
 
 function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
   if (RTX.on) {
@@ -239,6 +234,13 @@ export function drawTarget(view: View, t: Target, time: number): void {
   ctx.save();
   ctx.translate(t.x, t.y);
   if (t.hitFlash > 0) ctx.translate(0, -Math.sin((t.hitFlash / 0.3) * Math.PI) * 6);
+  drawTargetBody(ctx, t, time);
+  if (t.splats.length) view.splatter.draw(ctx, t, time);
+  ctx.restore();
+}
+
+/** A target as it looks (without its splats), at its feet. */
+export function drawTargetBody(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
   ctx.lineWidth = 3;
   ctx.strokeStyle = OUTLINE;
   if (t.kind === "car") drawCar(ctx, t, time);
@@ -251,6 +253,4 @@ export function drawTarget(view: View, t: Target, time: number): void {
   else if (t.kind === "photographer") drawWeddingPhotographer(ctx, t, time);
   else if (t.kind === "parachutist") drawParachutist(ctx, t, time);
   else drawStatue(ctx, t);
-  drawTargetSplats(ctx, t.splats);
-  ctx.restore();
 }

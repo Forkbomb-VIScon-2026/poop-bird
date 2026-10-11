@@ -123,7 +123,7 @@ export function loadCalibration(key: string, required: readonly FeatureName[]): 
 // --- Tutorials (new-player tips) -----------------------------------------------
 
 const TUTORIALS_KEY = "poopybird.tutorialsSeen.v1";
-export const TUTORIALS = ["perch", "city", "ocean"] as const;
+export const TUTORIALS = ["city", "ocean"] as const;
 export type Tutorial = (typeof TUTORIALS)[number];
 
 /** Tutorials this browser has already shown (and the player dismissed). */

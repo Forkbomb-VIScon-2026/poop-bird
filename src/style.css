@@ -299,42 +299,6 @@ svg.face.coach-face.puffing {
   transform: scale(1.35);
 }
 
-/* Calibration timeline: what's coming, so a switch never comes as a surprise. */
-.puff-timeline {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px;
-  margin: 0 0 8px;
-  padding: 0;
-}
-
-.puff-timeline li {
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 2px solid var(--ink);
-  background: #fff;
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 800;
-  opacity: 0.55;
-}
-
-.puff-timeline li.puff {
-  background: #ffd6de;
-}
-
-.puff-timeline li.done {
-  opacity: 0.3;
-}
-
-.puff-timeline li.now {
-  opacity: 1;
-  transform: scale(1.12);
-  box-shadow: 0 2px 0 var(--ink);
-}
-
 /* Menu option toggle. */
 .opt {
   display: flex;
@@ -372,7 +336,7 @@ svg.face.coach-face.puffing {
   --cam-w: 168px;
 }
 
-#app:has(#cam:not(.hidden):not(.large):not(.perched)) {
+#app:has(#cam:not(.hidden):not(.in-calib)) {
   --cam-space: calc(var(--cam-w) + 10px);
 }
 
@@ -381,17 +345,10 @@ svg.face.coach-face.puffing {
   right: calc(14px + env(safe-area-inset-right));
   top: calc(14px + env(safe-area-inset-top));
   width: var(--cam-w);
-  /* Above screen overlays (10) so it stays visible during calibration; below the debug panel (20). */
+  /* Above screen overlays (10); below the debug panel (20). */
   z-index: 15;
   pointer-events: none;
   transition: all 0.3s ease;
-}
-
-#cam.large {
-  width: min(92vw, 56vh);
-  right: 50%;
-  top: 24px;
-  transform: translateX(50%);
 }
 
 .cam-video-wrap {
@@ -401,11 +358,6 @@ svg.face.coach-face.puffing {
   overflow: hidden;
   background: #111;
   aspect-ratio: 4 / 3;
-}
-
-/* Calibration watches the face itself, not the bar. */
-#cam.large .strain-bar {
-  display: none;
 }
 
 #cam video {
@@ -593,6 +545,10 @@ svg.face {
   -webkit-text-stroke: 1px var(--ink);
   paint-order: stroke fill;
   text-shadow: 0 2px 0 var(--ink);
+}
+
+.start-hero .tagline code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
 .light {
@@ -893,8 +849,7 @@ body.touch .key-badge {
 /* --- Calibration ------------------------------------------------------------ */
 
 #screen-calibrate {
-  align-items: flex-end;
-  padding-bottom: 4vh;
+  align-items: center;
 }
 
 .calib {
@@ -944,11 +899,6 @@ body.touch .key-badge {
   background: var(--accent);
 }
 
-.calib.strain h2 {
-  color: var(--accent);
-  animation: shake 0.15s infinite;
-}
-
 @keyframes shake {
   0%,
   100% {
@@ -962,26 +912,89 @@ body.touch .key-badge {
   }
 }
 
-.calib-row {
+/* The example face and the player's webcam, side by side, the same size. */
+.calib-media {
+  display: flex;
+  justify-content: center;
+  gap: clamp(10px, 2vw, 22px);
+  margin: 6px 0 4px;
+}
+
+.calib-media figure {
+  margin: 0;
+  width: clamp(150px, min(30vw, 34vh), 340px);
+}
+
+.calib-media figcaption {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  margin-top: 4px;
+}
+
+.calib-example img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: #ddd;
+}
+
+/* The welcome (the relaxed read): no example face yet, so nobody practises one. */
+#screen-calibrate.welcome .calib-example {
+  display: none;
+}
+
+#cam.in-calib {
+  position: relative;
+  right: auto;
+  top: auto;
+  width: 100%;
+  transform: none;
+  transition: none;
+}
+
+#cam.in-calib .strain-bar {
+  display: none;
+}
+
+.calib-run {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 18px;
+  gap: 14px;
+  max-width: 520px;
+  margin: 0 auto;
 }
 
-svg.face.calib-face {
-  width: clamp(72px, 15vh, 130px);
-  height: clamp(72px, 15vh, 130px);
+.calib-run .progress {
+  flex: 1;
 }
 
-.calib.strain .calib-face {
+.calib-count {
+  min-width: 1.2em;
+}
+
+.calib.holding h2 {
+  color: var(--accent);
   animation: shake 0.15s infinite;
 }
 
-.calib-match {
-  font-size: 13px;
-  font-weight: 700;
-  opacity: 0.7;
+.calib-status {
+  min-height: 1.3em;
+  margin: 4px 0 0;
+  font-weight: 800;
+}
+
+.calib-status:empty {
+  visibility: hidden;
+}
+
+.calib-status.bad {
+  color: var(--accent);
 }
 
 /* --- Ready ------------------------------------------------------------------- */
@@ -1031,139 +1044,6 @@ svg.face.calib-face {
   display: flex;
   justify-content: center;
   max-width: 100%;
-}
-
-/* The webcam with the strain gauge on its right; the "that's you" arrow points left, at the bird. */
-.perch-you {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-  /* Room for the 💩 beside the gauge. */
-  padding-right: clamp(24px, 4vh, 36px);
-}
-
-.perch-cam-slot {
-  width: clamp(160px, min(32vw, 40vh), 380px);
-}
-
-#cam.perched {
-  position: relative;
-  right: auto;
-  top: auto;
-  width: 100%;
-  transition: none;
-}
-
-#cam.perched .strain-bar {
-  display: none;
-}
-
-.perch-arrow {
-  position: absolute;
-  right: calc(100% + 6px);
-  top: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: clamp(96px, 13vw, 180px);
-  color: var(--gold);
-  font-weight: 900;
-  font-size: clamp(20px, 2.6vw, 34px);
-  line-height: 1;
-  -webkit-text-stroke: 2px var(--ink);
-  paint-order: stroke fill;
-  text-shadow: 0 3px 0 var(--ink);
-  transform: translateY(-60%);
-  animation: nudge-left 1s ease-in-out infinite;
-}
-
-.perch-arrow svg {
-  width: 100%;
-  filter: drop-shadow(0 3px 0 var(--ink)) drop-shadow(0 -2px 0 var(--ink)) drop-shadow(2px 0 0 var(--ink));
-}
-
-@keyframes nudge-left {
-  0%,
-  100% {
-    transform: translate(0, -60%);
-  }
-  50% {
-    transform: translate(-10px, -60%);
-  }
-}
-
-.gauge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  transition: opacity 0.4s, transform 0.4s;
-}
-
-/* While the relaxed face is read: just the bird and the webcam. The gauge slides in after. */
-.perch.intro .gauge {
-  opacity: 0;
-  transform: translateX(24px);
-}
-
-.perch.intro .perch-help {
-  visibility: hidden;
-}
-
-svg.face.gauge-face {
-  width: clamp(38px, 7vh, 60px);
-  height: clamp(38px, 7vh, 60px);
-  opacity: 0.55;
-  transition: opacity 0.15s, transform 0.15s;
-}
-
-.gauge.strained .gauge-face.strained,
-.gauge.relaxed .gauge-face.relaxed {
-  opacity: 1;
-  transform: scale(1.15);
-}
-
-.gauge-bar {
-  position: relative;
-  flex: 1;
-  width: clamp(28px, 5vh, 44px);
-  border: 4px solid var(--ink);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.gauge-fill {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 0%;
-  border-radius: 999px;
-  background: var(--green);
-}
-
-.gauge-fill.active {
-  background: var(--accent);
-}
-
-/* The 💩 line: over it, the bird charges. */
-.gauge-line {
-  position: absolute;
-  left: -9px;
-  right: -9px;
-  height: 5px;
-  margin-bottom: -2px;
-  background: var(--ink);
-  border-radius: 2px;
-}
-
-.gauge-line span {
-  position: absolute;
-  left: calc(100% + 2px);
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: clamp(20px, 4vh, 32px);
 }
 
 .perch-help {
@@ -1750,9 +1630,6 @@ body.debug-open #cam {
     margin-left: 0;
     margin-bottom: 4vh;
   }
-  #cam.large {
-    width: min(70vw, 40vh);
-  }
   .calib {
     padding: 10px 14px 6px;
   }
@@ -1815,31 +1692,7 @@ body.debug-open #cam {
     padding: 10px 44px;
   }
 
-  /*
-   * Calibration: webcam on the left, card on the right. They split the width
-   * left after both safe-area insets and three 16px gaps, 40/60.
-   */
-  #app {
-    --calib-space: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 48px);
-  }
-
-  #cam.large {
-    width: min(calc(var(--calib-space) * 0.4), calc((100dvh - 32px) * 4 / 3));
-    right: auto;
-    left: calc(16px + env(safe-area-inset-left));
-    top: 50%;
-    transform: translateY(-50%);
-  }
-
-  #screen-calibrate {
-    align-items: center;
-    justify-content: flex-end;
-    padding-right: calc(16px + env(safe-area-inset-right));
-    padding-bottom: 16px;
-  }
-
   .calib {
-    width: calc(var(--calib-space) * 0.6);
     padding: 8px 14px 4px;
   }
 
@@ -1851,9 +1704,12 @@ body.debug-open #cam {
     font-size: 40px;
   }
 
-  svg.face.calib-face {
-    width: clamp(48px, 18vh, 80px);
-    height: clamp(48px, 18vh, 80px);
+  .calib-media figure {
+    width: min(38vw, 52vh);
+  }
+
+  .calib-media figcaption {
+    display: none;
   }
 
   .progress {
@@ -1887,19 +1743,6 @@ body.debug-open #cam {
 
   .coach-dots {
     margin-top: 4px;
-  }
-
-  .perch-cam-slot {
-    width: clamp(140px, 28vw, 48vh);
-  }
-
-  svg.face.gauge-face {
-    width: 28px;
-    height: 28px;
-  }
-
-  .gauge {
-    gap: 2px;
   }
 
   .perch-help-text {

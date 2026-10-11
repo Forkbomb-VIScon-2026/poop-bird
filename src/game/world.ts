@@ -37,6 +37,8 @@ export interface Splat {
   dy: number;
   r: number;
   seed: number;
+  /** Game time it landed (targets only): its drips run down from then. */
+  at?: number;
 }
 
 export type GamePhase = "playing" | "dying" | "over";

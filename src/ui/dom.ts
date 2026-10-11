@@ -11,6 +11,16 @@ export function show(el: HTMLElement, visible: boolean): void {
   el.classList.toggle("hidden", !visible);
 }
 
+/**
+ * A marker where `el` lives in the DOM, to put it back after docking it elsewhere.
+ * Not its next sibling: that may be docked away too (#cam follows the coach).
+ */
+export function homeOf(el: HTMLElement): Comment {
+  const marker = document.createComment(`${el.id} home`);
+  el.after(marker);
+  return marker;
+}
+
 /** A phone or tablet: no hover, coarse pointer. Swaps key hints for touch wording (CSS `.touch`). */
 export const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 

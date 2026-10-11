@@ -23,6 +23,7 @@ import { drawPowerLine } from "./power-lines";
 import { drawScenery } from "./scenery";
 import { drawShark, drawSharkCue } from "./shark";
 import { drawTarget } from "./street";
+import { TargetSplatter } from "./target-splats";
 import type { Photo, View } from "./view";
 import { captureWeddingPhoto, drawBouquet, drawDove, drawWeddingBackdrop, drawWeddingCue } from "./wedding";
 
@@ -40,6 +41,8 @@ export class Renderer implements View {
   mouthOpen = 0;
   /** The photo bird and fish, with their own animation state. */
   readonly rtxPlayer = new RtxPlayer();
+  /** Sticks the poop on targets to their actual shape. */
+  readonly splatter = new TargetSplatter();
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
