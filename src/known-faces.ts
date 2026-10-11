@@ -18,6 +18,10 @@ import { PUFF_FEATURES, STRAIN_FEATURES, restoreCalibration, type Calibration } 
 
 export type Descriptor = readonly number[];
 
+/** The tutorials (new-player lessons), each shown once per face. */
+export const TUTORIALS = ["city", "ocean"] as const;
+export type Tutorial = (typeof TUTORIALS)[number];
+
 export interface KnownFace {
   id: number;
   /** A few descriptors of the face, from different moments (light and expression vary a little). */
@@ -28,6 +32,8 @@ export interface KnownFace {
   strainIsDefault: boolean;
   /** The puff calibration (the swim lesson's), if one passed for this face. */
   puff: Calibration | null;
+  /** The tutorials this face has seen. */
+  tutorials: Tutorial[];
   /** Date.now() when last recognized or calibrated; the oldest face goes when there are too many. */
   lastSeen: number;
 }
@@ -135,6 +141,7 @@ export function parseFaces(raw: unknown): KnownFace[] {
       strain: f.strain ? restoreCalibration(f.strain, STRAIN_FEATURES) : null,
       strainIsDefault: f.strainIsDefault === true,
       puff: f.puff ? restoreCalibration(f.puff, PUFF_FEATURES) : null,
+      tutorials: Array.isArray(f.tutorials) ? TUTORIALS.filter((t) => (f.tutorials as unknown[]).includes(t)) : [],
       lastSeen: typeof f.lastSeen === "number" && Number.isFinite(f.lastSeen) ? f.lastSeen : 0,
     });
   }
