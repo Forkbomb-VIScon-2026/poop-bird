@@ -1845,10 +1845,6 @@ export class Renderer {
       const b = w.bride;
       outlinedText(ctx, "!", b.x, b.y - b.h - 34 + Math.sin(game.time * 30) * 2, 26, "#ff595e");
     }
-    if (w.tutorial && !w.outcome && playing && w.phase !== "kiss") {
-      const bob = Math.sin(game.time * 6) * 4;
-      outlinedText(ctx, "\u{1F48B} Drop it on the KISS!", x, y - 52 + bob, 20, "#ffd60a");
-    }
   }
 
   /**
@@ -3006,16 +3002,12 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Windup: a "!" over the shark, and a "SPIKE UP!" nudge by the fish while it isn't spiked. */
+  /** Windup: a "!" over the shark. */
   private drawSharkCue(s: Shark, game: Game): void {
     if (game.phase !== "playing") return;
     const ctx = this.ctx;
     if (s.state === "windup") {
       outlinedText(ctx, "!", s.x, s.y - 72 + Math.sin(game.time * 30) * 2, 34, "#ff595e");
-    }
-    if ((s.state === "windup" || s.state === "lunge") && !game.spike.spiked) {
-      const b = game.bird;
-      outlinedText(ctx, "SPIKE UP!", b.x, b.y - game.bodyRadius - 26, 20 + Math.sin(game.time * 16) * 3, "#ffd60a");
     }
   }
 

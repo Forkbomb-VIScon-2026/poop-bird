@@ -145,8 +145,8 @@ let coachOwner = 0;
 let puffCoach = 0;
 /** The coach claim of the perch. */
 let perchCoach = 0;
-/** Poops, target hits and accidents this run, for the city lesson. */
-const lessonCount = { poops: 0, hits: 0, accidents: 0, lastAccident: -Infinity };
+/** Poops and accidents this run, for the city lesson. */
+const lessonCount = { poops: 0, accidents: 0, lastAccident: -Infinity };
 /** A calibration that failed the quality check; used only if the player picks "Play anyway". */
 let rejectedCalibration: Calibration | null = null;
 /** Whether the calibration result screen is showing a failed calibration. */
@@ -795,7 +795,7 @@ async function runSwimLesson(): Promise<void> {
  */
 async function swimToMiddle(token: number): Promise<boolean> {
   // A heads-up, not a step: no progress bar.
-  coachSay(puffCoach, { title: "GET READY! 🐡", hint: "Here come the rocks and jellyfish.", face: null, bar: false });
+  coachSay(puffCoach, { title: "GET READY! 🐡", hint: "Here come the rocks.", face: null, bar: false });
   game.guideY = OCEAN_MID_Y;
   try {
     // At least a moment to read the banner; at most long enough to cross the whole sea.
@@ -814,9 +814,8 @@ async function swimToMiddle(token: number): Promise<boolean> {
 async function oceanTipBanners(token: number, intro?: [string, string]): Promise<boolean> {
   const tips: [string, string][] = [
     ...(intro ? [intro] : []),
-    ["Spikes! 🐡", "Puff past the red line to spike out and pop jellyfish 🪼"],
-    ["Watch out! 🪸", "Unspiked, jellyfish sting. Dodge the coral, rocks and sea floor"],
-    ["Shark! 🦈", "You can't outswim it. When it bares its teeth, spike up so it bites the spines"],
+    ["Spikes! 🐡", "Puff past the red line to spike out. Hold it too long and you pop"],
+    ["Watch out! 🪸", "Dodge the coral, rocks and sea floor"],
   ];
   for (const [title, hint] of tips) {
     setPuffOverlay(title, hint, null, true);
@@ -1283,8 +1282,8 @@ const PERCH_FULL: PerchLine = { face: "Relax to fly! 🚀", faceHint: "", keys: 
 /** Charge at which a poop off the perch takes off: full. */
 const TAKEOFF_CHARGE = 1;
 
-/** The flight lesson's steps, for the coach's dots: three on the perch, three in the city. */
-const LESSON_STEPS_TOTAL = 6;
+/** The flight lesson's steps, for the coach's dots: three on the perch, two in the city. */
+const LESSON_STEPS_TOTAL = 5;
 const PERCH_DOT: Partial<Record<PerchStep, number>> = { strain: 0, relax: 1, pushed: 1, fill: 2 };
 
 function enterPerchStep(step: PerchStep): void {
@@ -1416,14 +1415,14 @@ function takeOff(): void {
   game.bird.vy = Math.min(game.bird.vy, -config.pushMax);
   state = "playing";
   showScreen(null);
-  lessonCount.poops = lessonCount.hits = lessonCount.accidents = 0;
+  lessonCount.poops = lessonCount.accidents = 0;
   if (!seenTutorials.has("city")) void runCityLesson();
 }
 
 /**
  * A new player's first flight: the city stays calm (Game.calmCity: no
  * obstacles, the street bounces the bird back up) while the coach teaches
- * staying up and aiming, then the buildings come. Each step moves on once
+ * staying up, then the buildings come. Each step moves on once
  * it's done, or after a while anyway. Belongs to the run's flow token.
  */
 async function runCityLesson(): Promise<void> {
@@ -1466,19 +1465,9 @@ async function runCityLesson(): Promise<void> {
     if ((await until(() => false, 1200)) === null) return abandon();
   }
 
-  game.spawnCarNow();
-  say(4, "Poop on the car! 🎯", "Cars and people score points", null);
-  const hits = lessonCount.hits;
-  const hit = await until(() => lessonCount.hits > hits, 12_000);
-  if (hit === null) return abandon();
-  if (hit) {
-    say(5, "Splat! 🎯", "", null, true);
-    if ((await until(() => false, 1200)) === null) return abandon();
-  }
-
   // Seen from here on, so a player who crashes soon after doesn't get the whole lesson again.
   markTutorialSeen("city");
-  say(5, "Now dodge the buildings!", "Fly through the gaps", null);
+  say(4, "Now dodge the buildings!", "Fly through the gaps", null);
   // The street stops bouncing once the bird is clear of it (or after a while), so the handoff isn't a crash.
   const clear = (): boolean => game.bird.y + BIRD_RADIUS < GROUND_Y - 120;
   if ((await until(clear, 8000)) === null) return abandon();
@@ -1877,7 +1866,6 @@ function handleGameEvents(): void {
         sound.splat(e.big);
         break;
       case "hit":
-        lessonCount.hits++;
         sound.hit(e.combo);
         buzz(12);
         break;

@@ -119,7 +119,7 @@ timer. On the perch it sits beside the bird; in the city and the ocean, over
 the game near the top. The swim lesson and the puff calibration use it too.
 
 - **Flight lesson** (new players: the tutorial hasn't been seen on this
-  browser, or "I'm new here" is ticked), six steps:
+  browser, or "I'm new here" is ticked), five steps:
   1. "Squeeze your face" (Hold Space) until the bird starts filling up,
   2. "Now relax": the poop hops the bird up, and the coach says "Pooping
      pushes you up!",
@@ -127,10 +127,11 @@ the game near the top. The swim lesson and the puff calibration use it too.
   4. in a **calm city** (`Game.calmCity`: no obstacles, paparazzi or kids,
      and the street bounces the bird back up instead of ending the run):
      "Squeeze & relax to stay up" until three poops (or 20 s),
-  5. "Poop on the car! 🎯": a car drives on; until the first hit (or 12 s),
-  6. "Now dodge the buildings!": the lesson counts as seen, and the calm ends
+  5. "Now dodge the buildings!": the lesson counts as seen, and the calm ends
      once the bird is clear of the street (or after 8 s); the first obstacle
      comes `firstObstacleDelay` later.
+  The lesson only teaches flying: what to poop on, and what the ocean's
+  jellyfish and sharks do, is left for the player to discover.
   An accident (held too long) shows "Too long! Relax as soon as it's full".
   The perch part and the city part are remembered separately (`perch`,
   `city` in `TUTORIALS`).
@@ -336,8 +337,8 @@ city by city (the debug panel's "Progression" group).
   sync across pauses (`Game.sharkTheme` is the clock). It cuts out the moment the shark bites into the spines; if it eats you, it plays on until the shark is gone. No new obstacles spawn
   in the last seconds before it arrives. Without that file, a synthesized
   two-note "dun-dun" plays instead, speeding up as it closes in. The shark
-  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it,
-  and "SPIKE UP!" flashes by the fish. Then it lunges, homing on the fish:
+  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it.
+  Then it lunges, homing on the fish:
   it can't be outswum, the only defence is to be spiked when it bites (the
   spines reach a bit further than its bite). Spiked, it yelps, turns tail
   with spines in its snout (×5, "NOT TODAY!"). Not spiked, it eats you
