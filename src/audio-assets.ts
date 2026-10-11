@@ -53,6 +53,7 @@ export const SOUND_NAMES = [
   "shark_note_high",
   "shark_bite",
   "shark_yelp",
-  "shark_lunge"
+  "shark_lunge",
+  "button_click"
 ] as const;
 export type SoundName = (typeof SOUND_NAMES)[number];

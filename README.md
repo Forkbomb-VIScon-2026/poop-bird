@@ -62,13 +62,13 @@ starts the face dataset collector (local credentials `local` /
 | Strain face (webcam) | City: charge; relax to poop |
 | Pufferfish face: puff cheeks, purse lips (webcam) | Ocean: inflate (more puff = rise, less = sink) |
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
-| **P** / Esc / ⏸ button | Pause |
+| **P** / ⏸ button | Pause, and resume |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
-| **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
-| **R** | Play again from game over |
+| **Enter** | Press the yellow button on any screen (Play, Play again…). Every button takes exactly one key, the one on the keycap badge on its corner |
 | **K** | Menu: play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
-| **Esc** | Calibration, game over and the leaderboard: back to the menu |
+| **Q** | Pause: back to the menu |
+| **Esc** | Calibration and game over: back to the menu |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
 | **D** | Debug / tuning panel (only with `npm run dev:debug`) |

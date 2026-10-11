@@ -83,7 +83,7 @@
             </label>
           </fieldset>
           <div class="buttons">
-            <button id="btn-settings-done" class="btn primary" data-default data-keys="Escape">Done</button>
+            <button id="btn-settings-done" class="btn primary" data-default>Done</button>
           </div>
         </div>
       </section>
@@ -140,7 +140,7 @@
           <h2>🏆 Leaderboard</h2>
           <div id="lb-full" class="lb"></div>
           <div class="buttons">
-            <button id="btn-lb-back" class="btn primary" data-default data-keys="Escape">Back</button>
+            <button id="btn-lb-back" class="btn primary" data-default>Back</button>
           </div>
         </div>
       </section>
@@ -194,6 +194,8 @@
       <!-- Ready: the bird sits on a street lamp to practise. Its first poop takes off and starts the run.
            In face mode the webcam (#cam, moved into #perch-cam-slot) and a strain gauge sit beside the bird. -->
       <section id="screen-ready" class="screen hidden passthrough">
+        <!-- Top left, where the score shows once the run starts. -->
+        <button id="btn-perch-menu" class="btn small perch-menu" data-keys="Escape">← Menu</button>
         <div id="perch" class="perch">
           <!-- The coach (#coach) goes here while the bird is on the perch. -->
           <div id="perch-coach-slot" class="perch-coach-slot"></div>
@@ -230,7 +232,7 @@
         <div class="card">
           <h2>Paused</h2>
           <div class="buttons">
-            <button id="btn-resume" class="btn primary" data-default data-keys="P" data-shortcut="Escape">Resume</button>
+            <button id="btn-resume" class="btn primary" data-keys="P">Resume</button>
             <button id="btn-pause-menu" class="btn" data-keys="Q">Menu</button>
           </div>
         </div>
@@ -282,7 +284,7 @@
           </form>
           <p id="go-lb-status" class="go-lb-status hidden"></p>
           <div class="buttons">
-            <button id="btn-again" class="btn primary" data-default data-keys="R">Play again</button>
+            <button id="btn-again" class="btn primary" data-default>Play again</button>
             <button id="btn-go-calibrate" class="btn" data-shortcut="C">Recalibrate</button>
             <button id="btn-go-menu" class="btn" data-keys="Escape">Menu</button>
           </div>
