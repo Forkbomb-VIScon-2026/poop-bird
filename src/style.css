@@ -1000,6 +1000,14 @@ svg.face.calib-face {
   visibility: hidden;
 }
 
+/* Back to the menu, in the score's spot (hidden on the perch). */
+.perch-menu {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  pointer-events: auto;
+}
+
 /* Beside the bird on its lamp (--perch-x, set by main.ts), below the HUD. */
 .perch {
   position: absolute;
