@@ -57,6 +57,34 @@ export const PUFF_FEATURES: readonly FeatureName[] = [
   "cheekPuff", "mouthPucker", "mouthFunnel", "mouthPress", "mouthRollLower", "mouthRollUpper",
 ];
 
+/** What the player sees a feature called ("Watching your brows, eye squint…"). */
+const FEATURE_LABELS: Record<FeatureName, string> = {
+  browDown: "brows",
+  eyeSquint: "eye squint",
+  eyeBlink: "eyes shut",
+  noseSneer: "nose wrinkle",
+  cheekSquint: "cheeks",
+  mouthPress: "pressed lips",
+  mouthRollLower: "rolled lower lip",
+  mouthRollUpper: "rolled upper lip",
+  mouthShrugUpper: "upper lip shrug",
+  mouthShrugLower: "chin shrug",
+  cheekPuff: "cheek puff",
+  mouthPucker: "pucker",
+  mouthFunnel: "funnel lips",
+  cheekWidth: "cheek width",
+  mouthWidth: "mouth width",
+  eyeMouth: "eye–mouth distance",
+};
+
+/** Labels of the (up to 3) features a calibration weights most. */
+export function topFeatureLabels(cal: Calibration): string[] {
+  return FEATURE_NAMES.filter((f) => cal.weights[f] > 0)
+    .sort((a, b) => cal.weights[b] - cal.weights[a])
+    .slice(0, 3)
+    .map((f) => FEATURE_LABELS[f]);
+}
+
 export function zeroFeatures(): FeatureVector {
   const out = {} as FeatureVector;
   for (const f of FEATURE_NAMES) out[f] = 0;

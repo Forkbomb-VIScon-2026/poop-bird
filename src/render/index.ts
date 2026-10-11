@@ -2,4 +2,4 @@
 
 export { Renderer } from "./renderer";
 export { drawFrontPage, drawTrophyPrint, drawWeddingPrint } from "./prints";
-export type { Photo } from "./view";
+export { newCanvas, type Photo } from "./view";

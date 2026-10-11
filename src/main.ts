@@ -3,14 +3,15 @@
 
 import "./style.css";
 import { config } from "./config";
-import { Sound, type PoopSize } from "./audio";
+import { Sound } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { FaceRecognizer, alignedFaceCrop } from "./faceid";
 import { BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
-import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
+import { playFeedback } from "./feedback";
+import { Renderer, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import {
   GROW_WITHIN,
@@ -24,8 +25,8 @@ import {
   type Descriptor,
   type KnownFace,
 } from "./known-faces";
-import { BOARD_KEEP, strainPercent, type RunStats } from "./leaderboard";
-import { showBoards, submitRun } from "./leaderboard-view";
+import { strainPercent } from "./leaderboard";
+import { showBoards } from "./leaderboard-view";
 import {
   assessPuffCalibration,
   buildInteractivePuffCalibration,
@@ -37,21 +38,22 @@ import {
   CALIBRATION_KEY,
   PUFF_CALIBRATION_KEY,
   loadBest,
+  loadCalibration,
   loadGraphics,
+  loadMuted,
   loadKnownFacesJson,
   loadSeenTutorials,
   saveBest,
+  saveCalibration,
   saveGraphics,
+  saveMuted,
   saveKnownFacesJson,
   saveSeenTutorials,
-  storageGet,
   storageRemove,
-  storageSet,
   TUTORIALS,
   type Tutorial,
 } from "./storage";
 import {
-  FEATURE_NAMES,
   PUFF_FEATURES,
   MAX_NEUTRAL_FALSE_RATE,
   STRAIN_FEATURES,
@@ -62,22 +64,19 @@ import {
   initialStrainState,
   neutralFaceStats,
   neutralFalseRate,
-  restoreCalibration,
   smoothStrain,
   stepStrain,
   strainedness,
+  topFeatureLabels,
   type Calibration,
-  type FeatureName,
   type FeatureVector,
 } from "./strain";
+import { claimCoach, coachProgress, coachSay, dockCoach, markTimeline, releaseCoach, showTimeline, type CoachFace, type CoachLine } from "./ui/coach";
+import { $, isTouch, replayAnimation, show, wait } from "./ui/dom";
+import { offerRun, showRunPhotos, showRunStats, submitToLeaderboard } from "./ui/gameover";
+import { hideToast, showToast } from "./ui/toast";
 
 // --- DOM ----------------------------------------------------------------------
-
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`#${id} missing`);
-  return el as T;
-};
 
 const canvas = $<HTMLCanvasElement>("game");
 const video = $<HTMLVideoElement>("video");
@@ -94,22 +93,14 @@ const hud = $("hud");
 const cam = $("cam");
 /** Where #cam lives in the DOM when it isn't docked beside the bird on the perch. */
 const camHome = { parent: cam.parentElement!, next: cam.nextElementSibling };
-/** Where the coach lives when it isn't docked on the perch. */
-const coachHome = { parent: $("coach").parentElement!, next: $("coach").nextElementSibling };
 const rotateScreen = $("screen-rotate");
 
-/** A phone or tablet: no hover, coarse pointer. Swaps key hints for touch wording (CSS `.touch`). */
-const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 document.body.classList.toggle("touch", isTouch);
-
-function show(el: HTMLElement, visible: boolean): void {
-  el.classList.toggle("hidden", !visible);
-}
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
   dockCam(name === "ready" && mode === "face");
-  dockCoach(name === "ready");
+  dockCoach(name === "ready", perchCoach);
   // Game over gets longer: players often die mid-press, and shouldn't skip their score.
   armButtonKeys(name === "gameover" ? 800 : 300);
 }
@@ -154,8 +145,6 @@ let lastPuffAttempt: { cal: Calibration; quality: ReturnType<typeof assessPuffCa
 let activePuffCalibration: number | null = null;
 /** Set when a different face got locked mid puff calibration: there's no relaxed read of them to compare with, so it's abandoned. */
 let abortPuffCalibration = false;
-/** The coach (#coach) belongs to whoever claimed it last (claimCoach); older owners can't change or hide it. */
-let coachOwner = 0;
 /** The coach claim of the puff calibration in progress. */
 let puffCoach = 0;
 /** The coach claim of the perch. */
@@ -194,14 +183,12 @@ let keyHeld = false;
 const heldPointers = new Set<number>();
 let best = loadBest();
 let currentSnapshotUrl: string | null = null;
-/** The run on the game-over screen, as it would go to the leaderboard. null once submitted. */
-let lastRun: { score: number; stats: RunStats; face: { url: string; strain: number } | null } | null = null;
 /** Smoothed `strainedness` of the face (the finest-strain snapshot's and the leaderboard's measure). */
 let faceStrain = 0;
 /** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
 const seenTutorials = loadSeenTutorials();
 
-sound.setMuted(storageGet("poopybird.muted.v1") === "1");
+sound.setMuted(loadMuted());
 
 /** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
 function manualHeld(): boolean {
@@ -605,10 +592,6 @@ async function recalibrate(): Promise<void> {
 
 // --- Calibration ---------------------------------------------------------------------
 
-function wait(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 async function runCalibration(): Promise<void> {
   const token = ++flow;
   // A new player (or a fresh start): the next dive samples their puff again.
@@ -803,33 +786,6 @@ async function calibrationPhase(
   return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
 
-const FEATURE_LABELS: Record<FeatureName, string> = {
-  browDown: "brows",
-  eyeSquint: "eye squint",
-  eyeBlink: "eyes shut",
-  noseSneer: "nose wrinkle",
-  cheekSquint: "cheeks",
-  mouthPress: "pressed lips",
-  mouthRollLower: "rolled lower lip",
-  mouthRollUpper: "rolled upper lip",
-  mouthShrugUpper: "upper lip shrug",
-  mouthShrugLower: "chin shrug",
-  cheekPuff: "cheek puff",
-  mouthPucker: "pucker",
-  mouthFunnel: "funnel lips",
-  cheekWidth: "cheek width",
-  mouthWidth: "mouth width",
-  eyeMouth: "eye–mouth distance",
-};
-
-/** Labels of the (up to 3) features a calibration weights most. */
-function topFeatureLabels(cal: Calibration): string[] {
-  return FEATURE_NAMES.filter((f) => cal.weights[f] > 0)
-    .sort((a, b) => cal.weights[b] - cal.weights[a])
-    .slice(0, 3)
-    .map((f) => FEATURE_LABELS[f]);
-}
-
 /** A calibration that failed the quality check: try again, or play with it anyway. */
 function showCalibrationResult(result: ReturnType<typeof assessCalibration>): void {
   state = "calibrated";
@@ -859,21 +815,6 @@ function showCalibrationResult(result: ReturnType<typeof assessCalibration>): vo
 function setPrimary(primary: HTMLElement, secondary: HTMLElement): void {
   primary.classList.add("primary");
   secondary.classList.remove("primary");
-}
-
-function saveCalibration(key: string, cal: Calibration): void {
-  storageSet(key, JSON.stringify(cal));
-}
-
-/** Calibrations saved before the puff features existed still load (see restoreCalibration). */
-function loadCalibration(key: string, required: readonly FeatureName[]): Calibration | null {
-  const raw = storageGet(key);
-  if (!raw) return null;
-  try {
-    return restoreCalibration(JSON.parse(raw), required);
-  } catch {
-    return null;
-  }
 }
 
 /** Debug: delete both saved calibrations and the known faces, and reload, to test the first-time flow. */
@@ -1119,19 +1060,14 @@ async function runPuffSteps(
 async function headsUpCountdown(token: number, next: PuffStep, seconds: number): Promise<boolean> {
   const puff = next.kind === "puff";
   const hint = puff ? "Get ready to purse your lips and puff your cheeks." : "Get ready to let the air out and relax your lips.";
-  let left = seconds * 1000;
-  let last = performance.now();
-  $("coach-progress").style.width = "0%";
-  while (left > 0) {
-    if (token !== flow || abortPuffCalibration) {
-      abortPuffCalibration = false;
-      return false;
-    }
-    const now = performance.now();
-    if (state === "playing") left -= now - last;
-    last = now;
+  const total = seconds * 1000;
+  const clock = playingClock();
+  coachProgress(0);
+  for (let left = total; left > 0; ) {
+    if (puffLessonAbandoned(token)) return false;
+    left = total - clock();
     setPuffOverlay(`${next.label} in ${Math.max(1, Math.ceil(left / 1000))}…`, hint, puff ? "puffed" : "relaxed");
-    $("coach-progress").style.width = `${(1 - Math.max(0, left) / (seconds * 1000)) * 100}%`;
+    coachProgress(1 - Math.max(0, left) / total);
     await wait(50);
   }
   return true;
@@ -1139,43 +1075,31 @@ async function headsUpCountdown(token: number, next: PuffStep, seconds: number):
 
 /** Waits `ms` of playing time (pauses don't count). false = abandoned. */
 async function waitPlaying(token: number, ms: number): Promise<boolean> {
-  let left = ms;
-  let last = performance.now();
-  while (left > 0) {
-    if (token !== flow || abortPuffCalibration) {
-      abortPuffCalibration = false;
-      return false;
-    }
-    const now = performance.now();
-    if (state === "playing") left -= now - last;
-    last = now;
+  const clock = playingClock();
+  while (clock() < ms) {
+    if (puffLessonAbandoned(token)) return false;
     await wait(50);
   }
   return true;
 }
 
-/** The calibration's timeline of steps (null hides it). */
-function showTimeline(steps: readonly PuffStep[] | null): void {
-  const el = $("coach-timeline");
-  el.replaceChildren(
-    ...(steps ?? []).map((s) => {
-      const li = document.createElement("li");
-      li.textContent = s.label;
-      li.className = s.kind === "puff" ? "puff" : "relax";
-      return li;
-    }),
-  );
-  show(el, !!steps);
+/** A stopwatch of playing time in ms: it stands still while the game is paused. */
+function playingClock(): () => number {
+  let elapsed = 0;
+  let last = performance.now();
+  return () => {
+    const now = performance.now();
+    if (state === "playing") elapsed += now - last;
+    last = now;
+    return elapsed;
+  };
 }
 
-/** Highlights step `i` of the timeline; the ones before are done. */
-function markTimeline(i: number): void {
-  $("coach-timeline")
-    .querySelectorAll("li")
-    .forEach((li, j) => {
-      li.classList.toggle("done", j < i);
-      li.classList.toggle("now", j === i);
-    });
+/** The swim lesson (or the keyboard tips) of `token` was left, or a new face aborted it (which this acknowledges). */
+function puffLessonAbandoned(token: number): boolean {
+  if (token === flow && !abortPuffCalibration) return false;
+  abortPuffCalibration = false;
+  return true;
 }
 
 /** The lesson's coach line: a title, a hint and the face to make (null: no pictogram). `tips`: no progress bar, bigger hint. */
@@ -1196,14 +1120,12 @@ function endPuffCalibrationOverlay(token: number): void {
  * restarts the step after resume. `burble` plays the puffing sound. null = abandoned.
  */
 async function puffCalibrationPhase(token: number, seconds: number, burble: boolean): Promise<PhaseResult | null> {
-  const progress = $("coach-progress");
   const total = seconds * 1000;
   const settle = config.calibrationSettle * 1000;
   let start = -1;
   let mine: ReturnType<typeof startSampling> | null = null;
   for (; ;) {
-    if (token !== flow || abortPuffCalibration) {
-      abortPuffCalibration = false;
+    if (puffLessonAbandoned(token)) {
       stopSampling(mine?.samples ?? null);
       return null;
     }
@@ -1212,7 +1134,7 @@ async function puffCalibrationPhase(token: number, seconds: number, burble: bool
       start = -1;
       stopSampling(mine?.samples ?? null);
       mine = null;
-      progress.style.width = "0%";
+      coachProgress(0);
       await wait(50);
       continue;
     }
@@ -1223,102 +1145,16 @@ async function puffCalibrationPhase(token: number, seconds: number, burble: bool
     }
     const elapsed = now - start;
     if (elapsed >= total) break;
-    progress.style.width = `${(elapsed / total) * 100}%`;
+    coachProgress(elapsed / total);
     sound.setBurble(burble ? elapsed / total : -1);
     await wait(50);
   }
-  progress.style.width = "100%";
+  coachProgress(1);
   sound.setBurble(-1);
   const samples = (mine?.samples ?? []).filter((s) => s.t - start >= settle).map((s) => s.f);
   const frames = (mine?.frames ?? []).filter((t) => t - start >= settle).length;
   stopSampling(mine?.samples ?? null);
   return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
-}
-
-// --- Coach (the tutorial banner) ---------------------------------------------------------
-
-type CoachFace = "relaxed" | "strained" | "puffed";
-
-interface CoachLine {
-  title: string;
-  hint?: string;
-  /** The face to make (null: no pictogram). */
-  face?: CoachFace | null;
-  /** The puff calibration's step progress bar. */
-  bar?: boolean;
-  /** The ocean tips: no bar, bigger hint. */
-  tips?: boolean;
-  /** Just done: the title turns green. */
-  done?: boolean;
-  /** Where the player is in the flight lesson: [current step, steps]. */
-  dots?: readonly [number, number] | null;
-}
-
-/** Takes the coach over (hiding whatever an older owner showed) and returns the claim for coachSay. */
-function claimCoach(): number {
-  coachHide();
-  return ++coachOwner;
-}
-
-/** Hides the coach if `owner` still has it. */
-function releaseCoach(owner: number): void {
-  if (owner === coachOwner) coachHide();
-}
-
-function coachHide(): void {
-  show($("coach"), false);
-  showTimeline(null);
-}
-
-/** Shows `line` on the coach, if `owner` still has it. Cheap to call every frame. */
-function coachSay(owner: number, line: CoachLine): void {
-  if (owner !== coachOwner) return;
-  const el = $("coach");
-  const title = $("coach-title");
-  if (title.textContent !== line.title) {
-    title.textContent = line.title;
-    // A new line wobbles in.
-    title.classList.remove("wobble");
-    void title.offsetWidth;
-    title.classList.add("wobble");
-  }
-  const hint = $("coach-hint");
-  if (hint.textContent !== (line.hint ?? "")) hint.textContent = line.hint ?? "";
-  const face = line.face ?? null;
-  const pictogram = $("coach-face");
-  if (face) $("coach-face-use").setAttribute("href", `#face-${face}`);
-  pictogram.classList.toggle("puffing", face === "puffed");
-  show(pictogram, face !== null);
-  show($("coach-bar"), !!line.bar);
-  el.classList.toggle("tips", !!line.tips);
-  el.classList.toggle("done", !!line.done);
-  const dots = $("coach-dots");
-  const key = line.dots ? line.dots.join("/") : "";
-  if (dots.dataset.key !== key) {
-    dots.dataset.key = key;
-    const [now, total] = line.dots ?? [0, 0];
-    dots.replaceChildren(
-      ...Array.from({ length: total }, (_, i) => {
-        const li = document.createElement("li");
-        li.className = i < now ? "done" : i === now ? "now" : "";
-        return li;
-      }),
-    );
-  }
-  show(dots, !!line.dots);
-  show(el, true);
-}
-
-/** Moves the coach beside the bird on the perch, or back over the game. Leaving the perch hides the perch's line. */
-function dockCoach(perched: boolean): void {
-  const el = $("coach");
-  if (perched === el.classList.contains("docked")) return;
-  el.classList.toggle("docked", perched);
-  if (perched) $("perch-coach-slot").append(el);
-  else {
-    coachHome.parent.insertBefore(el, coachHome.next);
-    releaseCoach(perchCoach);
-  }
 }
 
 // --- Tutorials (new-player tips) ---------------------------------------------------------
@@ -1376,24 +1212,6 @@ async function runKeyboardOceanTips(): Promise<void> {
   game.calmWater = false;
 }
 
-let toastTimer = 0;
-
-function showToast(text: string, ms = 2600): void {
-  const el = $("hud-toast");
-  el.textContent = text;
-  show(el, true);
-  el.style.animation = "none";
-  void el.offsetWidth;
-  el.style.animation = "";
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => show(el, false), ms);
-}
-
-function hideToast(): void {
-  clearTimeout(toastTimer);
-  show($("hud-toast"), false);
-}
-
 // --- Ready & run -----------------------------------------------------------------
 
 /** "Play anyway" after a failed calibration uses the rejected one for this session only. */
@@ -1433,9 +1251,7 @@ let readyArmed = false;
  * `ocean` (debug) skips it and dives straight in.
  */
 function startReady(ocean = false): void {
-  flow++;
-  calibSamples = null;
-  calibFrames = null;
+  endFlows();
   cam.classList.remove("large");
   show(cam, mode === "face");
   game.reset();
@@ -1682,15 +1498,11 @@ async function runCityLesson(): Promise<void> {
   };
   /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. Shows the too-long hint after an accident. */
   const until = async (done: () => boolean, ms: number): Promise<boolean | null> => {
-    let left = ms;
-    let last = performance.now();
+    const clock = playingClock();
     while (!done()) {
       if (token !== flow || state === "gameover") return null;
-      const now = performance.now();
-      if (state === "playing") left -= now - last;
-      last = now;
-      if (left <= 0) return false;
-      const recent = now - lessonCount.lastAccident < 3000;
+      if (clock() >= ms) return false;
+      const recent = performance.now() - lessonCount.lastAccident < 3000;
       coachSay(owner, recent ? { ...line, hint: tooLongHint() } : line);
       await wait(50);
     }
@@ -1729,7 +1541,7 @@ function dockCam(perched: boolean): void {
 }
 
 function toggleMute(): void {
-  storageSet("poopybird.muted.v1", sound.toggleMute() ? "1" : "0");
+  saveMuted(sound.toggleMute());
   updateMuteButton();
   showToast(sound.muted ? "🔇 Muted" : "🔊 Sound on", 1200);
 }
@@ -1741,12 +1553,24 @@ function updateMuteButton(): void {
   decorate(btn);
 }
 
+/** Stops the looping sounds (the strain groan and the puff burble). */
+function silenceLoops(): void {
+  sound.setGroan(-1, false);
+  sound.setBurble(-1);
+}
+
+/** Abandons every async flow (camera startup, calibration, lessons) and any face sampling. */
+function endFlows(): void {
+  flow++;
+  calibSamples = null;
+  calibFrames = null;
+}
+
 function togglePause(): void {
   if (state === "playing") {
     state = "paused";
     showScreen("pause");
-    sound.setGroan(-1, false);
-    sound.setBurble(-1);
+    silenceLoops();
   } else if (state === "paused") {
     state = "playing";
     showScreen(null);
@@ -1754,13 +1578,10 @@ function togglePause(): void {
 }
 
 function goToMenu(): void {
-  flow++;
-  calibSamples = null;
-  calibFrames = null;
+  endFlows();
   tracker.stopCamera();
   state = "menu";
-  sound.setGroan(-1, false);
-  sound.setBurble(-1);
+  silenceLoops();
   hideToast();
   claimCoach();
   cam.classList.remove("large");
@@ -1773,8 +1594,7 @@ function goToMenu(): void {
 
 function onGameOver(): void {
   state = "gameover";
-  sound.setGroan(-1, false);
-  sound.setBurble(-1);
+  silenceLoops();
   hideToast();
   claimCoach();
   sound.sadTrombone();
@@ -1784,152 +1604,27 @@ function onGameOver(): void {
     best = score;
     saveBest(best);
   }
-  $("go-title").textContent = game.trophy !== null
-    ? pick(["Hooked!", "Reeled in!", "Gone fishing.", "Fish and chips!"])
-    : pick(["Splat!", "Plop.", "Flushed!", "Wiped out!", "Down the drain!"]);
-  $("go-score").textContent = String(score);
-  show($("go-newbest"), newBest);
-  $("go-best").textContent = String(best);
-  $("go-targets").textContent = String(game.targetsHit);
-  $("go-combo").textContent = game.bestCombo > 1 ? `x${game.bestCombo}` : String(game.bestCombo);
-  $("go-distance").textContent = `${Math.round(game.distance / 50)} m`;
-  $("go-accidents").textContent = String(game.accidents);
-  $("go-smashed").textContent = String(game.camerasSmashed);
-  $("go-scandals").textContent = String(game.frontPages.length);
-  $("go-kids").textContent = String(game.kidsDisarmed + game.pebblesShot);
-  $("go-weddings").textContent = String(game.weddingsRuined);
-  $("go-balloons").textContent = String(game.balloonsPopped);
-  $("go-lines").textContent = String(game.anglersSnapped);
-  $("go-sharks").textContent = String(game.sharksSpiked);
+  showRunStats(game, best, newBest);
 
   currentSnapshotUrl = mode === "face" ? snapshot.toDataURL() : null;
   show($("go-snapshot"), currentSnapshotUrl !== null);
   show($("go-snapshot-actions"), currentSnapshotUrl !== null);
   if (currentSnapshotUrl) $<HTMLImageElement>("go-snapshot-img").src = currentSnapshotUrl;
   $("go-strain").textContent = String(strainPercent(snapshot.peakStrain));
-  showRunPhotos();
-
+  showRunPhotos(game, renderer.photos, currentSnapshotUrl !== null);
   // Only runs played with the face count: keyboard and touch runs can't be submitted.
-  lastRun = mode !== "face" ? null : {
+  offerRun(mode !== "face" ? null : {
     score,
     stats: { targets: game.targetsHit, distance: Math.round(game.distance / 50), bestCombo: game.bestCombo },
     face: currentSnapshotUrl ? { url: currentSnapshotUrl, strain: snapshot.peakStrain } : null,
-  };
-  show($("go-lb-form"), lastRun !== null && (score > 0 || lastRun.face !== null));
-  show($("go-lb-face-opt"), lastRun?.face != null);
-  // Sharing the face is a fresh choice every run (the next player at this machine may not want to).
-  $<HTMLInputElement>("go-lb-face").checked = false;
-  $<HTMLButtonElement>("btn-lb-submit").disabled = false;
-  $<HTMLInputElement>("go-name").value = storageGet("poopybird.name.v1") ?? "";
-  const status = $("go-lb-status");
-  status.classList.remove("error");
-  status.textContent = "Only runs played with your face count for the leaderboard. 😣";
-  show(status, lastRun === null);
-  void showBoards($("go-lb"));
+  });
   showScreen("gameover");
-}
-
-/** The game-over prints' canvases have this many pixels per logical unit, so they stay sharp. */
-const PRINT_SCALE = 2;
-
-/**
- * The run in pictures on the game-over screen, all on one level: the finest
- * strain (static in index.html, first), then every front page, wedding photo
- * and the trophy photo in the order they were taken (photo ids count up).
- */
-function showRunPhotos(): void {
-  const strip = $("go-photos");
-  for (const el of strip.querySelectorAll(".go-print:not(#go-snapshot)")) el.remove();
-  type Print = { photoId: number; title: string; kind: string; w: number; h: number; draw: (ctx: CanvasRenderingContext2D) => void };
-  const prints: Print[] = [
-    ...game.frontPages.map((t): Print => ({
-      photoId: t.photoId, title: "Tomorrow's front page", kind: "frontpage", w: 200, h: 240,
-      draw: (ctx) => drawFrontPage(ctx, 2, 2, 196, 236, t, renderer.photos),
-    })),
-    ...game.weddingPhotos.map((w): Print => ({
-      photoId: w.photoId, title: "The official wedding photo", kind: "wedding", w: 250, h: 235,
-      draw: (ctx) => drawWeddingPrint(ctx, 2, 2, 240, w, renderer.photos.get(w.photoId)),
-    })),
-  ];
-  const trophy = game.trophy;
-  if (trophy !== null) {
-    prints.push({
-      photoId: trophy, title: "Catch of the day", kind: "trophy", w: 250, h: 235,
-      draw: (ctx) => drawTrophyPrint(ctx, 2, 2, 240, renderer.photos.get(trophy)),
-    });
-  }
-  prints.sort((a, b) => a.photoId - b.photoId);
-  for (const p of prints) {
-    const figure = document.createElement("figure");
-    figure.className = `go-print ${p.kind}`;
-    figure.title = p.title;
-    const c = document.createElement("canvas");
-    c.width = p.w * PRINT_SCALE;
-    c.height = p.h * PRINT_SCALE;
-    c.setAttribute("role", "img");
-    c.setAttribute("aria-label", p.title);
-    const ctx = c.getContext("2d");
-    if (ctx) {
-      ctx.scale(PRINT_SCALE, PRINT_SCALE);
-      p.draw(ctx);
-    }
-    figure.append(c);
-    strip.append(figure);
-  }
-  show(strip, prints.length > 0 || currentSnapshotUrl !== null);
-  strip.scrollLeft = 0;
-}
-
-/** Sends the game-over screen's run to the online leaderboard (only when the player presses Submit). */
-async function submitToLeaderboard(): Promise<void> {
-  const run = lastRun;
-  if (!run) return;
-  const name = ($<HTMLInputElement>("go-name").value.trim() || "Anonymous Pooper").slice(0, 16);
-  storageSet("poopybird.name.v1", name);
-  const withFace = run.face !== null && $<HTMLInputElement>("go-lb-face").checked;
-  const button = $<HTMLButtonElement>("btn-lb-submit");
-  const status = $("go-lb-status");
-  button.disabled = true;
-  status.textContent = "Submitting…";
-  status.classList.remove("error");
-  show(status, true);
-  try {
-    const result = await submitRun({
-      name,
-      score: run.score,
-      mode: "face",
-      stats: run.stats,
-      ...(withFace && run.face
-        ? { face: { jpeg: run.face.url.slice(run.face.url.indexOf(",") + 1), strain: run.face.strain } }
-        : {}),
-    });
-    if (lastRun !== run) return;
-    lastRun = null;
-    show($("go-lb-form"), false);
-    const places = [
-      result.rank.score !== null ? `#${result.rank.score} on scores` : "",
-      result.rank.face !== null ? `#${result.rank.face} on faces` : "",
-    ].filter(Boolean);
-    status.textContent = places.length
-      ? `You're ${places.join(" and ")}! 🎉`
-      : `Not in the top ${BOARD_KEEP} this time. Strain harder! 💩`;
-    void showBoards($("go-lb"), { highlight: result.id });
-  } catch (err) {
-    if (lastRun !== run) return;
-    button.disabled = false;
-    status.textContent = `Couldn't submit: ${err instanceof Error ? err.message : "no connection"}.`;
-    status.classList.add("error");
-  }
 }
 
 /** The start screen's 🏆: both boards over the demo. */
 function openLeaderboard(): void {
   showScreen("leaderboard");
   void showBoards($("lb-full"), { limit: 20 });
-}
-
-function pick<T>(items: readonly T[]): T {
-  return items[Math.floor(Math.random() * items.length)];
 }
 
 // --- HUD -----------------------------------------------------------------------------------
@@ -1952,9 +1647,7 @@ function updateHud(): void {
     const comboEl = $("hud-combo");
     show(comboEl, game.combo >= 2);
     $("hud-combo-n").textContent = `x${game.comboMultiplier.toFixed(1)} (${game.combo} hits)`;
-    comboEl.style.animation = "none";
-    void comboEl.offsetWidth;
-    comboEl.style.animation = "";
+    replayAnimation(comboEl);
   }
   const msg = game.message?.text ?? "";
   if (msg !== hudCache.message) {
@@ -2084,231 +1777,58 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
-/**
- * The paparazzo's shot: the player's real face in face mode (like the
- * finest-strain snapshot), otherwise the strained bird. Kept in memory for
- * this run only.
- */
-function takePhoto(photoId: number): void {
-  const face = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
-  const photo = face ?? renderer.captureBird(game);
-  if (photo) renderer.photos.set(photoId, photo);
+/** The player's face right now, cropped from the webcam (null in keyboard mode or without a fresh face). */
+function playerFace(): Photo | null {
+  return mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
 }
 
 /** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */
 let weddingFace: Photo | null = null;
 
-/** Which poop sample a release at this charge plays. */
-function poopSize(charge: number): PoopSize {
-  if (charge >= config.poopSoundLarge) return "large";
-  if (charge >= config.poopSoundMiddle) return "middle";
-  return "weak";
-}
-
+/** Sound and haptics for each event (feedback.ts), and what it means for the app. */
 function handleGameEvents(): void {
   for (const e of game.events) {
+    playFeedback(sound, e);
     switch (e.type) {
       case "release":
         lessonCount.poops++;
-        sound.release(poopSize(e.charge), e.charge, e.sweet);
-        buzz(e.sweet ? [15, 40, 25] : Math.round(8 + 20 * e.charge));
         break;
       case "accident":
         lessonCount.accidents++;
         lessonCount.lastAccident = performance.now();
-        sound.accident();
-        buzz([60, 40, 120]);
-        break;
-      case "splat":
-        sound.splat(e.big);
-        break;
-      case "hit":
-        sound.hit(e.combo);
-        buzz(12);
-        break;
-      case "crash":
-        sound.splat(true);
-        buzz(200);
-        break;
-      case "chomp":
-        sound.sharkBite();
-        buzz([80, 40, 200]);
-        break;
-      case "zap":
-        sound.zap();
-        buzz([30, 20, 30, 20, 120]);
-        break;
-      case "droneDown":
-        sound.powerDown();
-        break;
-      case "droneCrashed":
-        sound.droneCrash();
-        buzz([20, 30, 60]);
         break;
       case "gameover":
         onGameOver();
         break;
       case "gateEntered":
-        if (e.to === "ocean") {
-          sound.splash();
-          // Keyboard players start at the hover point; in face mode the face decides.
-          keyPuff = mode === "keyboard" ? config.oceanHoverPuff : 0;
-        } else {
-          keyPuff = 0;
-        }
+        // Keyboard players start the ocean at the hover point; in face mode the face decides.
+        keyPuff = e.to === "ocean" && mode === "keyboard" ? config.oceanHoverPuff : 0;
         break;
       case "submerged":
-        void onSubmerged();
+        onSubmerged();
         break;
-      case "breached":
-        sound.splash();
+      case "photo": {
+        // The paparazzo's shot: the player's real face in face mode (like the
+        // finest-strain snapshot), otherwise the strained bird. Kept for this run only.
+        const photo = playerFace() ?? renderer.captureBird(game);
+        if (photo) renderer.photos.set(e.photoId, photo);
         break;
-      case "transformed":
-      case "surfaced":
-        sound.splash();
-        break;
-      case "spike":
-        sound.spike();
-        break;
-      case "pop":
-        sound.deflate();
-        buzz(120);
-        break;
-      case "jellyPopped":
-        sound.jellyPop(e.combo);
-        break;
-      case "paparazzoBeep":
-        sound.cameraBeep(e.timer);
-        break;
-      case "photo":
-        sound.shutter();
-        takePhoto(e.photoId);
-        break;
-      case "cameraSmashed":
-        sound.smash();
-        break;
-      case "slingshotDraw":
-        sound.slingshotDraw(e.windup);
-        break;
-      case "slingshotFire":
-        sound.slingshotFire();
-        break;
-      case "bonk":
-        sound.bonk();
-        buzz(80);
-        break;
-      case "pebbleShot":
-        sound.pebbleShot(e.combo);
-        break;
-      case "ricochet":
-        sound.ricochet();
-        break;
-      case "kidCried":
-        sound.kidCry();
-        break;
-      case "curse":
-        sound.curse();
-        break;
-      case "weddingArrived":
-        sound.weddingArrived();
-        break;
-      case "weddingBeat":
-        sound.weddingBeat(e.count);
-        break;
+      }
       case "weddingKiss":
-        sound.weddingKiss();
         // Grab the face now: a player who's on it is straining hardest right at "KISS!".
-        weddingFace = mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
-        break;
-      case "weddingRuined":
-        sound.weddingRuined();
-        break;
-      case "weddingMarried":
-        sound.weddingMarried();
+        weddingFace = playerFace();
         break;
       case "weddingPhoto": {
-        sound.shutter();
         const photo = renderer.captureWedding(game, weddingFace);
         if (photo) renderer.photos.set(e.photoId, photo);
         weddingFace = null;
         break;
       }
-      case "bouquetThrown":
-        sound.bouquetThrown(e.angry);
-        break;
-      case "bouquetCaught":
-        sound.bouquetCaught();
-        break;
-      case "bouquetHit":
-        sound.bouquetHit();
-        break;
-      case "balloonPop":
-        sound.balloonPop();
-        sound.hit(e.combo);
-        break;
-      case "chuteOpen":
-        sound.chuteOpen();
-        break;
-      case "basketLanded":
-        sound.basketLanded();
-        break;
-      case "burner":
-        sound.burner();
-        break;
-      case "threaded":
-        sound.hit(4);
-        break;
-      case "anglerCast":
-        sound.anglerCast();
-        break;
-      case "anglerHooked":
-        sound.anglerHooked();
-        buzz([40, 30, 40]);
-        break;
-      case "anglerReel":
-        sound.reelClick();
-        break;
       case "anglerLanded": {
-        sound.splash();
-        buzz(200);
         const photo = renderer.captureTrophy(game);
         if (photo) renderer.photos.set(e.photoId, photo);
         break;
       }
-      case "anglerPhoto":
-        sound.shutter();
-        break;
-      case "lineSnapped":
-        sound.lineSnap();
-        buzz(60);
-        break;
-      case "sharkNote":
-        sound.sharkNote(e.high, e.volume);
-        break;
-      case "sharkWindup":
-        break;
-      case "sharkLunge":
-        sound.sharkLunge();
-        break;
-      case "sharkSpiked":
-        sound.sharkYelp();
-        sound.hit(e.combo);
-        buzz([40, 30, 80]);
-        break;
-      case "anchorWarn":
-        // aaron removed this we dont want no fucking beep
-        // sound.beep();
-        break;
-      case "anchorRattle":
-        sound.anchorRattle();
-        break;
-      case "anchorSnapped":
-        sound.lineSnap();
-        break;
-      case "anchorLanded":
-        sound.anchorLanded();
-        buzz(50);
-        break;
     }
   }
   game.events.length = 0;
@@ -2357,42 +1877,6 @@ window.addEventListener("keydown", (e) => {
     case "d":
       debug?.toggle();
       break;
-    case "g":
-      // Debug shortcut: the stage's waterfront comes next.
-      if (debug?.visible && state === "playing") game.spawnShoreNow();
-      break;
-    case "l":
-      // Debug shortcut: a power line right now.
-      if (debug?.visible && state === "playing") game.spawnPowerLineNow();
-      break;
-    case "f":
-      // Debug shortcut: a paparazzo walks on.
-      if (debug?.visible && state === "playing") game.spawnPaparazzoNow();
-      break;
-    case "k":
-      // Debug shortcut: a slingshot kid walks on.
-      if (debug?.visible && state === "playing") game.spawnKidNow();
-      break;
-    case "w":
-      // Debug shortcut: a wedding right now.
-      if (debug?.visible && state === "playing") game.spawnWeddingNow();
-      break;
-    case "b":
-      // Debug shortcut: a hot-air balloon floats in.
-      if (debug?.visible && state === "playing") game.spawnBalloonNow();
-      break;
-    case "h":
-      // Debug shortcut: a fisherman rows in (ocean only).
-      if (debug?.visible && state === "playing") game.spawnAnglerNow();
-      break;
-    case "s":
-      // Debug shortcut: a shark swims in (ocean only).
-      if (debug?.visible && state === "playing") game.spawnSharkNow();
-      break;
-    case "a":
-      // Debug shortcut: a boat that drops its anchor (ocean only).
-      if (debug?.visible && state === "playing") game.spawnAnchorDropNow();
-      break;
     case "o":
       // Debug shortcut: start a run as the pufferfish.
       if (debug?.visible) startOceanRun();
@@ -2403,8 +1887,24 @@ window.addEventListener("keydown", (e) => {
     case "c":
       void recalibrate();
       break;
+    default:
+      // With the debug panel open, mid-run: spawn something right now.
+      if (debug?.visible && state === "playing") DEBUG_SPAWNS[key]?.();
   }
 });
+
+/** Debug shortcuts (the debug panel open, mid-run): what comes on next, right now. */
+const DEBUG_SPAWNS: Partial<Record<string, () => void>> = {
+  g: () => game.spawnShoreNow(), // the stage's waterfront
+  l: () => game.spawnPowerLineNow(),
+  f: () => game.spawnPaparazzoNow(),
+  k: () => game.spawnKidNow(), // a slingshot kid
+  w: () => game.spawnWeddingNow(),
+  b: () => game.spawnBalloonNow(),
+  h: () => game.spawnAnglerNow(), // a fisherman (ocean)
+  s: () => game.spawnSharkNow(), // ocean
+  a: () => game.spawnAnchorDropNow(), // a boat that drops its anchor (ocean)
+};
 
 window.addEventListener("keyup", (e) => {
   if (e.code === "Space") keyHeld = false;
@@ -2453,6 +1953,11 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 
 decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
+/** A button that starts playing: on phones it goes fullscreen in landscape first (it must, inside the tap). */
+const onPlay = (id: string, fn: () => void) => on(id, () => {
+  goLandscape();
+  fn();
+});
 
 // Settings (the gear, top right): the graphics style, the remembered faces, and from the menu,
 // playing without the camera. Opening it mid-run pauses the game.
@@ -2474,41 +1979,25 @@ rtxSwitch.addEventListener("change", () => {
   saveGraphics(renderer.graphics);
 });
 on("btn-forget-faces", forgetFaces);
-on("btn-face", () => {
-  goLandscape();
-  void startFaceMode();
-});
-on("btn-keyboard", () => {
+onPlay("btn-face", () => void startFaceMode());
+onPlay("btn-keyboard", () => {
   show(settingsPanel, false);
-  goLandscape();
   startKeyboardMode();
 });
 on("btn-hud-mute", toggleMute);
 on("btn-hud-pause", togglePause);
 on("btn-loading-retry", () => void startFaceMode());
 on("btn-loading-keyboard", startKeyboardMode);
-on("btn-calib-play", () => {
-  goLandscape();
-  playAfterCalibration();
-});
+onPlay("btn-calib-play", playAfterCalibration);
 on("btn-calib-retry", () => void runCalibration());
-on("btn-calib-keyboard", () => {
-  goLandscape();
-  startKeyboardMode();
-});
+onPlay("btn-calib-keyboard", startKeyboardMode);
 on("btn-calib-cancel", goToMenu);
 on("btn-perch-menu", goToMenu);
 on("btn-tune", () => void recalibrate());
-on("btn-perch-keyboard", () => {
-  goLandscape();
-  startKeyboardMode();
-});
+onPlay("btn-perch-keyboard", startKeyboardMode);
 on("btn-resume", togglePause);
 on("btn-pause-menu", goToMenu);
-on("btn-again", () => {
-  goLandscape();
-  startReady();
-});
+onPlay("btn-again", () => startReady());
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
 $<HTMLInputElement>("opt-tips").addEventListener("change", (e) => {
@@ -2533,7 +2022,7 @@ document.addEventListener("click", (e) => {
   if ((e.target as HTMLElement).closest("button, .opt")) (document.activeElement as HTMLElement | null)?.blur();
 });
 
-// --- Phones: landscape, haptics -------------------------------------------------------------
+// --- Phones: landscape ---------------------------------------------------------------------
 
 /**
  * Touch devices: go fullscreen and lock to landscape, where the browser allows
@@ -2559,12 +2048,6 @@ function updateRotatePrompt(): void {
   const rotate = needsRotate();
   if (rotate && state === "playing") togglePause();
   show(rotateScreen, rotate);
-}
-
-/** A short buzz on phones that support it (not iOS). Muting silences it too. */
-function buzz(pattern: number | number[]): void {
-  if (sound.muted || !isTouch) return;
-  navigator.vibrate?.(pattern);
 }
 
 // --- Boot ----------------------------------------------------------------------------------
