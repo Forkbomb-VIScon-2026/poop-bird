@@ -99,11 +99,19 @@ function interactivePuffCalibration(fresh: FeatureVector[], look: FeatureVector[
 }
 
 /**
- * Like the game: the swim lesson (a relaxed moment, two puff/relax cycles);
+ * Like the game: the swim lesson (a relaxed moment, one puff/relax cycle);
  * if its reading isn't clear, the calibration, which adds a look-around (the
- * script's next two cycles).
+ * script's next two cycles). The script's relax steps are shorter than the
+ * lesson's let-out step (oceanLessonLetOutSeconds), so it's scored on less.
  */
 function gameInteractiveCalibration(c: PuffCalibrationInput, config: Config): Calibration | null {
+  const lesson = interactivePuffCalibration(c.fresh, [], c.cycles.slice(0, 1), config);
+  if (lesson || c.retry.length < 1) return lesson;
+  return interactivePuffCalibration(c.cycles[0].relax, c.look, [c.cycles[1], c.retry[0]], config);
+}
+
+/** The swim lesson before: two puff/relax cycles, then the calibration on the script's next two. */
+function twoCycleInteractiveCalibration(c: PuffCalibrationInput, config: Config): Calibration | null {
   const lesson = interactivePuffCalibration(c.fresh, [], c.cycles, config);
   if (lesson || c.retry.length < 2) return lesson;
   return interactivePuffCalibration(c.cycles[1].relax, c.look, c.retry, config);
@@ -156,6 +164,13 @@ export const PUFF_VARIANTS: PuffVariant[] = [
   {
     name: "game",
     calibrate: gameInteractiveCalibration,
+    detector: puffDetector,
+  },
+  {
+    // A second cycle knows the face after a puff better, but it raises the relaxed edge,
+    // so more players' puffs looked like their relaxed face and they had to calibrate.
+    name: "swim lesson with two cycles",
+    calibrate: twoCycleInteractiveCalibration,
     detector: puffDetector,
   },
   {

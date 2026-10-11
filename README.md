@@ -574,19 +574,20 @@ separated their puffs from their relaxed face), while pursed lips light up
    unchanged.
 2. **Swim lesson and calibration** (`main.ts` `runSwimLesson`). On the first
    dive in face mode the world swims on in calm water and banners walk the
-   player through `LESSON_STEPS`: relax, pucker & puff, let it out, again, each
+   player through `LESSON_STEPS`: relax, pucker & puff, let it out, each
    with a pictogram of the face (`#face-relaxed`, `#face-puffed`). The fish
    follows the measured puff (the pucker range), which playtesters found more
    intuitive than a scripted fish. With a clear reading (the quality check
    below) the level starts right away. If not, `CALIBRATION_STEPS` run: relax,
-   look around, then the same two cycles, with a timeline of the steps so the
+   look around, then two puff/relax cycles, with a timeline of the steps so the
    player sees the next switch coming. There the fish is driven by the script
    (puff 0.75 on puff steps, 0.05 otherwise), so the player sees what each
    step does whatever the camera reads. After play-testing, neither has a
    countdown before a switch (`oceanLessonHeadsUp`, `oceanCalibrationHeadsUp`:
    0 s; the countdown is still there for higher values). Puff steps last
    `oceanCalibrationSeconds` (3.5 s), the others
-   `oceanRelaxSeconds` (3.5 s); the first `calibrationSettle` of each is
+   `oceanRelaxSeconds` (3.5 s), except the lesson's let-out step
+   (`oceanLessonLetOutSeconds`, 5 s); the first `calibrationSettle` of each is
    dropped. Pausing restarts the step; going to the menu or recalibrating
    abandons it. The relax steps right
    **after** each puff matter most: a face just after a puff doesn't go back
@@ -595,7 +596,13 @@ separated their puffs from their relaxed face), while pursed lips light up
    knew the relaxed face from the start of the game, those leftovers read as
    puff and the fish often wouldn't sink: in the face dataset a fifth of the
    relaxed frames after a puff floated, for some people half. Looking around
-   teaches it which features move with the head.
+   teaches it which features move with the head. The lesson used to have two
+   puff/relax cycles. Replayed on the face dataset's pufferfish faces, one
+   cycle passed the quality check more often (10 of 11 sessions, against 8):
+   the second cycle's relaxed faces pushed the relaxed edge toward the puff,
+   so the puff "looked like your relaxed face". But for one player the fish
+   then sank on only 37% of relaxed frames in play (80% before), which the
+   check can't see from one let-out step; hence the longer one.
 3. **Fit** (`buildInteractivePuffCalibration`). All relax steps count as "not
    puffing". Per feature, "relaxed" is the `oceanPuffRelaxedQuantile` (80%) of
    those relaxed faces toward the puff side, so most of them score 0, and
@@ -774,16 +781,18 @@ replays the rest. For strain it reports hits on strain steps, false strain
 while relaxed, looking around and laughing, releases in the middle of a
 strain, and press and release latency. For puff it scores the plain puff
 and the pufferfish face separately. Like the game's interactive calibration,
-each script's first two hold → relax cycles (plus the relaxed step before
-them) are the swim lesson, and every variant is scored only on what comes
-after: the median puff level
+each script's first hold → relax cycle (plus the relaxed step before it) is
+the swim lesson, and every variant is scored only on what comes after the
+first two cycles (so the old two-cycle lesson compares fairly): the median
+puff level
 while relaxed, at half and at full puff, how often the fish sinks while
 relaxed and rises while puffing, false spikes, and how often it would rise
 while the player looks around (the look frames no calibration saw) or laughs
 (the strain script's "look" and "laugh" steps). Like the game, a puff
 calibration that fails its quality check isn't used; after an unclear lesson,
 the calibration is fitted from the script's next two cycles plus the start of
-the strain script's look-around. The features are computed again from the
+the strain script's look-around. The script's relax steps are 3 s, so the
+lesson's longer let-out step can't be replayed: play-test changes to it. The features are computed again from the
 recorded blendshapes and landmarks with the current `extractFeatures` and
 `faceGeometry`, so a new or changed feature scores on every recording. To try a
 detection idea, add a variant to `scripts/eval/variants.ts`; the first entry

@@ -1,8 +1,9 @@
 // Puff scoreboard: fit a puff calibration like the game's first dive, then
 // replay the rest of the puff script and check the fish gets the levels it
-// should. The game's calibration is interactive (relax, then two puff/relax
-// cycles), so each script's first two hold → relax cycles are the calibration
-// and only what comes after them is scored, for every variant alike.
+// should. The game's calibration is interactive (relax, then one puff/relax
+// cycle; two before), so each script's first hold → relax cycle is the swim
+// lesson. Only what comes after the first two cycles is scored, for every
+// variant alike, so a two-cycle lesson can still be compared.
 // Two gestures are scored separately: the plain puff, and the "pufferfish
 // face" (puffing the cheeks while pursing the lips) that sessions recorded
 // since October 10 also have.
@@ -34,9 +35,11 @@ export interface PuffCalibrationInput {
   /** The first two hold → relax cycles (the plain puff's half puff skipped). */
   cycles: PuffCycle[];
   /**
-   * The next two cycles, what the game's second try would see when the first
-   * fails its quality check ([] if the script runs out). They overlap the
-   * scored part, so a variant that uses them is scored partly on its own data.
+   * The two cycles after those ([] if the script runs out): with a two-cycle
+   * lesson, what the calibration would see when the lesson fails its quality
+   * check (after a one-cycle lesson, that's cycles[1] and retry[0]). They
+   * overlap the scored part, so a variant that uses them is scored partly on
+   * its own data.
    */
   retry: PuffCycle[];
 }
