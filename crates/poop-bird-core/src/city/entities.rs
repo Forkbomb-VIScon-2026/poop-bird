@@ -68,6 +68,28 @@ pub struct Poop {
     pub rotation: f64,
 }
 #[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum ParticleColor {
+    FartGreen = 2,
+    SweetFartGold = 3,
+    MessBrown = 4,
+    MessDarkBrown = 5,
+    TrailBrown = 6,
+    SplatBrown = 7,
+    SplatGold = 8,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum FloaterColor {
+    PerfectGold = 0,
+    White = 1,
+    WeakGreen = 2,
+    PointsGold = 3,
+    LostPink = 4,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Particle {
     pub x: f64,
     pub y: f64,
@@ -76,7 +98,7 @@ pub struct Particle {
     pub life: f64,
     pub max_life: f64,
     pub size: f64,
-    pub color: u8,
+    pub color: ParticleColor,
     pub gravity: f64,
     pub world: bool,
 }
@@ -103,7 +125,7 @@ pub struct Floater {
     pub x: f64,
     pub y: f64,
     pub text: Text,
-    pub color: u8,
+    pub color: FloaterColor,
     pub size: f64,
     pub life: f64,
     pub max_life: f64,

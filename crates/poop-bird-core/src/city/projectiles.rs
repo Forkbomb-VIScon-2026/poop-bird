@@ -54,21 +54,39 @@ impl World {
                         life,
                         max_life: 0.9,
                         size,
-                        color: if sweet_spot { 3 } else { 2 },
+                        color: if sweet_spot {
+                            ParticleColor::SweetFartGold
+                        } else {
+                            ParticleColor::FartGreen
+                        },
                         gravity: -30.0,
                         world: true,
                     });
                 }
                 let caption = if sweet_spot {
-                    Some((Text::Perfect, self.bird_x, self.bird.y - 40.0, 0, 30.0, 1.1))
+                    Some((
+                        Text::Perfect,
+                        self.bird_x,
+                        self.bird.y - 40.0,
+                        FloaterColor::PerfectGold,
+                        30.0,
+                        1.1,
+                    ))
                 } else if charge >= 0.95 {
-                    Some((Text::Big, self.bird_x, self.bird.y - 40.0, 1, 24.0, 0.8))
+                    Some((
+                        Text::Big,
+                        self.bird_x,
+                        self.bird.y - 40.0,
+                        FloaterColor::White,
+                        24.0,
+                        0.8,
+                    ))
                 } else if charge < 0.12 {
                     Some((
                         Text::Weak,
                         self.bird_x - 20.0,
                         self.bird.y + 10.0,
-                        2,
+                        FloaterColor::WeakGreen,
                         16.0,
                         0.6,
                     ))
@@ -103,7 +121,11 @@ impl World {
                     let speed = 80.0 + self.random() * 380.0;
                     let life = 0.6 + self.random() * 0.8;
                     let size = 3.0 + self.random() * 7.0;
-                    let color = if self.random() < 0.7 { 4 } else { 5 };
+                    let color = if self.random() < 0.7 {
+                        ParticleColor::MessBrown
+                    } else {
+                        ParticleColor::MessDarkBrown
+                    };
                     self.particles.push(Particle {
                         x: self.bird_x,
                         y: self.bird.y,
@@ -143,7 +165,11 @@ impl World {
             let speed = 60.0 + self.random() * 160.0;
             let life = 0.4 + self.random() * 0.3;
             let size = 2.0 + self.random() * 3.0;
-            let color = if hit && self.random() < 0.3 { 8 } else { 7 };
+            let color = if hit && self.random() < 0.3 {
+                ParticleColor::SplatGold
+            } else {
+                ParticleColor::SplatBrown
+            };
             self.particles.push(Particle {
                 x,
                 y,
@@ -196,7 +222,7 @@ impl World {
                     points,
                     multiplier: (self.combo > 1).then_some(mult),
                 },
-                color: 3,
+                color: FloaterColor::PointsGold,
                 size: 26.0,
                 life: 1.1,
                 max_life: 1.1,
@@ -248,7 +274,7 @@ impl World {
                     x: poop.x,
                     y: ground - 30.0,
                     text: Text::ComboLost,
-                    color: 4,
+                    color: FloaterColor::LostPink,
                     size: 16.0,
                     life: 0.8,
                     max_life: 0.8,
@@ -284,7 +310,7 @@ impl World {
                     life: 0.35,
                     max_life: 0.35,
                     size,
-                    color: 6,
+                    color: ParticleColor::TrailBrown,
                     gravity: 0.0,
                     world: true,
                 });

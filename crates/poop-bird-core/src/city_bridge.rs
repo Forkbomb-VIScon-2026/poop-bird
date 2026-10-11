@@ -190,7 +190,7 @@ pub fn encode(w: &World, output: &mut Vec<f64>) {
             p.life,
             p.max_life,
             p.size,
-            f64::from(p.color),
+            f64::from(p.color as u8),
             p.gravity,
             f64::from(p.world),
         ]);
@@ -212,7 +212,7 @@ pub fn encode(w: &World, output: &mut Vec<f64>) {
             text,
             points,
             mult,
-            f64::from(f.color),
+            f64::from(f.color as u8),
             f.size,
             f.life,
             f.max_life,
