@@ -116,18 +116,16 @@ any bird: a deliberately plain step, so that from then on the bird and the
 fish do what the player expects, and nothing calibrates mid-game.
 
 1. "Strain like you really need to go 💩", with an example photo of the face
-   next to the player's webcam ("Like this" / "You") and a hint. Nothing
+   next to the player's webcam ("Like this" / "You"). Nothing
    happens until the player presses **I'm ready** (Enter). Then "Get ready to
    strain… 3, 2, 1", "STRAIN! Hold it!" for `calibrationSeconds` (3 s) with a
    countdown and a progress bar.
 2. "Puff your cheeks like a pufferfish 🐡", the same way (held for
-   `oceanCalibrationSeconds`, 3.5 s), then "And let it out" for
-   `oceanLessonLetOutSeconds` (5 s). The let-out follows the hold without a
-   button (the face right after a puff is what it records), so the hold's
-   last 1.5 s say "Next: let it out".
+   `oceanCalibrationSeconds`, 3.5 s). No let-out step: the puff is fitted
+   against the welcome's relaxed face.
 
 The player is never asked for a relaxed face. The screen opens with a short
-welcome ("Hi! 👋 Let's get the game to know your face", just the webcam, no
+welcome ("Hi! 👋 Just look at the camera for a moment", just the webcam, no
 example face yet, so nobody practises one): the relaxed face is read there
 (2 s of a face in view, with a progress bar) and then kept as it is, retries
 included. A phase whose fit fails its quality check says why ("That
@@ -625,19 +623,17 @@ separated their puffs from their relaxed face), while pursed lips light up
 2. **Calibration** (the calibration screen's second phase, `main.ts`
    `calibratePuff`, before the first run). The player holds the pufferfish
    face for `oceanCalibrationSeconds` (3.5 s), with an example photo next to
-   their webcam, then "And let it out" for `oceanLessonLetOutSeconds` (5 s);
-   the first `calibrationSettle` of each is dropped. "Not puffing" is the
-   welcome's read of the relaxed face plus the let-out step. The let-out
-   step matters most: a face just after a puff doesn't go back to the relaxed
+   their webcam; the first `calibrationSettle` is dropped. "Not puffing" is
+   the welcome's read of the relaxed face. (There used to be a "let it out"
+   step after the hold, dropped to keep the screen simple. It was there
+   because a face just after a puff doesn't go back to the relaxed
    face from before it (the mouth stays narrower, the lips pressed or a bit
    pursed, the mouth corners up). When the calibration only knew the relaxed
    face from before, those leftovers read as puff and the fish often wouldn't
    sink: in the face dataset a fifth of the relaxed frames after a puff
-   floated, for some people half. (This used to be the swim lesson on the
-   first dive. One cycle with a long let-out was what the face dataset and
-   play-testing settled on there, so the screen does the same.)
-3. **Fit** (`buildInteractivePuffCalibration`). All relax steps count as "not
-   puffing". Per feature, "relaxed" is the `oceanPuffRelaxedQuantile` (80%) of
+   floated, for some people half.) The relaxed quantile edge in the fit
+   below still keeps most relaxed frames at 0.
+3. **Fit** (`buildInteractivePuffCalibration`). Per feature, "relaxed" is the `oceanPuffRelaxedQuantile` (80%) of
    those relaxed faces toward the puff side, so most of them score 0, and
    "full" is the puff **median** (as the cheeks fill, the lips purse hard for
    ~0.2 s and then relax; with the median only what you hold counts).

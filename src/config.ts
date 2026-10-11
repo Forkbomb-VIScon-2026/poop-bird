@@ -259,7 +259,6 @@ export const CONFIG_SPEC = {
   oceanFallbackRestMargin: { value: 0.05, min: 0, max: 0.3, step: 0.01, group: "Ocean puff", label: "Pucker: rest margin", hint: "added on top of the resting pucker + SDs" },
   oceanPuffCalibrationAttempts: { value: 1, min: 1, max: 4, step: 1, group: "Ocean puff", label: "Puff calibration tries", hint: "calibration runs after an unclear swim lesson before giving up (pursed lips only)" },
   oceanRelaxSeconds: { value: 3.5, min: 1, max: 8, step: 0.5, group: "Ocean puff", label: "Relax step", hint: "s of each relax step in the swim lesson and the puff calibration (first calibrationSettle s ignored)" },
-  oceanLessonLetOutSeconds: { value: 5, min: 1, max: 10, step: 0.5, group: "Ocean puff", label: "Let-out", hint: "s of the calibration screen's \"let it out\" after the puff hold (first calibrationSettle s ignored): the face right after a puff is what keeps the fish sinking" },
   oceanPuffRelaxedQuantile: { value: 0.8, min: 0.5, max: 1, step: 0.05, group: "Ocean puff", label: "Relaxed edge", hint: "share of the calibration's relaxed faces (also right after a puff) that score 0 on each feature" },
   oceanPuffMinGap: { value: 0.5, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min puff gap", hint: "a feature gets full weight once the puff clears the relaxed edge by this share of its change" },
   oceanPuffMinSinkRate: { value: 0.8, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min sink rate", hint: "calibration quality: share of its relaxed faces that must score below the hover point" },

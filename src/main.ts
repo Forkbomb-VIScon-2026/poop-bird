@@ -625,8 +625,6 @@ const MIN_RELAXED_SAMPLES = 20;
 const WELCOME_MS = 2000;
 /** Longest the welcome waits for recognition to decide, once the relaxed read is done. */
 const WELCOME_RECOGNITION_MS = 4000;
-/** The puff hold's last stretch announces the let-out that follows it without a break. */
-const LET_OUT_HEADS_UP_MS = 1500;
 /** Failed tries of a phase before "Play anyway" shows. */
 const TRIES_BEFORE_SKIP = 2;
 
@@ -685,8 +683,7 @@ async function runCalibration(forced = calib.forced): Promise<void> {
  */
 async function welcome(token: number): Promise<boolean> {
   $("calib-step").textContent = "Calibration";
-  $("calib-prompt").textContent = "Hi! 👋 Let's get the game to know your face";
-  $("calib-hint").textContent = "Just look at the camera for a moment…";
+  $("calib-prompt").textContent = "Hi! 👋 Just look at the camera for a moment";
   screens.calibrate.classList.add("welcome");
   show($("calib-buttons"), false);
   show($("calib-run"), true);
@@ -764,7 +761,7 @@ async function calibrateStrain(token: number): Promise<boolean | null> {
   }
 }
 
-/** The puff phase: a hold, then "let it out". Like calibrateStrain. */
+/** The puff phase: a hold, against the relaxed face from the welcome. Like calibrateStrain. */
 async function calibratePuff(token: number): Promise<boolean | null> {
   for (let tries = 0; ; tries++) {
     const go = await calibrationIntro(token, "puff", tries);
@@ -784,9 +781,7 @@ async function calibratePuff(token: number): Promise<boolean | null> {
     }
     const held = await holdFace(token, "puff");
     if (!held) return null;
-    const after = await letOut(token);
-    if (!after) return null;
-    const relaxed = [...calib.relaxed, ...after];
+    const relaxed = [...calib.relaxed];
     const cal = buildInteractivePuffCalibration(relaxed, held.samples, config);
     const quality = cal
       ? assessPuffCalibration(cal, held.samples, { strain: held.coverage }, { ...config, minSinkRate: config.oceanPuffMinSinkRate }, relaxed)
@@ -813,8 +808,8 @@ function strainRetryReason(q: ReturnType<typeof assessCalibration>): string {
 function puffRetryReason(reason: string | undefined): string {
   switch (reason) {
     case "puff looked like your relaxed face": return "That looked like your normal face. Fill your cheeks with air and purse your lips!";
+    case "your face didn't relax between puffs": return "Your puff looked too much like your normal face. Fill your cheeks right up!";
     case "puff wasn't held steadily": return "Keep the cheeks puffed for the whole bar, then try again.";
-    case "your face didn't relax between puffs": return "Let all the air out after the puff, lips loose.";
     case "couldn't see your face": return "I couldn't see your face well. Face the camera, in good light.";
     default: return "That didn't work. Try again!";
   }
@@ -824,12 +819,10 @@ const CALIB_TEXT = {
   strain: {
     step: "Calibration 1/2: poop face",
     prompt: "Strain like you really need to go 💩",
-    hint: "Brows down, eyes squeezed, lips pressed. You'll hold it for 3 seconds.",
   },
   puff: {
     step: "Calibration 2/2: pufferfish face",
     prompt: "Puff your cheeks like a pufferfish 🐡",
-    hint: "Cheeks full of air, lips pursed. Hold it, then let the air out.",
   },
 };
 
@@ -843,11 +836,9 @@ async function calibrationIntro(token: number, phase: "strain" | "puff", tries: 
   const text = CALIB_TEXT[phase];
   $("calib-step").textContent = text.step;
   $("calib-prompt").textContent = text.prompt;
-  $("calib-hint").textContent = text.hint;
   $<HTMLImageElement>("calib-example").src = examples[phase];
-  screens.calibrate.querySelector(".calib")!.classList.remove("holding", "letting-out");
+  screens.calibrate.querySelector(".calib")!.classList.remove("holding");
   show($("calib-run"), false);
-  $("calib-status").classList.remove("pulse");
   const go = $<HTMLButtonElement>("btn-calib-go");
   go.textContent = tries ? "Try again" : "I'm ready";
   decorate(go);
@@ -912,11 +903,6 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
       if (elapsed >= total) break;
       count.textContent = String(Math.ceil((total - elapsed) / 1000));
       progress.style.width = `${(elapsed / total) * 100}%`;
-      // The let-out starts right after the puff (its first moments are the data), so announce it.
-      if (phase === "puff" && total - elapsed <= LET_OUT_HEADS_UP_MS) {
-        calibStatus("Next: let it out 😮‍💨", "");
-        $("calib-status").classList.add("pulse");
-      }
       if (phase === "strain") sound.setGroan(Math.min(1, elapsed / total), false);
       else sound.setBurble(elapsed / total);
       await wait(50);
@@ -932,40 +918,6 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
   const samples = mine.samples.filter((x) => x.t - start >= settle).map((x) => x.f);
   const frames = mine.frames.filter((t) => t - start >= settle).length;
   return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
-}
-
-/**
- * After the puff: "let it out" for oceanLessonLetOutSeconds, sampled as the
- * relaxed face right after a puff, which isn't the one from before (the
- * mouth stays narrower, the lips pressed): the fit needs it, or the fish
- * won't sink (see buildInteractivePuffCalibration). null = abandoned.
- */
-async function letOut(token: number): Promise<FeatureVector[] | null> {
-  // A different prompt in the same spot is easy to miss mid-puff: it pops in, in another color (style.css).
-  const card = screens.calibrate.querySelector(".calib")!;
-  card.classList.add("letting-out");
-  $("calib-prompt").textContent = "And let it out 😮‍💨";
-  $("calib-status").classList.remove("pulse");
-  calibStatus("", "");
-  $("calib-progress").style.width = "0%";
-  const total = config.oceanLessonLetOutSeconds * 1000;
-  const start = performance.now();
-  const mine = startSampling();
-  try {
-    for (; ;) {
-      if (token !== flow) return null;
-      const elapsed = performance.now() - start;
-      if (elapsed >= total) break;
-      $("calib-count").textContent = "";
-      $("calib-progress").style.width = `${(elapsed / total) * 100}%`;
-      await wait(50);
-    }
-  } finally {
-    stopSampling(mine.samples);
-    card.classList.remove("letting-out");
-  }
-  // The first moment is still the air going out.
-  return mine.samples.filter((x) => x.t - start >= config.calibrationSettle * 1000).map((x) => x.f);
 }
 
 /** Starts collecting face samples into fresh shared arrays (filled by the tracker callback). */
@@ -2250,10 +2202,6 @@ on("btn-calib-go", () => {
 });
 on("btn-calib-skip", () => {
   calib.skipped = true;
-});
-on("btn-calib-keyboard", () => {
-  goLandscape();
-  startKeyboardMode();
 });
 on("btn-calib-cancel", goToMenu);
 on("btn-perch-menu", goToMenu);
