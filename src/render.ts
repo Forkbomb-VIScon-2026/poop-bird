@@ -3,7 +3,28 @@
 import { config } from "./config";
 import type { BirdLook, FishLook, RenderFrame } from "./runtime/render-frame";
 import {
+  RTX,
+  RtxPlayer,
+  drawPhoto as drawRtxPhoto,
+  rtxBalloonEnvelope,
+  rtxBasket,
+  rtxBillboard,
+  rtxBuilding,
+  rtxCar,
+  rtxOceanBackdrop,
+  rtxPoles,
+  rtxSeaColumn,
+  rtxSeaFloor,
+  rtxSeaLife,
+  rtxSkydiver,
+  rtxSky,
+  rtxStreet,
+  rtxWalker,
+} from "./rtx";
+import { initialSpikeState } from "./swim";
+import {
   BIRD_RADIUS,
+  PIGEON_R,
   GROUND_Y,
   SURFACE_Y,
   ANCHOR_H,
@@ -129,6 +150,10 @@ export class Renderer {
   private bgOffset = 0;
   /** The paparazzi's photos of this run, by Game photo id. main.ts fills it on "photo" events. */
   readonly photos = new Map<number, Photo>();
+  /** "rtx": draw with real photos where we have them (rtx.ts); "classic" (the default): all drawn. */
+  graphics: "classic" | "rtx" = "classic";
+  /** The photo bird and fish, with their own animation state. */
+  private readonly rtxPlayer = new RtxPlayer();
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -178,6 +203,8 @@ export class Renderer {
   }
 
   draw(game: RenderFrame, dt: number): void {
+    RTX.on = this.graphics === "rtx";
+    if (RTX.on) this.rtxPlayer.tick(game, dt);
     const ctx = this.ctx;
     this.bgOffset += game.speed * dt;
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
@@ -425,6 +452,7 @@ export class Renderer {
   // --- sky & ground -----------------------------------------------------------
 
   private drawSky(game: RenderFrame): void {
+    if (RTX.on && rtxSky(this.ctx, this.width, this.bgOffset, game.time)) return;
     const ctx = this.ctx;
     const w = this.width + 40;
     const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
@@ -498,6 +526,7 @@ export class Renderer {
   }
 
   private drawStreet(): void {
+    if (RTX.on && rtxStreet(this.ctx, this.width, this.bgOffset, VIEW_H)) return;
     const ctx = this.ctx;
     const w = this.width + 40;
     // Sidewalk
@@ -540,7 +569,7 @@ export class Renderer {
     // Bottom part
     if (o.bottom === "billboard") {
       this.drawBillboard(o, time);
-    } else {
+    } else if (!(RTX.on && rtxBuilding(ctx, o.bottom === "tower", o.seed, base.x - 3, base.y, base.w + 6, GROUND_Y + 4 - base.y))) {
       ctx.fillStyle = o.color;
       roundRect(ctx, base.x, base.y, base.w, base.h + 4, 5);
       ctx.fill();
@@ -548,10 +577,11 @@ export class Renderer {
       // Roof trim
       ctx.fillStyle = "rgba(0,0,0,0.2)";
       ctx.fillRect(base.x + 2, base.y + 2, base.w - 4, 8);
-      // Windows
+      // Windows, with the bottom row kept clear of the door
+      const doorTop = GROUND_Y - 26;
       const cols = Math.max(2, Math.floor((base.w - 16) / 22));
       const cw = (base.w - 16) / cols;
-      for (let y = base.y + 20; y < GROUND_Y - 24; y += 30) {
+      for (let y = base.y + 20; y + 16 <= doorTop - 6; y += 30) {
         for (let c = 0; c < cols; c++) {
           const lit = rnd(o.seed + y * 0.37 + c * 3.1) > 0.45;
           ctx.fillStyle = lit ? "#ffe8a3" : "#3d405b";
@@ -572,7 +602,7 @@ export class Renderer {
       }
       // Door at the bottom
       ctx.fillStyle = "#3d405b";
-      ctx.fillRect(base.x + base.w / 2 - 10, GROUND_Y - 26, 20, 26);
+      ctx.fillRect(base.x + base.w / 2 - 10, doorTop, 20, GROUND_Y - doorTop);
     }
 
     for (const s of o.splats) drawSplat(ctx, o.x + s.dx, s.dy, s.r, s.seed, 1);
@@ -672,6 +702,7 @@ export class Renderer {
     if (l.x > this.width + 60 || poleX(l, last) < -60) return;
 
     // Poles: wooden trunk, a cross-arm with an insulator per wire, a cap.
+    if (!(RTX.on && rtxPoles(ctx, l)))
     for (let i = 0; i < l.poles; i++) {
       const r = poleRect(l, i);
       const px = poleX(l, i);
@@ -791,6 +822,7 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
 
+      if (!(RTX.on && rtxBalloonEnvelope(ctx, cx, cy, BALLOON_RX, BALLOON_RY))) {
       // Envelope: gores in two colours (nested ellipses clipped to the shape), a highlight, a skirt.
       ctx.save();
       envelopePath(ctx, cx, cy);
@@ -824,6 +856,9 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
 
+      }
+      // Photo balloons carry no cartoon passengers.
+      if (!RTX.on) {
       // Passengers peeking over the rim; one of them waves.
       const n = b.passengers.length;
       b.passengers.forEach((p, i) => {
@@ -852,6 +887,7 @@ export class Renderer {
         ctx.arc(px, hy - 1.5, 6, Math.PI, Math.PI * 2);
         ctx.fill();
       });
+      }
     } else if (!b.landed) {
       // Limp ropes trailing above the falling basket.
       ctx.lineWidth = 2;
@@ -869,6 +905,11 @@ export class Renderer {
       ctx.translate(basket.x + basket.w / 2, basket.y + basket.h);
       ctx.rotate(0.12);
       ctx.translate(-(basket.x + basket.w / 2), -(basket.y + basket.h));
+    }
+    if (RTX.on && rtxBasket(ctx, basket)) {
+      ctx.restore();
+      ctx.lineCap = "butt";
+      return;
     }
     ctx.lineWidth = 3;
     ctx.fillStyle = "#c68b59";
@@ -927,6 +968,22 @@ export class Renderer {
     } else {
       ({ x, y } = pigeonPos(l, p));
       if (p.startle > 0) y -= Math.sin((p.startle / 0.35) * Math.PI) * 10;
+    }
+    if (RTX.on && !w) {
+      // The photo pigeon: perched, or knocked off the wire, tumbling and splattered.
+      ctx.save();
+      ctx.translate(x, y);
+      let ok: boolean;
+      if (f) {
+        ctx.rotate(-0.35 + Math.sin(time * 30 + p.seed) * 0.15);
+        ok = drawRtxPhoto(ctx, "birdUp", 0, 0, 0, PIGEON_R * 0.8);
+        if (ok) drawSplat(ctx, -2, -6, 7, p.seed, 1);
+      } else {
+        ctx.scale(p.facing, 1);
+        ok = drawRtxPhoto(ctx, "perched", 0, 0, 0, PIGEON_R);
+      }
+      ctx.restore();
+      if (ok) return;
     }
     ctx.save();
     ctx.translate(x, y);
@@ -1029,6 +1086,10 @@ export class Renderer {
 
   /** Roadside billboard: the front page on a framed board, on a steel frame with a catwalk and lamps. */
   private drawBillboard(o: Obstacle, time: number): void {
+    if (RTX.on && rtxBillboard(this.ctx, o.x, o.gapBottom, o.w, BILLBOARD_H)) {
+      drawBillboardAd(this.ctx, o.x + 8, o.gapBottom + 8, o.w - 16, BILLBOARD_H - 18, o.tabloid, this.photos);
+      return;
+    }
     const ctx = this.ctx;
     const x = o.x;
     const w = o.w;
@@ -1176,6 +1237,15 @@ export class Renderer {
 
   private drawBird(game: BirdLook): void {
     if (game.zapFlash > 0 && Math.floor(game.time * 24) % 2 === 0) return this.drawZappedBird(game);
+    if (RTX.on && this.rtxPlayer.drawBird(this.ctx, game)) {
+      if (game.stunned) {
+        for (let i = 0; i < 3; i++) {
+          const a = game.time * 5 + (i * Math.PI * 2) / 3;
+          drawStar(this.ctx, game.bird.x + Math.cos(a) * 30, game.bird.y - 34 + Math.sin(a) * 8, 7, "#ffd166");
+        }
+      }
+      return;
+    }
     const ctx = this.ctx;
     const b = game.bird;
     const c = game.charge.charge;
@@ -2032,7 +2102,7 @@ export class Renderer {
       this.drawFish({
         bird: { ...game.bird, x: 0, y: 0, vy: 0, rot: -Math.PI / 2 + 0.15, stretch: 1, stretchV: 0 },
         fish: { puff: 1, spikes: 0, flare: 0 }, phase: "playing", stunned: false,
-        popProgress: 0, popWarning: false,
+        popProgress: 0, popWarning: false, spike: initialSpikeState(),
         bodyRadius: BIRD_RADIUS * config.oceanHitboxMax, time: game.time,
       });
       octx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2056,6 +2126,9 @@ export class Renderer {
     const ctx = this.ctx;
     const w = this.width + 40;
     const time = game.time;
+    const photo = RTX.on && rtxOceanBackdrop(ctx, this.width, this.bgOffset, VIEW_H);
+    if (photo) rtxSeaLife(ctx, this.width, this.bgOffset, time, KELP, SKYLINE_LEN);
+    else {
     const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
     g.addColorStop(0, "#48cae4");
     g.addColorStop(0.35, "#1b8fb5");
@@ -2127,6 +2200,8 @@ export class Renderer {
     }
     ctx.lineCap = "butt";
 
+    }
+
     // Rising bubbles
     ctx.strokeStyle = "rgba(255,255,255,0.55)";
     ctx.lineWidth = 1.5;
@@ -2156,6 +2231,14 @@ export class Renderer {
     ctx.lineWidth = 3;
     ctx.stroke();
 
+    if (photo) {
+      ctx.beginPath();
+      ctx.moveTo(-20, VIEW_H + 20);
+      for (let x = -20; x <= w; x += 20) ctx.lineTo(x, GROUND_Y + Math.sin((x + this.bgOffset) * 0.02) * 3);
+      ctx.lineTo(w, VIEW_H + 20);
+      ctx.closePath();
+      if (rtxSeaFloor(ctx, this.bgOffset)) return;
+    }
     // Sea floor
     ctx.fillStyle = "#e9cf94";
     ctx.beginPath();
@@ -2190,6 +2273,10 @@ export class Renderer {
   }
 
   private drawSeaObstacle(o: Obstacle): void {
+    if (RTX.on) {
+      const [col] = obstacleRects(o);
+      if (rtxSeaColumn(this.ctx, o.bottom === "rock", o.seed, col.x, col.y, col.w)) return;
+    }
     const ctx = this.ctx;
     const [base] = obstacleRects(o);
     ctx.lineWidth = 3;
@@ -2836,6 +2923,7 @@ export class Renderer {
   }
 
   private drawJelly(j: Jelly, time: number): void {
+    if (RTX.on && drawRtxPhoto(this.ctx, "jelly", j.x, j.y, 0, j.r)) return;
     const ctx = this.ctx;
     const pulse = 1 + Math.sin(time * 3 + j.phase) * 0.08;
     const r = j.r;
@@ -2886,6 +2974,27 @@ export class Renderer {
    * their size while the body inflates.
    */
   private drawFish(game: FishLook): void {
+    if (RTX.on && this.rtxPlayer.drawFish(this.ctx, game, game.bodyRadius)) {
+      const ctx = this.ctx;
+      const b = game.bird;
+      const r = game.bodyRadius;
+      // Spike-out flash ring
+      if (game.fish.flare > 0) {
+        const k = 1 - game.fish.flare / 0.35;
+        ctx.strokeStyle = `rgba(255,255,255,${1 - k})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, r * (1.3 + k * 1.2), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (game.stunned) {
+        for (let i = 0; i < 3; i++) {
+          const a = game.time * 5 + (i * Math.PI * 2) / 3;
+          drawStar(ctx, b.x + Math.cos(a) * 30, b.y - r - 12 + Math.sin(a) * 8, 7, "#ffd166");
+        }
+      }
+      return;
+    }
     const ctx = this.ctx;
     const b = game.bird;
     const f = game.fish;
@@ -3279,6 +3388,7 @@ function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, s: numbe
 }
 
 export function drawPoopBlob(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rot: number): void {
+  if (RTX.on && drawRtxPhoto(ctx, "poop", x, y, Math.sin(rot) * 0.3, r)) return;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(Math.sin(rot) * 0.3);
@@ -3352,6 +3462,14 @@ function drawTargetSplats(ctx: CanvasRenderingContext2D, splats: Splat[]): void 
 }
 
 function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (RTX.on) {
+    ctx.save();
+    ctx.scale(t.facing, 1);
+    const ok = rtxCar(ctx, t.seed, t.w, !!t.wedding);
+    if (ok && t.wedding) drawGetawayDecor(ctx, t, time);
+    ctx.restore();
+    if (ok) return;
+  }
   const w = t.w;
   const h = t.h;
   ctx.save();
@@ -3403,6 +3521,18 @@ function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
 }
 
 function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (RTX.on) {
+    // A photo passer-by: swaying as they walk, stamping on the spot when furious.
+    ctx.save();
+    if (t.rage) ctx.translate(0, -Math.abs(Math.sin(time * 14)) * 3);
+    ctx.scale(t.facing || 1, 1);
+    const ok = rtxWalker(ctx, t.seed, t.h * 1.15, t.rage ? 0 : Math.sin(time * 6 + t.seed) * 0.03);
+    ctx.restore();
+    if (ok) {
+      if (t.rage) drawRage(ctx, t.rage, t.h, time);
+      return;
+    }
+  }
   const rage = t.rage;
   const walk = rage ? 0 : Math.sin(time * 9 + t.seed) * 0.5;
   const h = t.h;
@@ -3525,6 +3655,7 @@ function drawRage(ctx: CanvasRenderingContext2D, rage: Rage, h: number, time: nu
 }
 
 function drawStatue(ctx: CanvasRenderingContext2D, t: Target): void {
+  if (RTX.on && drawRtxPhoto(ctx, "statue", 0, 0, 0, t.h)) return;
   const h = t.h;
   const w = t.w;
   // Plinth
@@ -3625,6 +3756,28 @@ function drawRag(ctx: CanvasRenderingContext2D, b: Balloon, time: number): void 
 
 /** A bailed-out balloon passenger: tumbling with arms flailing, then hanging under a striped canopy. */
 function drawParachutist(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (RTX.on) {
+    // The canopy photo once it's open; before that, just the skydiver, tumbling.
+    const chute = t.chute!;
+    ctx.save();
+    let ok: boolean;
+    if (chute.open) {
+      const age = chute.t - chute.openAt;
+      const pop = age < 0.25 ? 0.4 + (age / 0.25) * 0.75 : 1.15 - Math.min(0.15, (age - 0.25) * 0.6);
+      ctx.translate(0, -96);
+      ctx.rotate(Math.sin(time * 1.8 + t.seed) * 0.13);
+      ctx.translate(0, 96);
+      ctx.scale(pop, 1);
+      ok = drawRtxPhoto(ctx, "parachutist", 0, 0, 0, 150);
+    } else {
+      ctx.translate(0, -24);
+      ctx.rotate(chute.t * 9 * (t.facing || 1));
+      ctx.translate(0, 24);
+      ok = rtxSkydiver(ctx, 56);
+    }
+    ctx.restore();
+    if (ok) return;
+  }
   const c = t.chute!;
   ctx.save();
   ctx.lineCap = "round";
@@ -4045,6 +4198,8 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
   ctx.translate(0, -hop);
   ctx.lineCap = "round";
 
+  const photo = RTX.on && drawRtxPhoto(ctx, "paparazzo", 0, 0, 0, h * 1.1);
+  if (!photo) {
   // Legs
   ctx.lineWidth = 5;
   ctx.strokeStyle = OUTLINE;
@@ -4120,12 +4275,15 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
     }
   }
 
+  }
+
   // Camera: aimed at the bird while watching, held up in triumph after the shot, drooping when smashed.
   const shoulderY = -h * 0.72;
   const aim = smashed ? 1.3 : snapped ? -Math.PI / 2 - 0.3 : p.aim;
   const camDist = snapped ? 14 : 8;
   const camX = Math.cos(aim) * camDist;
   const camY = shoulderY + Math.sin(aim) * camDist;
+  if (!photo) {
   // Arms to the camera
   ctx.lineWidth = 4;
   ctx.strokeStyle = OUTLINE;
@@ -4135,6 +4293,7 @@ function drawPaparazzo(ctx: CanvasRenderingContext2D, t: Target, time: number): 
   ctx.moveTo(4, shoulderY + 2);
   ctx.lineTo(camX, camY + 2);
   ctx.stroke();
+  }
   ctx.save();
   ctx.translate(camX, camY);
   ctx.rotate(aim);
@@ -4216,6 +4375,8 @@ function drawKid(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
   const shoulderY = -h * 0.62;
   const headY = -h * 0.8;
 
+  const photo = RTX.on && drawRtxPhoto(ctx, "kid", 0, 0, 0, h * 1.05);
+  if (!photo) {
   // Legs (planted wide while aiming) and sneakers
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 4.5;
@@ -4255,9 +4416,12 @@ function drawKid(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
   roundRect(ctx, -8.5, -h * 0.68, 17, h * 0.27, 5);
   ctx.stroke();
 
+  }
+
   // Arms and slingshot (screen space, so the aim angle works both ways)
   drawKidArms(ctx, t, time, shoulderY);
 
+  if (!photo) {
   // Head
   ctx.lineWidth = 2.5;
   ctx.strokeStyle = OUTLINE;
@@ -4369,6 +4533,8 @@ function drawKid(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
   }
 
   // Warning: a "!" that grows and flashes as the band stretches
@@ -4802,6 +4968,7 @@ function couplePose(w: Wedding, time: number): { lean: number; hop: number; kiss
 
 /** A hand-tied bouquet: stems and a ribbon below, flowers on top. (x, y) is where it's held. */
 function drawBouquetFlowers(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
+  if (RTX.on && drawRtxPhoto(ctx, "bouquet", x, y, 0, 9 * s)) return;
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(s, s);
@@ -4853,6 +5020,14 @@ function drawBouquet(ctx: CanvasRenderingContext2D, q: Bouquet): void {
 
 /** A released white dove, flapping hard. */
 function drawDove(ctx: CanvasRenderingContext2D, d: Dove, time: number): void {
+  if (RTX.on) {
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.scale(d.vx < 0 ? -1 : 1, 1);
+    const ok = drawRtxPhoto(ctx, "dove", 0, 0, Math.sin(time * 12) * 0.08, 16);
+    ctx.restore();
+    if (ok) return;
+  }
   ctx.save();
   ctx.translate(d.x, d.y);
   ctx.scale(d.vx < 0 ? -1.2 : 1.2, 1.2);
@@ -4907,6 +5082,10 @@ function drawDove(ctx: CanvasRenderingContext2D, d: Dove, time: number): void {
  * bell, a door with a ribbon, and a spire whose tip is the gap's bottom edge.
  */
 function drawChurch(ctx: CanvasRenderingContext2D, o: Obstacle, time: number): void {
+  if (RTX.on && drawRtxPhoto(ctx, "church", churchGeometry(o).cx, GROUND_Y + 2, 0, GROUND_Y + 2 - o.gapBottom)) {
+    for (const sp of o.splats) drawSplat(ctx, o.x + sp.dx, sp.dy, sp.r, sp.seed, 1);
+    return;
+  }
   const { cx, towerTop, naveTop } = churchGeometry(o);
   const x = o.x;
   const w = o.w;
@@ -5189,6 +5368,18 @@ function drawWeddingBackdrop(ctx: CanvasRenderingContext2D, w: Wedding, time: nu
 
 /** The bride: a big white gown with a train, a veil, and her bouquet (until she lets it go). */
 function drawBride(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (RTX.on && t.wedding) {
+    const wed = t.wedding;
+    const pose = couplePose(wed, time);
+    ctx.save();
+    ctx.scale(t.facing, 1);
+    ctx.translate(0, -pose.hop);
+    const ok = drawRtxPhoto(ctx, "bride", 0, 0, pose.lean * 0.5, t.h * 1.2);
+    // The bouquet, until she throws it; shaking in her fist if the kiss was ruined.
+    if (ok && !wed.thrown) drawBouquetFlowers(ctx, 10, -t.h * 0.55 + (wed.outcome === "ruined" ? Math.sin(time * 22) * 3 : 0), 1);
+    ctx.restore();
+    if (ok) return;
+  }
   const w = t.wedding;
   if (!w) return;
   const h = t.h;
@@ -5363,6 +5554,31 @@ function drawBride(ctx: CanvasRenderingContext2D, t: Target, time: number): void
 
 /** The groom: tailcoat, bow tie and top hat. If the kiss is ruined he faints flat on his back. */
 function drawGroom(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (RTX.on && t.wedding) {
+    const wed = t.wedding;
+    const pose = couplePose(wed, time);
+    const faint = wed.outcome === "ruined" ? Math.min(1, wed.t / 0.45) : 0;
+    ctx.save();
+    ctx.scale(t.facing, 1);
+    ctx.translate(0, -pose.hop);
+    if (faint > 0) {
+      // Topples backwards, away from the bride, and lands with a little bounce.
+      const bounce = faint >= 1 ? Math.max(0, Math.sin(Math.min(Math.PI, (wed.t - 0.45) * 12))) * 0.08 : 0;
+      ctx.translate(-6 * faint, -4 * faint);
+      ctx.rotate(-(faint * faint) * 1.45 + bounce);
+    }
+    const ok = drawRtxPhoto(ctx, "groom", 0, 0, pose.lean * 0.5, t.h * 1.15);
+    ctx.restore();
+    if (ok) {
+      if (faint >= 1) {
+        for (let i = 0; i < 3; i++) {
+          const a = time * 4 + (i * Math.PI * 2) / 3;
+          drawStar(ctx, -t.facing * 58 + Math.cos(a) * 14, -14 + Math.sin(a) * 5, 4.5, "#ffd166");
+        }
+      }
+      return;
+    }
+  }
   const w = t.wedding;
   if (!w) return;
   const h = t.h;
@@ -5502,6 +5718,20 @@ function drawGroom(ctx: CanvasRenderingContext2D, t: Target, time: number): void
 
 /** A wedding guest in their best outfit: claps, holds their breath, cheers, or gasps. */
 function drawGuest(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (RTX.on) {
+    const wed = t.wedding;
+    const gasp = wed?.outcome === "ruined" && wed.t < 3;
+    const hop = wed?.outcome === "married" ? Math.abs(Math.sin(time * 8 + t.seed)) * 6 : 0;
+    ctx.save();
+    ctx.scale(t.facing, 1);
+    ctx.translate(0, -hop);
+    const ok = rtxWalker(ctx, t.seed, t.h * 1.15, 0, true);
+    ctx.restore();
+    if (ok) {
+      if (gasp) outlinedText(ctx, "!", 0, -t.h * 1.15 - 14 - hop, 18, "#ff595e");
+      return;
+    }
+  }
   const w = t.wedding;
   const h = t.h;
   const ruined = w?.outcome === "ruined";
@@ -5622,6 +5852,27 @@ function drawGuest(ctx: CanvasRenderingContext2D, t: Target, time: number): void
 
 /** The wedding photographer: an old plate camera on a tripod, a black hood, and a flash pan held high. */
 function drawWeddingPhotographer(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (RTX.on) {
+    const wed = t.wedding;
+    ctx.save();
+    ctx.scale(t.facing, 1);
+    const ok = drawRtxPhoto(ctx, "photographer", 0, 0, 0, t.h * 1.15);
+    // The flash going off on the camera.
+    if (ok && wed && wed.flash > 0) {
+      const k = wed.flash / 0.3;
+      ctx.fillStyle = `rgba(255,255,220,${k})`;
+      ctx.beginPath();
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        const r = i % 2 ? 9 : 30 + (1 - k) * 18;
+        ctx.lineTo(-t.h * 0.3 + Math.cos(a) * r, -t.h * 1.08 - 6 + Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    if (ok) return;
+  }
   const w = t.wedding;
   const h = t.h;
   ctx.save();

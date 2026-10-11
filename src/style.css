@@ -1880,3 +1880,116 @@ body.debug-open #cam {
     margin-top: 8px;
   }
 }
+
+/* --- Settings menu (gear, top right) ------------------------------------------ */
+
+.screen.start .settings-gear {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: calc(14px + env(safe-area-inset-right));
+}
+
+.screen.settings {
+  z-index: 30;
+}
+
+.settings-card {
+  min-width: min(380px, 100%);
+  text-align: left;
+}
+
+.settings-group {
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  padding: 10px 14px 12px;
+  margin: 12px 0 16px;
+}
+
+.settings-group legend {
+  font-weight: 900;
+  padding: 0 6px;
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-text small {
+  opacity: 0.75;
+}
+
+/* The gear icon (an SVG, so it looks the same everywhere, unlike the emoji). */
+.gear-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin: auto;
+  color: var(--ink);
+}
+
+.settings-card h2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.settings-card h2 .gear-icon {
+  width: 1.1em;
+  height: 1.1em;
+  margin: 0;
+}
+
+/* An on/off switch in the buttons' style: ink outline, drop shadow, green when on. */
+.switch {
+  appearance: none;
+  flex: none;
+  box-sizing: border-box;
+  width: 58px;
+  height: 32px;
+  margin: 0 0 3px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: #d9d4c7;
+  box-shadow: 0 3px 0 var(--ink);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+/* The knob fills the track's height (26px inside the border), so it sits centred. */
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--ink);
+  transition: transform 0.15s;
+}
+
+.switch:checked {
+  background: var(--green);
+}
+
+.switch:checked::after {
+  transform: translateX(26px);
+}
+
+.switch:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}

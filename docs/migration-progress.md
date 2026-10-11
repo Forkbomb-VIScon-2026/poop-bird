@@ -5,6 +5,8 @@
 The audit and migration plan were approved on 2026-10-11. Work belongs on
 `migration/rust-wasm`; do not merge or deploy an incomplete migration.
 Baseline: `4208bf7f765c6968283ea264aa49f2a9ab3dccde` on `main`.
+Upstream integration: `79a9cf0dad3d5ca0d06fd6d832e21f075ed7a771` preserves
+the optional photo graphics, settings, shark sample and tutorial/test fixes.
 
 ## Decisions
 
@@ -100,6 +102,13 @@ No placeholder or disconnected module counts as a completed milestone.
   exercised in the browser smoke test. Production output excludes the audit hook.
 
 ## Next implementation work
+
+Upstream merge verification: 211 TypeScript tests, lint/typechecks, Rust checks,
+2,067 WASM fixtures, 24,000 live comparisons and both builds pass. Chromium
+loads all 57 photo assets, persists the graphics setting, renders/captures
+frozen state in both styles and decodes 49 sound IDs. Twelve photo variants
+(six per style) are pixel-identical to `79a9cf0` in the same Chromium version.
+The new named shark sample replaces only the upstream placeholder asset.
 
 The game is still authoritative TypeScript. No complete Rust world, entity/frame
 ABI, advanced encounter migration or default engine switch is claimed. Implement

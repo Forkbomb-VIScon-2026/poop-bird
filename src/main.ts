@@ -25,8 +25,10 @@ import {
   CALIBRATION_KEY,
   PUFF_CALIBRATION_KEY,
   loadBest,
+  loadGraphics,
   loadSeenTutorials,
   saveBest,
+  saveGraphics,
   saveSeenTutorials,
   storageGet,
   storageRemove,
@@ -115,6 +117,7 @@ let state: AppState = "menu";
 let mode: Mode = "keyboard";
 
 const renderer = new Renderer(canvas);
+renderer.graphics = loadGraphics();
 const game = new Game(renderer.resize());
 const sound = new Sound();
 const tracker = new FaceTracker(video);
@@ -782,8 +785,8 @@ async function runSwimLesson(): Promise<void> {
  * own first (Game.guideY), under a heads-up banner. false = abandoned.
  */
 async function swimToMiddle(token: number): Promise<boolean> {
-  setPuffOverlay("GET READY! 🐡", "Here come the rocks and jellyfish.", null);
-  show($("puff-calib-bar"), false);
+  // A heads-up, not a step: no progress bar.
+  coachSay(puffCoach, { title: "GET READY! 🐡", hint: "Here come the rocks and jellyfish.", face: null, bar: false });
   game.command({ type: "guideFish", y: OCEAN_MID_Y });
   try {
     // At least a moment to read the banner; at most long enough to cross the whole sea.
@@ -794,7 +797,6 @@ async function swimToMiddle(token: number): Promise<boolean> {
     }
   } finally {
     game.command({ type: "guideFish", y: null });
-    show($("puff-calib-bar"), true);
   }
   return true;
 }
@@ -1703,6 +1705,8 @@ function updateHud(): void {
     el.textContent = msg;
     show(el, msg !== "");
   }
+  // Pausing only works mid-run; before the first flap the button would do nothing.
+  show($("btn-hud-pause"), state === "playing" || state === "paused");
 }
 
 // --- Main loop ---------------------------------------------------------------------------
@@ -2060,6 +2064,23 @@ window.addEventListener("resize", () => game.command({ type: "resize", width: re
 
 decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
+
+// Settings (the gear, top right): the graphics style. Opening it mid-run pauses the game.
+const settingsPanel = $("screen-settings");
+const rtxSwitch = $<HTMLInputElement>("opt-rtx");
+function openSettings(): void {
+  if (state === "playing") togglePause();
+  rtxSwitch.checked = renderer.graphics === "rtx";
+  show(settingsPanel, true);
+  armButtonKeys(300);
+}
+on("btn-settings", openSettings);
+on("btn-hud-settings", openSettings);
+on("btn-settings-done", () => show(settingsPanel, false));
+rtxSwitch.addEventListener("change", () => {
+  renderer.graphics = rtxSwitch.checked ? "rtx" : "classic";
+  saveGraphics(renderer.graphics);
+});
 on("btn-face", () => {
   goLandscape();
   void startFaceMode();

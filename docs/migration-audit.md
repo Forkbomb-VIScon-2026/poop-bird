@@ -94,3 +94,16 @@ render, bridge, detection, long tasks, startup and memory. Establish run-to-run
 noise first. Browser/webcam/audio checks cannot be substituted by native tests.
 
 Detailed milestone order and current completion state: migration-progress.md.
+# Upstream audit addendum (2026-10-11)
+
+Main advanced to `79a9cf0` after the original audit. The migration branch now
+includes those seven commits: optional photo graphics in `rtx.ts`, 57 lazy-loaded
+image assets, persistent graphics settings, the named shark yelp recording,
+and tutorial/test fixes. Canvas2D is still the shared renderer for both styles.
+The photo mode is a sprite/texture style, despite its RTX label; it does not
+use ray tracing, WebGL or WebGPU. Its sprite transforms, googly-eye physics,
+wing animation and fish wobble are presentation state and remain TypeScript.
+The world simulation and existing fixed-step behavior did not change upstream.
+Renderer signatures retain presentation-only types and photo poses stay local.
+All original kernel/audio fixtures remain applicable to the unchanged logic.
+These new assets and settings are part of the behavior to preserve.

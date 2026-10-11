@@ -19,5 +19,5 @@ export type BirdLook = Readonly<Pick<RenderFrame,
 >> & { readonly bird: Readonly<Game["bird"]>; readonly charge: Readonly<Game["charge"]> };
 
 export type FishLook = Readonly<Pick<RenderFrame,
-  "phase" | "stunned" | "popProgress" | "popWarning" | "bodyRadius" | "time"
+  "phase" | "stunned" | "popProgress" | "popWarning" | "bodyRadius" | "time" | "spike"
 >> & { readonly bird: Readonly<Game["bird"]>; readonly fish: Readonly<Game["fish"]> };

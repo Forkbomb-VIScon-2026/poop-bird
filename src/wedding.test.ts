@@ -21,15 +21,24 @@ function immortalGame(): { game: Game; step: (seconds: number, until?: () => boo
 
 describe("wedding", () => {
   it("takes the church slot when the stage has one planned", () => {
-    const chance = config.weddingChance;
+    const saved = { wedding: config.weddingChance, paparazzi: config.paparazziChance, kid: config.kidChance };
     config.weddingChance = 1;
     const { game, step } = immortalGame();
-    config.weddingChance = chance;
+    config.weddingChance = saved.wedding;
+    // A watching paparazzo or an armed kid holds the church back for that slot; with bad
+    // luck at every slot the stage ends without one, so keep them out of this test.
+    config.paparazziChance = 0;
+    config.kidChance = 0;
     let seen = false;
-    step(60, () => {
-      seen ||= game.wedding !== null;
-      return seen || game.stage !== "city";
-    });
+    try {
+      step(60, () => {
+        seen ||= game.wedding !== null;
+        return seen || game.stage !== "city";
+      });
+    } finally {
+      config.paparazziChance = saved.paparazzi;
+      config.kidChance = saved.kid;
+    }
     expect(seen).toBe(true);
   });
 

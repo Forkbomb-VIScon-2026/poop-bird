@@ -23,6 +23,12 @@ try {
   assert.equal(initialAudit.error, null);
   assert.equal(initialAudit.maxError, 0);
 
+  await page.locator("#btn-settings").click();
+  await page.locator("#opt-rtx").setChecked(true);
+  await page.waitForFunction(() => window.poopBird.renderer.graphics === "rtx");
+  assert.equal(await page.evaluate(() => localStorage.getItem("poopBird.graphics")), "rtx");
+  await page.locator("#btn-settings-done").click();
+
   await page.locator("#opt-tips").setChecked(false);
   await page.locator("#btn-keyboard").click();
   await page.keyboard.down("Space");
@@ -49,6 +55,10 @@ try {
     const { Game } = await import("/src/game.ts");
     const { Renderer } = await import("/src/render.ts");
     const { Sound } = await import("/src/audio.ts");
+    const { sprites, spriteReady } = await import("/src/rtx.ts");
+    const pictures = Object.values(sprites());
+    await Promise.all(pictures.map(sprite => sprite.img.decode()));
+    if (!pictures.every(spriteReady)) throw new Error("photo asset failed to load");
     const canvas = document.createElement("canvas"); canvas.width = 1000; canvas.height = 600;
     const renderer = new Renderer(canvas);
     function freeze(object, seen = new WeakSet()) {
@@ -62,12 +72,16 @@ try {
     freeze(game);
     const photos = [renderer.captureBird(game), renderer.captureWedding(game, null), renderer.captureTrophy(game)];
     renderer.draw(game, 0);
+    renderer.graphics = "rtx";
+    renderer.draw(game, 0);
+    const rtxPhotos = [renderer.captureBird(game), renderer.captureWedding(game, null), renderer.captureTrophy(game)];
+    if (rtxPhotos.some(photo => !photo || photo.width <= 0)) throw new Error("RTX photo capture failed");
     if (photos.some(photo => !photo || photo.width <= 0)) throw new Error("photo capture failed");
     const sound = new Sound(); sound.unlock();
     // Five known IDs lack assets. The other 49 IDs include both shark fallbacks.
     const deadline = performance.now() + 10000;
     while (sound.buffers.size < 49 && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
-    return { photos: photos.map(photo => [photo.width, photo.height]), decoded: sound.buffers.size,
+    return { photos: photos.map(photo => [photo.width, photo.height]), photoAssets: pictures.length, decoded: sound.buffers.size,
       audit: window.poopBird.rustAudit };
   });
   assert.deepEqual(detail.photos, [[200, 200], [320, 240], [320, 240]]);
