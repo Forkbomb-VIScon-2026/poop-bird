@@ -1704,6 +1704,8 @@ function updateHud(): void {
     el.textContent = msg;
     show(el, msg !== "");
   }
+  // Pausing only works mid-run; before the first flap the button would do nothing.
+  show($("btn-hud-pause"), state === "playing" || state === "paused");
 }
 
 // --- Main loop ---------------------------------------------------------------------------
