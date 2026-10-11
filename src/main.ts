@@ -107,7 +107,9 @@ function armButtonKeys(ms: number): void {
 // --- State ------------------------------------------------------------------------
 
 type AppState =
-  | "menu" | "loading" | "calibrating" | "calibrated" | "ready" | "playing" | "paused" | "gameover";
+  | "menu" | "loading" | "calibrating" | "calibrated" | "ready" | "playing" | "paused" | "gameover"
+  // Two players (duel-main.ts) has the screen: everything here stays inert until it hands back.
+  | "duel";
 type Mode = "face" | "keyboard";
 
 let state: AppState = "menu";
@@ -1500,6 +1502,38 @@ function goToMenu(): void {
   showScreen("start");
 }
 
+/** The two-player mode's module, loaded on first use so single player never downloads it. */
+let duelModule: typeof import("./duel-main") | null = null;
+
+/**
+ * Menu → two players: this app goes inert (state "duel", tracker stopped,
+ * screens hidden) and duel-main.ts takes over until it calls goToMenu.
+ */
+async function startTwoPlayers(): Promise<void> {
+  if (state !== "menu") return;
+  flow++;
+  calibSamples = null;
+  calibFrames = null;
+  state = "duel";
+  sound.unlock();
+  tracker.stop();
+  keyHeld = false;
+  heldPointers.clear();
+  hideToast();
+  claimCoach();
+  cam.classList.remove("large");
+  show(cam, false);
+  show(hud, false);
+  showScreen(null);
+  try {
+    duelModule ??= await import("./duel-main");
+    duelModule.startDuel({ video, tracker, sound, toggleMute, onExit: goToMenu });
+  } catch (err) {
+    console.error("[duel] couldn't start two players", err);
+    goToMenu();
+  }
+}
+
 function onGameOver(): void {
   state = "gameover";
   sound.setGroan(-1, false);
@@ -1692,6 +1726,12 @@ function frame(now: number): void {
   const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
   lastTime = now;
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
+  if (state === "duel") {
+    // Two players runs its own loop on its own canvas.
+    accumulator = 0;
+    requestAnimationFrame(frame);
+    return;
+  }
 
   updateRotatePrompt();
   if (state === "playing") {
@@ -2024,6 +2064,8 @@ function focusHandlesEnter(): boolean {
 }
 
 window.addEventListener("keydown", (e) => {
+  // Two players handles its own keys (W/A/D and the arrows, P, M…).
+  if (state === "duel") return;
   if (isTyping(e)) return;
   // A screen's yellow button takes Enter and Space; some buttons take more keys (data-keys).
   if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -2176,6 +2218,7 @@ $<HTMLFormElement>("go-lb-form").addEventListener("submit", (e) => {
   void submitToLeaderboard();
 });
 on("btn-leaderboard", openLeaderboard);
+on("btn-duel", () => void startTwoPlayers());
 on("btn-lb-back", () => showScreen("start"));
 // Buttons and option toggles shouldn't keep focus, or Space would "click" them while straining
 // (and a focused checkbox counts as typing, which mutes the shortcuts).
@@ -2232,6 +2275,8 @@ if (DEBUG) {
       get puffCalibration() { return puffCalibration; },
       get lastPuffAttempt() { return lastPuffAttempt; },
       openDatasetRecorder,
+      /** The two-player mode while it runs (duel, identity counts, detection rates). */
+      get duel() { return duelModule?.duelDebugInfo() ?? null; },
     },
   });
 }

@@ -26,6 +26,8 @@ import type { FaceBox } from "./face";
 import type { LandmarkPoint } from "./puff";
 
 export type PlayerId = 0 | 1;
+/** Seconds a face may be missing (dropped detections) and still count as the same, confirmed face. */
+export const REVERIFY_AFTER = 0.5;
 const OTHER = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -231,7 +233,7 @@ export interface FaceQuality {
 }
 
 /** Whether a face is good enough for a descriptor: big enough and roughly frontal. */
-export function faceQuality(lm: readonly LandmarkPoint[], box: FaceBox, width: number, height: number, minPx = 80, maxYaw = 0.3): FaceQuality {
+export function faceQuality(lm: readonly LandmarkPoint[], box: FaceBox, width: number, height: number, minPx = 80, maxYaw = 0.45): FaceQuality {
   const eyes = eyeCentres(lm, width, height);
   const nose = lm[NOSE_TIP];
   const sizePx = box.w * width;
@@ -545,12 +547,12 @@ export function trackFace(state: IdentityState, p: PlayerId, box: FaceBox | null
   }
   if (!next) {
     if (now - t.seen > P.lostTime * 1000) drop(s, events, p, "away");
-    else {
-      t.status = "missing";
-      t.verified = false;
-    }
+    else t.status = "missing";
     return { state: s, events };
   }
+  // Back after more than a blink: the face must be confirmed again. (A dropped
+  // frame or two at the same spot is the same face; the regular checks still run.)
+  if (t.status === "missing" && now - t.seen > REVERIFY_AFTER * 1000) t.verified = false;
   t.box = next;
   t.seen = now;
   t.status = "locked";
@@ -744,11 +746,12 @@ export function guardConvergence(state: IdentityState, P: IdentityParams): Ident
 }
 
 /** Whether the match may run: every face player has a verified lock that isn't under suspicion. */
-export function identitySettled(state: IdentityState, facePlayers: readonly [boolean, boolean]): boolean {
+export function identitySettled(state: IdentityState, facePlayers: readonly [boolean, boolean], now: number): boolean {
   return ([0, 1] as const).every((p) => {
     if (!facePlayers[p]) return true;
     const t = state.players[p];
-    return t.status === "locked" && t.verified && !t.suspicious;
+    const seen = t.status === "locked" || (t.status === "missing" && now - t.seen <= REVERIFY_AFTER * 1000);
+    return seen && t.verified && !t.suspicious;
   });
 }
 

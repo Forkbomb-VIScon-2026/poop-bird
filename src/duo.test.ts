@@ -223,7 +223,7 @@ describe("recognition decisions", () => {
     for (let i = 0; i < 50; i++) s = check(s, [alice, bob], i * 750);
     expect(s.counts.remap).toBe(0);
     expect(s.players.every((t) => t.verified)).toBe(true);
-    expect(identitySettled(s, [true, true])).toBe(true);
+    expect(identitySettled(s, [true, true], 50 * 750)).toBe(true);
   });
 
   it("a clear swap remaps only after two consecutive checks", () => {
@@ -267,7 +267,7 @@ describe("recognition decisions", () => {
     s = recognitionCheck(s, 1, dists(sample(carol, rng)), 750, P).state;
     expect(s.players[1].status).toBe("lost");
     expect(s.players[1].reason).toBe("stranger");
-    expect(identitySettled(s, [true, true])).toBe(false);
+    expect(identitySettled(s, [true, true], 750)).toBe(false);
     // While searching, the stranger is nobody's.
     expect(recognize(dists(sample(carol, rng)), P)).toBeNull();
   });
@@ -329,7 +329,7 @@ describe("identity guards (scripted box sequences)", () => {
       expect(s.players[0].box!.x).toBeGreaterThan(s.players[1].box!.x);
     }
     expect(s.counts.converge + s.counts.remap + s.counts.jump).toBe(0);
-    expect(identitySettled(s, [true, true])).toBe(true);
+    expect(identitySettled(s, [true, true], 2000)).toBe(true);
   });
 
   it("one face seen through both crops: never both locks", () => {
@@ -384,16 +384,27 @@ describe("identity guards (scripted box sequences)", () => {
     expect(missingFor(s, 0, 2100)).toBe(Infinity);
   });
 
+  it("a dropped detection or two keeps the face confirmed", () => {
+    let s = seated();
+    s = trackFace(s, 0, faceAt(0.3), 100, P).state;
+    s = trackFace(s, 0, null, 133, P).state;
+    expect(s.players[0].status).toBe("missing");
+    expect(identitySettled(s, [true, true], 200)).toBe(true);
+    s = trackFace(s, 0, faceAt(0.305), 300, P).state;
+    expect(s.players[0].verified).toBe(true);
+    expect(identitySettled(s, [true, true], 300)).toBe(true);
+  });
+
   it("a returning face after a short gap is followed but must be verified again", () => {
     let s = seated();
     s = trackFace(s, 0, null, 500, P).state;
-    expect(identitySettled(s, [true, true])).toBe(false);
+    expect(identitySettled(s, [true, true], 600)).toBe(false);
     s = trackFace(s, 0, faceAt(0.31), 900, P).state;
     expect(s.players[0].status).toBe("locked");
-    expect(identitySettled(s, [true, true])).toBe(false);
+    expect(identitySettled(s, [true, true], 900)).toBe(false);
     s = recognitionCheck(s, 0, [0.3, 0.9], 1000, P).state;
     s = recognitionCheck(s, 1, [0.9, 0.3], 1100, P).state;
-    expect(identitySettled(s, [true, true])).toBe(true);
+    expect(identitySettled(s, [true, true], 1100)).toBe(true);
   });
 
   it("at the seat check (no identity yet) the seat side decides", () => {
@@ -450,12 +461,12 @@ describe("fallback without the recognition model", () => {
     expect(right.accepted).toBe(false);
     expect(right.state.counts.swap).toBe(2);
     expect(right.state.counts.remap).toBe(0);
-    expect(identitySettled(right.state, [true, true])).toBe(false);
+    expect(identitySettled(right.state, [true, true], 3000)).toBe(false);
     // They swap back: accepted.
     let back = acquireFace(right.state, 0, faceAt(0.3), appearanceVerdict(red, [red, blue], 0, params), 3100, FALLBACK);
     back = acquireFace(back.state, 1, faceAt(0.7), appearanceVerdict(blue, [red, blue], 1, params), 3100, FALLBACK);
     expect(back.state.players.map((t) => t.status)).toEqual(["locked", "locked"]);
-    expect(identitySettled(back.state, [true, true])).toBe(true);
+    expect(identitySettled(back.state, [true, true], 3100)).toBe(true);
   });
 
   it("the seat side matters: a face on the wrong side isn't acquired", () => {
@@ -472,7 +483,7 @@ describe("fallback without the recognition model", () => {
     s = trackFace(s, 0, faceAt(0.56), 132, FALLBACK).state;
     expect(s.players[0].suspicious).toBe(true);
     expect(s.counts.midline).toBe(1);
-    expect(identitySettled(s, [true, true])).toBe(false);
+    expect(identitySettled(s, [true, true], 132)).toBe(false);
     // It's still Alice: fine.
     const ok = appearanceCheck(s, 0, "match", [0.9, 0.1], FALLBACK).state;
     expect(ok.players[0].suspicious).toBe(false);

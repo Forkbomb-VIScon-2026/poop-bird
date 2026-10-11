@@ -79,6 +79,7 @@ export interface DuelParams extends ChargeParams {
   duelTargetRate: number;
   duelStatueChance: number;
   duelCameraBack: number;
+  duelCameraHeight: number;
   duelDrawDistance: number;
 }
 

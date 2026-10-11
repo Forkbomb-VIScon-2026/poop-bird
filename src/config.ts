@@ -273,7 +273,7 @@ export const CONFIG_SPEC = {
   duelTargetRate: { value: 0.9, min: 0, max: 4, step: 0.05, group: "Two players", label: "Target rate", hint: "cars and people per second" },
   duelStatueChance: { value: 0.12, min: 0, max: 1, step: 0.01, group: "Two players", label: "Statue chance", hint: "share of targets that are a statue on the median" },
   duelCameraBack: { value: 300, min: 100, max: 800, step: 10, group: "Two players", label: "Camera back", hint: "units behind the birds" },
-  duelCameraHeight: { value: 300, min: 100, max: 700, step: 10, group: "Two players", label: "Camera height" },
+  duelCameraHeight: { value: 330, min: 100, max: 700, step: 10, group: "Two players", label: "Camera height" },
   duelDrawDistance: { value: 2600, min: 1000, max: 6000, step: 100, group: "Two players", label: "Draw distance" },
   duelBankDeadZone: { value: 5, min: 0, max: 20, step: 0.5, group: "Two players", label: "Bank dead zone", hint: "° of head tilt that don't steer" },
   duelBankFull: { value: 25, min: 8, max: 60, step: 1, group: "Two players", label: "Bank for full turn", hint: "° of head tilt for full steer speed" },
@@ -283,11 +283,13 @@ export const CONFIG_SPEC = {
   duelLockMaxJump: { value: 1, min: 0.3, max: 3, step: 0.1, group: "Two players", label: "Lock max jump", hint: "face widths a lock may move in one frame" },
   duelConvergeIoU: { value: 0.3, min: 0.05, max: 0.9, step: 0.05, group: "Two players", label: "Converge overlap", hint: "box IoU at which two locks count as one face" },
   duelMidlineMargin: { value: 0.04, min: 0, max: 0.2, step: 0.01, group: "Two players", label: "Midline margin", hint: "share of the image a face may cross the middle before it's checked" },
-  duelIdentitySimilarity: { value: 0.7, min: 0.3, max: 0.99, step: 0.01, group: "Two players", label: "Look-alike threshold", hint: "appearance similarity that counts as the same player" },
-  duelIdentityMargin: { value: 0.1, min: 0, max: 0.5, step: 0.01, group: "Two players", label: "Look-alike margin", hint: "how much better than the other player a match must be" },
+  duelIdUnknown: { value: 0.6, min: 0.3, max: 1.2, step: 0.01, group: "Two players", label: "Face ID: same person", hint: "descriptor distance under which a face is that player (dlib: 0.6); over it for both, a stranger" },
+  duelIdMargin: { value: 0.1, min: 0, max: 0.6, step: 0.01, group: "Two players", label: "Face ID: margin", hint: "how much closer one player must be than the other (and swapped vs as-is) to act" },
+  duelIdentitySimilarity: { value: 0.7, min: 0.3, max: 0.99, step: 0.01, group: "Two players", label: "Fallback: look-alike", hint: "without face ID: clothes/hair colour similarity that counts as the same player" },
+  duelIdentityMargin: { value: 0.1, min: 0, max: 0.5, step: 0.01, group: "Two players", label: "Fallback: margin", hint: "without face ID: how much better than the other player a match must be" },
   duelIdentityCheck: { value: 0.5, min: 0.1, max: 3, step: 0.1, group: "Two players", label: "Appearance check", hint: "s between appearance checks while playing" },
   duelIdentityStrikes: { value: 3, min: 1, max: 10, step: 1, group: "Two players", label: "Appearance strikes", hint: "failed checks in a row before a seat is frozen" },
-  duelAlternateSeats: { value: 0, min: 0, max: 1, step: 1, group: "Two players", label: "Alternate seats", hint: "1 = track one seat per video frame (half the cost)" },
+  duelAlternateSeats: { value: 0, min: 0, max: 2, step: 1, group: "Two players", label: "Alternate seats", hint: "0 = auto (when two detections take over 25 ms per video frame), 1 = never, 2 = always: one seat per video frame" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;

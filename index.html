@@ -103,6 +103,8 @@
             <button id="btn-keyboard" class="btn icon" data-keys="K" aria-label="Play without the camera" title="Play without the camera"><svg class="kbd-only kbd-icon" viewBox="0 0 40 26" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="23" rx="4" fill="#fff" stroke="currentColor" stroke-width="3" /><g fill="currentColor"><rect x="7" y="7" width="4" height="4" rx="1" /><rect x="14" y="7" width="4" height="4" rx="1" /><rect x="21" y="7" width="4" height="4" rx="1" /><rect x="28" y="7" width="4" height="4" rx="1" /><rect x="11" y="15" width="18" height="4" rx="1" /></g></svg><span class="touch-only">👆</span></button>
             <button id="btn-leaderboard" class="btn icon" data-keys="L" aria-label="Leaderboard" title="Leaderboard">🏆</button>
           </div>
+          <!-- Two players side by side at one webcam (duel-main.ts). Not on phones: hidden by .kbd-only. -->
+          <button id="btn-duel" class="btn duel-btn kbd-only" data-keys="2" title="Two players at one webcam: poop on your friend">👯 2 players</button>
           <label class="opt light" title="Show tips, like how to swim in the ocean"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here</label>
         </div>
       </section>
@@ -272,6 +274,72 @@
         <div class="rotate-phone">📱</div>
         <p>Turn your phone sideways to play</p>
       </section>
+
+      <!-- Two players: the Doo-el (duel-main.ts). Its own canvas and screens over the game; the
+           webcam <video> moves into #duel-video-slot while it runs. Nothing here is uploaded or stored. -->
+      <div id="duel" class="duel hidden">
+        <canvas id="duel-canvas"></canvas>
+        <div id="duel-video-slot" class="duel-video-slot" aria-hidden="true"></div>
+        <section id="duel-seats" class="duel-bar hidden">
+          <p class="duel-privacy">🔒 Your faces are only compared on this device during this match and then forgotten.</p>
+          <div class="buttons">
+            <button id="btn-duel-retry" class="btn small hidden">Try the camera again</button>
+            <button id="btn-duel-keys" class="btn small">⌨️ Both on keys</button>
+            <button id="btn-duel-back" class="btn small" data-keys="Escape">Back to menu</button>
+          </div>
+        </section>
+        <section id="duel-pause" class="screen hidden">
+          <div class="card">
+            <h2 id="duel-pause-title">Paused</h2>
+            <p id="duel-pause-text"></p>
+            <div class="buttons">
+              <button id="btn-duel-resume" class="btn primary" data-default data-shortcut="P">Resume</button>
+              <button id="btn-duel-menu" class="btn" data-keys="Q">Menu</button>
+            </div>
+            <div class="ghost-row">
+              <button id="btn-duel-p1-keys" class="btn small ghost hidden">Player 1 plays on with keys</button>
+              <button id="btn-duel-p2-keys" class="btn small ghost hidden">Player 2 plays on with keys</button>
+            </div>
+          </div>
+        </section>
+        <section id="duel-results" class="screen hidden">
+          <div class="card wide">
+            <h2 id="duel-winner">It's a tie!</h2>
+            <div class="duel-results-grid">
+              <div id="duel-res-0" class="duel-player p1">
+                <div class="duel-player-name">Player 1</div>
+                <img id="duel-res-0-photo" class="duel-photo hidden" alt="Player 1's finest strain" />
+                <div id="duel-res-0-nophoto" class="duel-photo duel-nophoto">🙈</div>
+                <div class="duel-score" id="duel-res-0-score">0</div>
+                <table class="go-table">
+                  <tr><td>Targets</td><td id="duel-res-0-targets">0</td></tr>
+                  <tr><td>Rival splats</td><td id="duel-res-0-bombs">0</td></tr>
+                  <tr><td>Crashes</td><td id="duel-res-0-crashes">0</td></tr>
+                  <tr><td>Best combo</td><td id="duel-res-0-combo">x1</td></tr>
+                </table>
+              </div>
+              <div id="duel-res-1" class="duel-player p2">
+                <div class="duel-player-name">Player 2</div>
+                <img id="duel-res-1-photo" class="duel-photo hidden" alt="Player 2's finest strain" />
+                <div id="duel-res-1-nophoto" class="duel-photo duel-nophoto">🙈</div>
+                <div class="duel-score" id="duel-res-1-score">0</div>
+                <table class="go-table">
+                  <tr><td>Targets</td><td id="duel-res-1-targets">0</td></tr>
+                  <tr><td>Rival splats</td><td id="duel-res-1-bombs">0</td></tr>
+                  <tr><td>Crashes</td><td id="duel-res-1-crashes">0</td></tr>
+                  <tr><td>Best combo</td><td id="duel-res-1-combo">x1</td></tr>
+                </table>
+              </div>
+            </div>
+            <p id="duel-award" class="duel-award"></p>
+            <div class="privacy small">The photos stay on this device and are gone when you leave.</div>
+            <div class="buttons">
+              <button id="btn-duel-rematch" class="btn primary" data-default data-keys="R">Rematch</button>
+              <button id="btn-duel-results-menu" class="btn" data-keys="Escape">Menu</button>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <!-- Debug / tuning panel -->
       <aside id="debug" class="hidden"></aside>

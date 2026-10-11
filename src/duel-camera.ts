@@ -47,13 +47,13 @@ export interface CameraFit {
  * and the avenue's edges at the birds' depth are all on screen.
  */
 export function fitCamera(birdZ: number, fit: CameraFit): DuelCamera {
-  const horizon = fit.height * 0.3;
+  const horizon = fit.height * 0.36;
   const back = Math.max(50, fit.back);
   const camY = fit.camHeight;
   // The street right under the birds stays above the bottom edge (with room for the shadows).
   const fStreet = ((fit.height * 0.86 - horizon) * back) / Math.max(1, camY);
-  // A bird at the ceiling stays below the top edge.
-  const fCeiling = ((horizon - 34) * back) / Math.max(1, fit.ceiling - camY);
+  // A bird at the ceiling stays below the timer.
+  const fCeiling = ((horizon - 70) * back) / Math.max(1, fit.ceiling - camY);
   // The avenue's edges at the birds' depth stay on screen.
   const fSides = ((fit.width / 2 - 24) * back) / Math.max(1, fit.halfWidth);
   const f = Math.max(60, Math.min(fStreet, fit.ceiling > camY ? fCeiling : Infinity, fSides));
