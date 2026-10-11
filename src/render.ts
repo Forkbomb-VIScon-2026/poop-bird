@@ -155,6 +155,8 @@ export class Renderer {
   readonly photos = new Map<number, Photo>();
   /** "rtx": draw with real photos where we have them (rtx.ts); "classic" (the default): all drawn. */
   graphics: "classic" | "rtx" = "classic";
+  /** How far the player's mouth is open, 0..1: the (classic) bird's beak opens as far. main.ts sets it each frame. */
+  mouthOpen = 0;
   /** The photo bird and fish, with their own animation state. */
   private readonly rtxPlayer = new RtxPlayer();
 
@@ -1391,16 +1393,51 @@ export class Renderer {
     ctx.stroke();
     ctx.restore();
 
-    // Beak
-    const clench = c > 0.3 ? 1 : 0;
+    // Beak: open as far as the player's mouth is, else clenched shut while straining.
+    const open = dead || stunned ? 0 : this.mouthOpen;
+    const clench = c > 0.3 && open < 0.15 ? 1 : 0;
     ctx.fillStyle = "#f78c3b";
-    ctx.beginPath();
-    ctx.moveTo(r * 0.8, -r * 0.12);
-    ctx.lineTo(r * (1.45 - clench * 0.1), r * 0.08);
-    ctx.lineTo(r * 0.8, r * 0.3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    if (open > 0.02) {
+      // Upper and lower halves hinged at the beak's base, with the mouth showing between them.
+      const hx = r * 0.92;
+      const hy = r * 0.09;
+      const len = r * 0.58;
+      const up = -open * 0.4;
+      const down = open * 0.8;
+      ctx.fillStyle = "#7a1f2b";
+      ctx.beginPath();
+      ctx.moveTo(hx - r * 0.1, hy);
+      ctx.lineTo(hx + Math.cos(up) * len * 0.6, hy + Math.sin(up) * len * 0.6);
+      ctx.lineTo(hx + Math.cos(down) * len * 0.6, hy + Math.sin(down) * len * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#f78c3b";
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = "round";
+      for (const [angle, side] of [[up, -1], [down, 1]]) {
+        ctx.save();
+        ctx.translate(hx, hy);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.15, side * r * 0.3);
+        ctx.lineTo(len, 0);
+        ctx.lineTo(-r * 0.15, -side * r * 0.02);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.lineWidth = 3;
+      ctx.lineJoin = "miter";
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(r * 0.8, -r * 0.12);
+      ctx.lineTo(r * (1.45 - clench * 0.1), r * 0.08);
+      ctx.lineTo(r * 0.8, r * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
     if (clench) {
       // Gritted beak line
       ctx.beginPath();
@@ -1889,7 +1926,9 @@ export class Renderer {
     const savedBird = { ...b };
     const savedCharge = game.charge;
     const savedZap = game.zapFlash;
+    const savedMouth = this.mouthOpen;
     this.ctx = octx;
+    this.mouthOpen = 0;
     try {
       octx.setTransform(s, 0, 0, s, W / 2 - focusX * s, groundY - feet * s);
       octx.fillStyle = "#d9d4c7";
@@ -1914,6 +1953,7 @@ export class Renderer {
       Object.assign(b, savedBird);
       game.charge = savedCharge;
       game.zapFlash = savedZap;
+      this.mouthOpen = savedMouth;
     }
     octx.setTransform(1, 0, 0, 1, 0, 0);
 
