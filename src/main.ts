@@ -24,8 +24,10 @@ import {
   CALIBRATION_KEY,
   PUFF_CALIBRATION_KEY,
   loadBest,
+  loadGraphics,
   loadSeenTutorials,
   saveBest,
+  saveGraphics,
   saveSeenTutorials,
   storageGet,
   storageRemove,
@@ -114,6 +116,7 @@ let state: AppState = "menu";
 let mode: Mode = "keyboard";
 
 const renderer = new Renderer(canvas);
+renderer.graphics = loadGraphics();
 const game = new Game(renderer.resize());
 const sound = new Sound();
 const tracker = new FaceTracker(video);
@@ -2174,6 +2177,23 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 
 decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
+
+// Settings (the gear, top right): the graphics style. Opening it mid-run pauses the game.
+const settingsPanel = $("screen-settings");
+const rtxSwitch = $<HTMLInputElement>("opt-rtx");
+function openSettings(): void {
+  if (state === "playing") togglePause();
+  rtxSwitch.checked = renderer.graphics === "rtx";
+  show(settingsPanel, true);
+  armButtonKeys(300);
+}
+on("btn-settings", openSettings);
+on("btn-hud-settings", openSettings);
+on("btn-settings-done", () => show(settingsPanel, false));
+rtxSwitch.addEventListener("change", () => {
+  renderer.graphics = rtxSwitch.checked ? "rtx" : "classic";
+  saveGraphics(renderer.graphics);
+});
 on("btn-face", () => {
   goLandscape();
   void startFaceMode();
