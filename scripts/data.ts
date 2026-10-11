@@ -5,7 +5,7 @@
 //   npm run data:purge   delete data/ entirely (everyone runs this when the VM goes away)
 //
 // The public site sits behind the ETH login, so pulling goes over SSH (see
-// vm.ts: your SSH key on the VM, or COLLECTOR_URL + POOPBIRD_DEV_TOKEN).
+// vm.ts: your SSH key on the VM, or COLLECTOR_URL + POOPYBIRD_DEV_TOKEN).
 //
 // Plain Node (types stripped), so no imports from src/.
 

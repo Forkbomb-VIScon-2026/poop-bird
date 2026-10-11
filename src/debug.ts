@@ -393,7 +393,7 @@ function h3(text: string): HTMLElement {
   return e;
 }
 
-const FACE_LOCK_KEY = "poopbird.debug.faceLockBox.v1";
+const FACE_LOCK_KEY = "poopybird.debug.faceLockBox.v1";
 
 function div(cls: string): HTMLDivElement {
   const e = document.createElement("div");

@@ -271,7 +271,7 @@ export const CONFIG_SPEC = {
 export type ConfigKey = keyof typeof CONFIG_SPEC;
 export type Config = Record<ConfigKey, number>;
 
-const STORAGE_KEY = "poopbird.config.v1";
+const STORAGE_KEY = "poopybird.config.v1";
 
 export function defaultConfig(): Config {
   const out = {} as Config;

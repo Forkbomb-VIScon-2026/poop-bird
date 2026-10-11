@@ -9,5 +9,7 @@ public/mediapipe/face_landmarker.task
 # Face recordings (personal face data): old debug-recorder clips, saved
 # sessions, and the local dataset copy from `npm run data:pull`
 poopbird-face-*.json
+poopybird-face-*.json
 poopbird-face-*.json.gz
+poopybird-face-*.json.gz
 data/

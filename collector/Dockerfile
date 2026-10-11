@@ -1,5 +1,5 @@
 # Face dataset collector (see collector/server.ts). Build from the repo root:
-#   docker build -f collector/Dockerfile -t poop-bird-collector .
+#   docker build -f collector/Dockerfile -t poopy-bird-collector .
 # Node runs the TypeScript directly (type stripping), so there is no build step
 # and no npm install: the server has no dependencies.
 FROM mirror.gcr.io/library/node:24-alpine

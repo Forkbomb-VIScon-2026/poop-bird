@@ -38,16 +38,40 @@ export function storageRemove(key: string): void {
   }
 }
 
+// The game was renamed from Poop Bird to Poopy Bird. Carry the old keys
+// ("poopbird.*", "poopBird.*") over once, so players keep their calibration,
+// best score and settings.
+function migrateRenamedKeys(): void {
+  try {
+    const s = store();
+    if (!s) return;
+    const old: string[] = [];
+    for (let i = 0; i < s.length; i++) {
+      const key = s.key(i);
+      if (key && /^poop(bird|Bird)\./.test(key)) old.push(key);
+    }
+    for (const key of old) {
+      const renamed = key.replace(/^poop(b|B)ird\./, "poopy$1ird.");
+      const value = s.getItem(key);
+      if (value !== null && s.getItem(renamed) === null) s.setItem(renamed, value);
+      s.removeItem(key);
+    }
+  } catch {
+    // ignore
+  }
+}
+migrateRenamedKeys();
+
 // --- Calibrations (written by main.ts, also read by the collect page) --------
 
-export const CALIBRATION_KEY = "poopbird.calibration.v1";
+export const CALIBRATION_KEY = "poopybird.calibration.v1";
 // v2: puff features changed (eyeMouth replaced cheekBulge; robust puff stats).
 // v3: interactive calibration (puff/relax cycles; "relaxed" includes the face right after a puff).
-export const PUFF_CALIBRATION_KEY = "poopbird.puffCalibration.v3";
+export const PUFF_CALIBRATION_KEY = "poopybird.puffCalibration.v3";
 
 // --- Tutorials (new-player tips) -----------------------------------------------
 
-const TUTORIALS_KEY = "poopbird.tutorialsSeen.v1";
+const TUTORIALS_KEY = "poopybird.tutorialsSeen.v1";
 export const TUTORIALS = ["perch", "city", "ocean"] as const;
 export type Tutorial = (typeof TUTORIALS)[number];
 
@@ -69,9 +93,9 @@ export function saveSeenTutorials(seen: ReadonlySet<Tutorial>): void {
 
 // --- Best score ------------------------------------------------------------------
 
-const BEST_KEY = "poopbird.best.v1";
+const BEST_KEY = "poopybird.best.v1";
 
-const GRAPHICS_KEY = "poopBird.graphics";
+const GRAPHICS_KEY = "poopyBird.graphics";
 
 /** The chosen graphics style: "rtx" (real photos) or "classic" (the default). */
 export function loadGraphics(): "classic" | "rtx" {
@@ -93,11 +117,11 @@ export function saveBest(score: number): void {
 
 // The old Hall of Fame (top 5 on this device, with face snapshots) gave way to
 // the online leaderboard. Its faces shouldn't linger unseen in storage.
-storageRemove("poopbird.halloffame.v1");
+storageRemove("poopybird.halloffame.v1");
 
 // --- Leaderboard: runs this browser submitted ------------------------------------
 
-const LEADERBOARD_RUNS_KEY = "poopbird.leaderboardRuns.v1";
+const LEADERBOARD_RUNS_KEY = "poopybird.leaderboardRuns.v1";
 
 /** Run id → its delete key, for the runs submitted from this browser (they get a remove button). */
 export function loadLeaderboardKeys(): Record<string, string> {
