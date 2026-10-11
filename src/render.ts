@@ -616,42 +616,116 @@ export class Renderer {
   // --- power lines ------------------------------------------------------------
 
   /**
-   * The practice perch: the bird's nest on top of a street lamp (game.perch).
-   * This is the lamp and the inside of the nest; drawNestFront() covers the
-   * bird's belly once the bird is drawn, so it sits in the nest.
+   * The practice perch: the bird's nest on the flat cap of an old lantern
+   * street lamp (game.perch). This is the lamp and the inside of the nest;
+   * drawNestFront() covers the bird's belly once the bird is drawn, so it sits
+   * in the nest.
    */
   private drawPerch(x: number): void {
     const ctx = this.ctx;
-    const top = PERCH_Y + NEST_DEPTH + 6;
+    // The nest's bowl rests on the cap's flat top.
+    const cap = PERCH_Y + NEST_DEPTH - 2;
+    const glassTop = cap + 18;
+    const glassBottom = glassTop + 44;
+    const neck = glassBottom + 6;
     const foot = GROUND_Y + 16;
+    const iron = "#3d4a5c";
+    const ironLight = "#5a6a80";
     ctx.lineWidth = 3;
     ctx.strokeStyle = OUTLINE;
-    // Arm and the lamp hanging off it.
-    ctx.fillStyle = "#3d4a5c";
+    ctx.lineJoin = "round";
+
+    // A soft glow around the lantern.
+    const glowY = (glassTop + glassBottom) / 2;
+    const glow = ctx.createRadialGradient(x, glowY, 8, x, glowY, 80);
+    glow.addColorStop(0, "rgba(255,236,150,0.45)");
+    glow.addColorStop(1, "rgba(255,236,150,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 80, glowY - 80, 160, 160);
+
+    // Pole: a slim shaft with a collar, flaring into a fluted base.
+    ctx.fillStyle = iron;
+    ctx.fillRect(x - 6, neck, 12, foot - neck);
+    ctx.strokeRect(x - 6, neck, 12, foot - neck);
+    ctx.fillStyle = ironLight;
+    ctx.fillRect(x - 3, neck + 14, 3, foot - neck - 60);
+    ctx.fillStyle = iron;
+    roundRect(ctx, x - 10, neck + 40, 20, 8, 3);
+    ctx.fill();
+    ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x + 4, top + 26);
-    ctx.quadraticCurveTo(x + 40, top + 10, x + 56, top + 30);
-    ctx.lineTo(x + 52, top + 33);
-    ctx.quadraticCurveTo(x + 38, top + 18, x + 4, top + 34);
+    ctx.moveTo(x - 8, foot - 56);
+    ctx.lineTo(x + 8, foot - 56);
+    ctx.quadraticCurveTo(x + 10, foot - 24, x + 18, foot - 10);
+    ctx.lineTo(x - 18, foot - 10);
+    ctx.quadraticCurveTo(x - 10, foot - 24, x - 8, foot - 56);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#fff3a0";
+    roundRect(ctx, x - 22, foot - 12, 44, 14, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    // Neck: tapers from the lantern's floor into the pole.
     ctx.beginPath();
-    ctx.moveTo(x + 42, top + 32);
-    ctx.lineTo(x + 66, top + 32);
-    ctx.lineTo(x + 60, top + 46);
-    ctx.lineTo(x + 48, top + 46);
+    ctx.moveTo(x - 18, glassBottom);
+    ctx.lineTo(x + 18, glassBottom);
+    ctx.lineTo(x + 8, neck + 4);
+    ctx.lineTo(x - 8, neck + 4);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    // Pole and its base.
-    ctx.fillStyle = "#3d4a5c";
-    ctx.fillRect(x - 5, top, 10, foot - top);
-    ctx.strokeRect(x - 5, top, 10, foot - top);
-    roundRect(ctx, x - 11, foot - 18, 22, 20, 4);
+
+    // Glass: four panes, wider at the top, lit from inside.
+    const light = ctx.createLinearGradient(0, glassTop, 0, glassBottom);
+    light.addColorStop(0, "#fffbe0");
+    light.addColorStop(1, "#ffd45c");
+    ctx.fillStyle = light;
+    ctx.beginPath();
+    ctx.moveTo(x - 24, glassTop);
+    ctx.lineTo(x + 24, glassTop);
+    ctx.lineTo(x + 16, glassBottom);
+    ctx.lineTo(x - 16, glassBottom);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 8, glassTop);
+    ctx.lineTo(x - 5, glassBottom);
+    ctx.moveTo(x + 8, glassTop);
+    ctx.lineTo(x + 5, glassBottom);
+    ctx.stroke();
+    // The bulb.
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.ellipse(x, glassBottom - 14, 4, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+
+    // Cap: a hood sloping out from the glass to a wide, flat brim.
+    ctx.fillStyle = iron;
+    ctx.beginPath();
+    ctx.moveTo(x - 26, glassTop + 2);
+    ctx.lineTo(x - 36, cap + 8);
+    ctx.lineTo(x + 36, cap + 8);
+    ctx.lineTo(x + 26, glassTop + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    roundRect(ctx, x - 44, cap, 88, 9, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = ironLight;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 38, cap + 3);
+    ctx.lineTo(x + 38, cap + 3);
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineJoin = "miter";
+
     // The inside of the nest, behind the bird.
     ctx.fillStyle = "#5c3b1e";
     ctx.beginPath();
