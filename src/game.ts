@@ -515,6 +515,46 @@ export interface Target {
   model?: number;
   /** Only on cars: the speed it drives at on an open road (px/s, ≥ 0; 0 = parked). */
   cruise?: number;
+  /** Only on cars: poop on the windscreen, the driver can't see. */
+  blind?: Blind | null;
+  /** Only on cars: crashed. */
+  wreck?: Wreck | null;
+  /** Only on cars stuck behind a wreck: seconds to the next honk. */
+  honk?: number;
+}
+
+/** A driver blinded by a poop on the windscreen. */
+export interface Blind {
+  /** Seconds since the splat. */
+  t: number;
+  /** Drifts into the oncoming lane (else just doesn't brake for the car ahead). */
+  swerve: boolean;
+  /** y without the weave. */
+  baseY: number;
+}
+
+/** A crashed car. */
+export interface Wreck {
+  /** Seconds since the crash. */
+  t: number;
+  /** Angle it's knocked to (rad), easing toward tiltTo. */
+  tilt: number;
+  tiltTo: number;
+  /** Height of the hop (px) and its vertical speed (px/s, up). */
+  lift: number;
+  vLift: number;
+  /** The driver's grawlix. */
+  curse: string;
+}
+
+/** The comic-book word over a crash. */
+export interface CrashBurst {
+  x: number;
+  y: number;
+  text: string;
+  life: number;
+  maxLife: number;
+  seed: number;
 }
 
 /** A pedestrian's fit of rage after being splatted. */
@@ -612,6 +652,9 @@ export type GameEvent =
   | { type: "ricochet" }
   | { type: "kidCried" }
   | { type: "curse" }
+  | { type: "carBlinded" }
+  | { type: "carCrash"; pileup: number }
+  | { type: "carHonk" }
   | { type: "weddingArrived" }
   | { type: "weddingBeat"; count: number }
   | { type: "weddingKiss" }
@@ -725,6 +768,24 @@ const BUS_MODEL = CAR_MODELS - 1;
 const CAR_GAP = 26;
 /** On top of that, a moving car keeps this many seconds of its speed to the one ahead. */
 const CAR_HEADWAY = 0.8;
+/** How near (px) a car's y must be to a lane's to be in it; between the lanes it's in both. */
+const LANE_BAND = 16;
+/** Sideways speed (px/s) of a car changing lanes. */
+const SWERVE_SPEED = 38;
+/** Sideways speed (px/s) of a blinded driver veering into the oncoming lane. */
+const BLIND_SWERVE_SPEED = 65;
+/** How fast a wreck skids to a stop (1/s). */
+const WRECK_SKID = 4;
+/** Crashes this close together (s) make a pile-up. */
+const PILEUP_WINDOW = 3;
+const CRASH_WORDS = ["CRASH!", "BONK!", "KA-BLAM!", "CRUNCH!", "WHAM!", "SMASH!", "KER-PLUNK!"];
+const BLIND_SHOUTS = ["I CAN'T SEE!", "MY EYES!", "AAAH!", "WIPERS!!", "EWWW!"];
+const HONKS = ["HONK!", "BEEP!", "HOOONK!", "BEEP BEEP!"];
+
+function laneY(dir: 1 | -1): number {
+  return dir === 1 ? NEAR_LANE_Y : FAR_LANE_Y;
+}
+
 /** How fast cars speed up and brake (px/s²). */
 const CAR_ACCEL = 80;
 const CAR_BRAKE = 280;
@@ -868,6 +929,11 @@ export class Game {
   poopsDropped = 0;
   accidents = 0;
   shake = 0;
+  crashBursts: CrashBurst[] = [];
+  /** Cars crashed this run. */
+  carsCrashed = 0;
+  private pileup = 0;
+  private lastCrashAt = -Infinity;
   /** 0..1 white camera flash over the whole screen. */
   flash = 0;
   /** The latest shot, popping up as a polaroid. */
@@ -992,12 +1058,16 @@ export class Game {
     this.particles = [];
     this.decals = [];
     this.floaters = [];
+    this.crashBursts = [];
     this.screenSplats = [];
     this.distance = 0;
     this.bonus = 0;
     this.combo = 0;
     this.bestCombo = 0;
     this.targetsHit = 0;
+    this.carsCrashed = 0;
+    this.pileup = 0;
+    this.lastCrashAt = -Infinity;
     this.poopsDropped = 0;
     this.accidents = 0;
     this.shake = 0;
@@ -1240,6 +1310,9 @@ export class Game {
     this.combo = 0;
     this.bestCombo = 0;
     this.targetsHit = 0;
+    this.carsCrashed = 0;
+    this.pileup = 0;
+    this.lastCrashAt = -Infinity;
     this.poopsDropped = 0;
     this.accidents = 0;
     this.floaters = [];
@@ -3174,7 +3247,7 @@ export class Game {
       if (t.chute) this.updateParachutist(t, dt, speed);
       if (t.rage) this.updateRage(t, dt);
     }
-    this.keepCarsApart();
+    this.resolveCarContacts();
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
     this.targetSpawnAcc += dt * config.targetSpawnRate * (this.demo ? DEMO_SPAWN_SCALE : 1);
@@ -3190,44 +3263,175 @@ export class Game {
 
   // --- traffic -----------------------------------------------------------------
 
-  /** The cars in the lane heading `dir`, front car first. */
+  /** The cars (and wrecks) in the lane heading `dir`, front first. A car swerving across is in both lanes. */
   private lane(dir: 1 | -1): Target[] {
-    return this.targets.filter((t) => t.kind === "car" && t.facing === dir).sort((a, b) => (b.x - a.x) * dir);
+    const y = laneY(dir);
+    return this.targets
+      .filter((t) => t.kind === "car" && Math.abs(t.y - y) < LANE_BAND)
+      .sort((a, b) => (b.x - a.x) * dir);
   }
 
-  /** Bumper-to-bumper gap from car `t` to the car ahead of it in its lane. */
-  private static carGap(ahead: Target, t: Target): number {
-    return (ahead.x - t.x) * t.facing - (carLength(ahead) + carLength(t)) / 2;
+  /** Bumper-to-bumper gap from car `t` to `ahead`, along `dir`. */
+  private static carGap(ahead: Target, t: Target, dir: 1 | -1): number {
+    return (ahead.x - t.x) * dir - (carLength(ahead) + carLength(t)) / 2;
   }
 
-  /** Each car drives at its cruising speed, slowing down to keep a safe distance to the one ahead. */
+  /**
+   * Each car drives at its cruising speed, slowing down to keep a safe distance
+   * to whatever is ahead in its lane. Blinded drivers and wrecks do their own thing.
+   */
   private driveCars(dt: number): void {
+    for (const t of this.targets) {
+      if (t.kind !== "car") continue;
+      if (t.wreck) this.updateCarWreck(t, dt);
+      else if (t.blind) this.updateBlind(t, dt);
+    }
     for (const dir of [1, -1] as const) {
       const cars = this.lane(dir);
       for (let i = 0; i < cars.length; i++) {
         const t = cars[i];
+        if (t.facing !== dir || t.wreck || t.blind) continue;
         const cruise = t.cruise ?? 0;
-        const want = i === 0 ? cruise : Math.min(cruise, Math.max(0, (Game.carGap(cars[i - 1], t) - CAR_GAP) / CAR_HEADWAY));
+        const ahead = i > 0 ? cars[i - 1] : null;
+        const want = ahead ? Math.min(cruise, Math.max(0, (Game.carGap(ahead, t, dir) - CAR_GAP) / CAR_HEADWAY)) : cruise;
         const v = t.speed * dir;
         const next = want < v ? Math.max(want, v - CAR_BRAKE * dt) : Math.min(want, v + CAR_ACCEL * dt);
         t.speed = next * dir;
+        // Back into its own lane after a scare.
+        const home = laneY(dir);
+        t.y += Math.max(-SWERVE_SPEED * dt, Math.min(SWERVE_SPEED * dt, home - t.y));
+        // Stuck behind a wreck: lean on the horn.
+        if (cruise > 0 && next < 5 && ahead?.wreck && this.phase === "playing") {
+          t.honk = (t.honk ?? Math.random()) - dt;
+          if (t.honk <= 0) {
+            t.honk = 1.4 + Math.random() * 2;
+            this.floaters.push({ x: t.x + dir * carLength(t) * 0.3, y: t.y - 52, text: pick(HONKS), color: "#fff3b0", size: 15, life: 0.7, maxLife: 0.7 });
+            this.events.push({ type: "carHonk" });
+          }
+        }
       }
     }
   }
 
-  /** Cars never drive into each other: one that got too close stops behind the car ahead. */
-  private keepCarsApart(): void {
-    for (const dir of [1, -1] as const) {
-      const cars = this.lane(dir);
-      for (let i = 1; i < cars.length; i++) {
-        const ahead = cars[i - 1];
-        const t = cars[i];
-        const over = CAR_GAP / 2 - Game.carGap(ahead, t);
-        if (over <= 0) continue;
-        t.x -= over * dir;
-        t.speed = Math.min(t.speed * dir, Math.max(0, ahead.speed * dir)) * dir;
+  /** Poop on the windscreen: the driver can't see a thing, and won't brake. */
+  private blindDriver(t: Target): void {
+    const dir = t.facing;
+    const ahead = this.lane(dir).find((c) => c !== t && Game.carGap(c, t, dir) > -5 && Game.carGap(c, t, dir) < 320);
+    const oncoming = this.lane(-dir as 1 | -1).some((c) => (c.x - t.x) * dir > 0 && (c.x - t.x) * dir < 700);
+    // Whatever makes for the better crash: plough into the car ahead, or veer into oncoming traffic.
+    const swerve = ahead ? Math.random() < 0.25 : oncoming || Math.random() < config.blindSwerveChance;
+    t.blind = { t: 0, swerve, baseY: t.y };
+    this.floaters.push({ x: t.x, y: t.y - 60, text: pick(BLIND_SHOUTS), color: "#ffb4a2", size: 20, life: 1, maxLife: 1 });
+    this.events.push({ type: "carBlinded" });
+  }
+
+  /** A blinded car speeds on, weaving; a swerving one drifts across into the oncoming lane. */
+  private updateBlind(t: Target, dt: number): void {
+    const b = t.blind!;
+    b.t += dt;
+    const dir = t.facing;
+    const v = t.speed * dir;
+    // Panics and floors it.
+    t.speed = Math.min((t.cruise ?? 0) * 1.4 + 50, v + CAR_ACCEL * 1.5 * dt) * dir;
+    const target = b.swerve && b.t > 0.2 ? laneY(-dir as 1 | -1) : laneY(dir);
+    b.baseY += Math.max(-BLIND_SWERVE_SPEED * dt, Math.min(BLIND_SWERVE_SPEED * dt, target - b.baseY));
+    t.y = b.baseY + Math.sin(b.t * 9) * 2.5;
+    // The wipers win in the end (driveCars steers it back into its lane).
+    if (b.t > config.blindDuration) {
+      t.blind = null;
+      t.y = b.baseY;
+    }
+  }
+
+  /** A wreck skids to a stop, hops and settles at an angle. */
+  private updateCarWreck(t: Target, dt: number): void {
+    const w = t.wreck!;
+    w.t += dt;
+    t.speed *= Math.exp(-WRECK_SKID * dt);
+    if (Math.abs(t.speed) < 2) t.speed = 0;
+    w.lift += w.vLift * dt;
+    w.vLift -= 1100 * dt;
+    if (w.lift <= 0) {
+      w.lift = 0;
+      w.vLift = w.vLift < -120 ? -w.vLift * 0.35 : 0;
+    }
+    w.tilt += (w.tiltTo - w.tilt) * Math.min(1, dt * 10);
+  }
+
+  /**
+   * Cars that touch: a blinded driver, a wreck or a hard knock makes it a crash;
+   * otherwise the car behind just stops short.
+   */
+  private resolveCarContacts(): void {
+    const cars = this.targets.filter((t) => t.kind === "car");
+    for (let i = 0; i < cars.length; i++) {
+      for (let j = i + 1; j < cars.length; j++) {
+        const a = cars[i];
+        const b = cars[j];
+        if (Math.abs(a.y - b.y) >= LANE_BAND) continue;
+        const over = (carLength(a) + carLength(b)) / 2 - Math.abs(a.x - b.x);
+        if (over <= -CAR_GAP / 2) continue;
+        const side = Math.sign(b.x - a.x) || 1;
+        const closing = (a.speed - b.speed) * side;
+        if (a.wreck && b.wreck) continue;
+        // A blinded driver never stops short: it drives right on in.
+        if (a.blind || b.blind || closing > 70) {
+          if (over > 0) this.crashCars(a, b, over, side);
+          if (a.blind || b.blind || over > 0) continue;
+        }
+        // Stop short: the one driving into the other backs off.
+        const mover = a.wreck ? b : b.wreck ? a : (b.x - a.x) * a.facing > 0 ? a : b;
+        const other = mover === a ? b : a;
+        const push = CAR_GAP / 2 + over;
+        if (push <= 0) continue;
+        const away = Math.sign(mover.x - other.x) || -mover.facing;
+        mover.x += away * push;
+        if ((mover.speed - other.speed) * -away > 0) mover.speed = other.speed * (mover.facing * other.speed > 0 ? 1 : 0);
       }
     }
+  }
+
+  private crashCars(a: Target, b: Target, over: number, side: number): void {
+    // Shoved apart so they just touch; the knock is shared (a rear-ended car gets a shove).
+    a.x -= (side * over) / 2;
+    b.x += (side * over) / 2;
+    const shared = (a.speed + b.speed) / 2;
+    for (const c of [a, b]) {
+      const first = !c.wreck;
+      c.blind = null;
+      c.speed = shared * 0.8;
+      if (first) {
+        const spin = (Math.random() < 0.5 ? -1 : 1) * (0.12 + Math.random() * 0.22);
+        c.wreck = { t: 0, tilt: 0, tiltTo: spin, lift: 0, vLift: 160 + Math.random() * 140, curse: pick(CURSES) };
+      } else {
+        c.wreck!.vLift = Math.max(c.wreck!.vLift, 120);
+      }
+    }
+    const x = a.x + (side * carLength(a)) / 2;
+    const y = (a.y + b.y) / 2 - 26;
+    this.crashBursts.push({ x, y, text: pick(CRASH_WORDS), life: 0.9, maxLife: 0.9, seed: Math.random() * 1000 });
+    this.shake = Math.max(this.shake, 10);
+    for (let i = 0; i < 26; i++) {
+      const ang = -Math.PI * Math.random();
+      const sp = 80 + Math.random() * 260;
+      const glass = Math.random() < 0.35;
+      this.particles.push({
+        x, y: y + 10, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+        life: 0.6 + Math.random() * 0.5, maxLife: 1.1, size: glass ? 2 + Math.random() * 2 : 3 + Math.random() * 4,
+        color: glass ? "#d7f0ff" : pick([a.color, b.color, "#6c757d", "#343a40"]), gravity: 800, world: true,
+      });
+    }
+    // A hubcap rolls off.
+    this.particles.push({ x, y: y + 20, vx: side * (120 + Math.random() * 80), vy: -220, life: 1.4, maxLife: 1.4, size: 7, color: "#ced4da", gravity: 700, world: true });
+    if (this.phase !== "playing") return;
+    this.pileup = this.time - this.lastCrashAt < PILEUP_WINDOW ? this.pileup + 1 : 1;
+    this.lastCrashAt = this.time;
+    this.carsCrashed++;
+    const points = Math.round(config.crashPoints * this.pileup * this.comboMultiplier);
+    this.bonus += points;
+    const label = this.pileup > 1 ? `PILE-UP x${this.pileup}!  +${points}` : `+${points}`;
+    this.floaters.push({ x, y: y - 50, text: label, color: this.pileup > 1 ? "#ff8fab" : "#ffe14d", size: this.pileup > 1 ? 30 : 26, life: 1.3, maxLife: 1.3 });
+    this.events.push({ type: "carCrash", pileup: this.pileup });
   }
 
   /** The first x from `x` on where a car `len` long fits in the lane heading `dir`, with room to brake. */
@@ -4097,6 +4301,8 @@ export class Game {
       this.events.push({ type: "hit", points, combo: this.combo, kind: t.kind });
       this.events.push({ type: "splat", big: p.big });
       this.provoke(t);
+      // On the windscreen (the front half): the driver can't see a thing.
+      if (t.kind === "car" && !t.wreck && !t.blind && (t.cruise ?? 0) > 0 && (p.x - t.x) * t.facing > 0) this.blindDriver(t);
       return true;
     }
     // Obstacles
@@ -4163,6 +4369,12 @@ export class Game {
 
     for (const d of this.decals) d.x -= speed * dt;
     this.decals = this.decals.filter((d) => d.x > -80);
+
+    for (const c of this.crashBursts) {
+      c.x -= speed * dt;
+      c.life -= dt;
+    }
+    this.crashBursts = this.crashBursts.filter((c) => c.life > 0);
 
     for (const f of this.floaters) {
       f.y -= 40 * dt;

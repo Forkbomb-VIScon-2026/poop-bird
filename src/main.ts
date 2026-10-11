@@ -2209,6 +2209,16 @@ function handleGameEvents(): void {
       case "curse":
         sound.curse();
         break;
+      case "carBlinded":
+        sound.carScreech();
+        break;
+      case "carCrash":
+        sound.carCrash(e.pileup);
+        buzz([40, 30, 90]);
+        break;
+      case "carHonk":
+        sound.carHorn();
+        break;
       case "weddingArrived":
         sound.weddingArrived();
         break;

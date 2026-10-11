@@ -169,6 +169,16 @@ Practice poops score nothing, and the lamp and its nest scroll away with the str
   The road has two lanes, one per direction (traffic keeps right: cars heading
   right drive in the near lane). Cars never overlap: one that catches up slows
   down and follows at a safe distance, or waits behind a stopped car.
+  **Car crashes:** a poop on a moving car's windscreen (its front half)
+  blinds the driver for `blindDuration` seconds: the wipers flail, the car
+  weaves and floors it, and either ploughs into the car ahead or (when there's
+  oncoming traffic, else `blindSwerveChance`) veers into the oncoming lane.
+  A crash is a comic-book "CRASH!" burst, flying glass and a hubcap, then the
+  wrecks sit tilted on the road with smoke, hazard lights, dizzy stars and a
+  cursing driver; cars behind stop and honk. Each crash scores `crashPoints` ×
+  the combo multiplier, and crashes within 3 s of each other count as a
+  **pile-up** (×2, ×3, …). Sounds: `car_crash` (the drone crash stands in until
+  it's added), `car_screech` (blinded) and `car_horn` (honking).
   Some splatted pedestrians (`angryChance`) stop, turn on the bird and curse:
   red in the face, shaking a fist, a `#@$%!` bubble and a `curse` sound, for
   `angryDuration` seconds before walking on. Hitting one again restarts it.

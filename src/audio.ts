@@ -467,6 +467,13 @@ export class Sound {
   anchorRattle(): void { this.play("reel_click", 0.8, 0.1); }
   anchorLanded(): void { this.play("bonk"); }
 
+  /** Car crashes: until car_crash.mp3 is added, the drone crash stands in. The screech and horn wait for theirs. */
+  carCrash(pileup: number): void {
+    if (!this.play("car_crash", Math.min(1.4, 0.9 + pileup * 0.1))) this.play("drone_crash");
+  }
+  carScreech(): void { this.play("car_screech"); }
+  carHorn(): void { this.play("car_horn", 0.7); }
+
   sharkBite(): void { this.play("shark_bite"); }
   sharkYelp(): void { this.play("shark_yelp"); }
   sharkLunge(): void { this.play("shark_lunge"); }

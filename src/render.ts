@@ -10,6 +10,7 @@ import {
   rtxBillboard,
   rtxBuilding,
   rtxCar,
+  rtxCarFrame,
   rtxOceanBackdrop,
   rtxPoles,
   rtxSeaColumn,
@@ -23,6 +24,8 @@ import {
 import { initialSpikeState } from "./swim";
 import {
   BIRD_RADIUS,
+  carLength,
+  type CrashBurst,
   PIGEON_R,
   GROUND_Y,
   SURFACE_Y,
@@ -239,6 +242,7 @@ export class Renderer {
     // Cars: the far lane first, the near lane in front of it.
     for (const t of game.targets) if (t.kind === "car" && t.facing === -1) this.drawTarget(t, game.time);
     for (const t of game.targets) if (t.kind === "car" && t.facing === 1) this.drawTarget(t, game.time);
+    for (const c of game.crashBursts) drawCrashBurst(ctx, c);
     // Over the buildings, so a paparazzo's timer is never hidden.
     for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
     for (const d of game.doves) drawDove(ctx, d, game.time);
@@ -1257,8 +1261,27 @@ export class Renderer {
     if (t.hitFlash > 0) ctx.translate(0, -Math.sin((t.hitFlash / 0.3) * Math.PI) * 6);
     ctx.lineWidth = 3;
     ctx.strokeStyle = OUTLINE;
-    if (t.kind === "car") drawCar(ctx, t, time);
-    else if (t.kind === "pedestrian") drawPedestrian(ctx, t, time);
+    if (t.kind === "car") {
+      // A wreck hops and lands at an angle; a blinded driver weaves.
+      if (t.wreck) {
+        ctx.translate(0, -t.wreck.lift);
+        ctx.rotate(t.wreck.tilt);
+      } else if (t.blind) ctx.rotate(Math.sin(t.blind.t * 9) * 0.035);
+      drawCar(ctx, t, time);
+      drawTargetSplats(ctx, t.splats);
+      drawCarTrouble(ctx, t, time);
+      ctx.restore();
+      if (t.wreck && t.wreck.t > 0.5 && t.wreck.t < 4.5) {
+        ctx.save();
+        ctx.translate(t.x, t.y);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = OUTLINE;
+        drawRage(ctx, { t: t.wreck.t - 0.5, walk: 0, curse: t.wreck.curse }, carFrame(t).h + 4, time);
+        ctx.restore();
+      }
+      return;
+    }
+    if (t.kind === "pedestrian") drawPedestrian(ctx, t, time);
     else if (t.kind === "paparazzo") drawPaparazzo(ctx, t, time);
     else if (t.kind === "kid") drawKid(ctx, t, time);
     else if (t.kind === "bride") drawBride(ctx, t, time);
@@ -3649,6 +3672,109 @@ function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
   }
   ctx.restore();
   void time;
+}
+
+/** How tall a car is drawn and where its windscreen is (facing right, from its foot). */
+function carFrame(t: Target): { h: number; wx: number; wy: number } {
+  if (RTX.on) return rtxCarFrame(t);
+  return { h: t.h, wx: t.w * 0.14, wy: -t.h * 0.78 };
+}
+
+/** Over a car: a blinded driver's smeared windscreen and frantic wipers; a wreck's smoke, hazard lights and dizzy stars. */
+function drawCarTrouble(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
+  if (!t.blind && !t.wreck) return;
+  const f = carFrame(t);
+  const len = RTX.on ? carLength(t) : t.w;
+  ctx.save();
+  ctx.scale(t.facing, 1);
+  if (t.blind) {
+    drawSplat(ctx, f.wx, f.wy, Math.max(8, f.h * 0.22), t.seed, 1);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    const swing = Math.sin(time * 16) * 0.9;
+    for (const dx of [-7, 5]) {
+      const a = -Math.PI / 2 + swing;
+      const r = Math.max(12, f.h * 0.3);
+      ctx.beginPath();
+      ctx.moveTo(f.wx + dx, f.wy + r * 0.55);
+      ctx.lineTo(f.wx + dx + Math.cos(a) * r, f.wy + r * 0.55 + Math.sin(a) * r);
+      ctx.stroke();
+    }
+  }
+  const w = t.wreck;
+  if (w) {
+    // Smoke pouring out of the bonnet.
+    for (let i = 0; i < 6; i++) {
+      const k = (time * 0.7 + i / 6 + rnd(t.seed + i) * 0.1) % 1;
+      ctx.globalAlpha = (1 - k) * 0.8;
+      ctx.fillStyle = i % 2 ? "#5c636a" : "#343a40";
+      ctx.beginPath();
+      ctx.arc(len * 0.34 - k * 18 + Math.sin(k * 6 + i) * 5, -f.h * 0.55 - k * 60, 5 + k * 16, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // Hazard lights.
+    if (Math.floor(time * 3 + t.seed) % 2 === 0) {
+      for (const x of [-len / 2 + 5, len / 2 - 5]) {
+        ctx.fillStyle = "rgba(255,170,0,0.35)";
+        ctx.beginPath();
+        ctx.arc(x, -f.h * 0.42, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffb703";
+        ctx.beginPath();
+        ctx.arc(x, -f.h * 0.42, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Dizzy stars circling the roof.
+    if (w.t < 3) {
+      ctx.globalAlpha = Math.min(1, (3 - w.t) / 0.5);
+      for (let i = 0; i < 3; i++) {
+        const a = time * 5 + (i * Math.PI * 2) / 3;
+        drawStar(ctx, Math.cos(a) * len * 0.22, -f.h - 10 + Math.sin(a) * 5, 6, "#ffd166");
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.restore();
+}
+
+/** The comic-book word over a crash: a jagged starburst that pops in and fades. */
+function drawCrashBurst(ctx: CanvasRenderingContext2D, c: CrashBurst): void {
+  const k = 1 - c.life / c.maxLife;
+  const scale = k < 0.12 ? 0.4 + (k / 0.12) * 0.8 : 1.2 - Math.min(0.2, (k - 0.12) * 1.5);
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, c.life / (c.maxLife * 0.35));
+  ctx.translate(c.x, c.y);
+  ctx.rotate((rnd(c.seed) - 0.5) * 0.4);
+  ctx.scale(scale, scale);
+  const spikes = 14;
+  const burst = (outer: number, inner: number, fill: string) => {
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const a = (i * Math.PI) / spikes;
+      const r = i % 2 ? inner : outer * (0.8 + rnd(c.seed + i) * 0.35);
+      ctx.lineTo(Math.cos(a) * r * 1.35, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.stroke();
+  };
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3;
+  burst(46, 28, "#ffd23f");
+  burst(30, 20, "#ff6b35");
+  ctx.font = "900 22px 'Trebuchet MS', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 5;
+  ctx.strokeText(c.text, 0, 1);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(c.text, 0, 1);
+  ctx.restore();
 }
 
 function drawPedestrian(ctx: CanvasRenderingContext2D, t: Target, time: number): void {

@@ -395,6 +395,14 @@ export function rtxBillboard(ctx: CanvasRenderingContext2D, x: number, top: numb
 
 const CARS: readonly SpriteName[] = ["car", "car1", "car2", "car3", "car4", "car5", "car6"];
 
+/** The car's photo frame (facing right, from its foot): how tall it's drawn and where the windscreen is. */
+export function rtxCarFrame(t: Target): { h: number; wx: number; wy: number } {
+  const s = sprites()[CARS[(t.model ?? 0) % CARS.length]];
+  const len = carLength(t);
+  const h = (s.cy / s.size) * len;
+  return { h, wx: len * (t.model === CARS.length - 1 ? 0.42 : 0.2), wy: -h * 0.62 };
+}
+
 /** The car's photo (facing right), by its model; the bus is car6. */
 export function rtxCar(ctx: CanvasRenderingContext2D, t: Target): boolean {
   return drawPhoto(ctx, CARS[(t.model ?? 0) % CARS.length], 0, 0, 0, carLength(t));

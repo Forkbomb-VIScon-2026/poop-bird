@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { config } from "./config";
-import { Game, carLength, type Target } from "./game";
+import { GROUND_Y, Game, carLength, type Target } from "./game";
 
 describe("traffic", () => {
   it("keeps each direction in its own lane, and cars never overlap", () => {
@@ -37,5 +37,76 @@ describe("traffic", () => {
     game.calmCity = true;
     for (let i = 0; i < 20; i++) game.spawnCarNow();
     expect(game.targets.filter((t) => t.kind === "car")).toHaveLength(20);
+  });
+
+  /** A quiet street with just these cars on it: [x, direction, cruising speed]. */
+  function street(cars: [number, 1 | -1, number][]): { game: Game; cars: Target[]; run: (seconds: number) => void } {
+    const game = new Game(1000);
+    game.calmCity = true;
+    config.targetSpawnRate = 0;
+    const list = cars.map(([x, dir, cruise]) => {
+      game.spawnCarNow();
+      const t = game.targets[game.targets.length - 1];
+      Object.assign(t, { x, facing: dir, y: dir === 1 ? GROUND_Y + 74 : GROUND_Y + 46, cruise, speed: dir * cruise, model: 1 });
+      return t;
+    });
+    const run = (seconds: number) => {
+      for (let i = 0; i < seconds * 120; i++) {
+        game.bird.y = 250;
+        game.bird.vy = 0;
+        game.step(1 / 120);
+      }
+    };
+    return { game, cars: list, run };
+  }
+
+  function blind(game: Game, t: Target, swerve: boolean): void {
+    (game as unknown as { blindDriver: (t: Target) => void }).blindDriver(t);
+    t.blind!.swerve = swerve;
+  }
+
+  it("a blinded driver doesn't brake, and rear-ends the car ahead", () => {
+    const saved = config.targetSpawnRate;
+    try {
+      const { game, cars, run } = street([[600, 1, 40], [400, 1, 100]]);
+      run(1);
+      blind(game, cars[1], false);
+      run(3);
+      expect(cars[0].wreck).toBeTruthy();
+      expect(cars[1].wreck).toBeTruthy();
+      expect(game.carsCrashed).toBe(1);
+    } finally {
+      config.targetSpawnRate = saved;
+    }
+  });
+
+  it("a swerving blinded driver crashes head-on into oncoming traffic", () => {
+    const saved = config.targetSpawnRate;
+    try {
+      const { game, cars, run } = street([[300, 1, 100], [900, -1, 80]]);
+      blind(game, cars[0], true);
+      run(3);
+      expect(cars[0].wreck).toBeTruthy();
+      expect(cars[1].wreck).toBeTruthy();
+    } finally {
+      config.targetSpawnRate = saved;
+    }
+  });
+
+  it("drivers who see fine stop behind a wreck instead of crashing into it", () => {
+    const saved = config.targetSpawnRate;
+    try {
+      const { game, cars, run } = street([[900, 1, 40], [750, 1, 100], [500, 1, 120]]);
+      run(0.3);
+      blind(game, cars[1], false);
+      run(2.5);
+      expect(cars[1].wreck).toBeTruthy();
+      expect(cars[2].wreck).toBeFalsy();
+      // Braking in good time, a safe distance back.
+      expect(cars[2].x).toBeGreaterThan(-100);
+      expect(cars[1].x - cars[2].x - (carLength(cars[1]) + carLength(cars[2])) / 2).toBeGreaterThan(10);
+    } finally {
+      config.targetSpawnRate = saved;
+    }
   });
 });
