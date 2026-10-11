@@ -983,6 +983,31 @@ body.touch .key-badge {
   animation: shake 0.15s infinite;
 }
 
+/* The let-out right after the puff hold: the prompt pops in on a sky-blue band, then breathes out. */
+.calib.letting-out h2 {
+  display: inline-block;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--sky);
+  animation:
+    wobble 0.45s ease-out,
+    exhale 1.6s ease-in-out 0.45s infinite;
+}
+
+.calib.letting-out .progress-fill {
+  background: var(--sky);
+}
+
+@keyframes exhale {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.94);
+  }
+}
+
 .calib-status {
   min-height: 1.3em;
   margin: 4px 0 0;

@@ -845,8 +845,9 @@ async function calibrationIntro(token: number, phase: "strain" | "puff", tries: 
   $("calib-prompt").textContent = text.prompt;
   $("calib-hint").textContent = text.hint;
   $<HTMLImageElement>("calib-example").src = examples[phase];
-  screens.calibrate.querySelector(".calib")!.classList.remove("holding");
+  screens.calibrate.querySelector(".calib")!.classList.remove("holding", "letting-out");
   show($("calib-run"), false);
+  $("calib-status").classList.remove("pulse");
   const go = $<HTMLButtonElement>("btn-calib-go");
   go.textContent = tries ? "Try again" : "I'm ready";
   decorate(go);
@@ -912,7 +913,10 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
       count.textContent = String(Math.ceil((total - elapsed) / 1000));
       progress.style.width = `${(elapsed / total) * 100}%`;
       // The let-out starts right after the puff (its first moments are the data), so announce it.
-      if (phase === "puff" && total - elapsed <= LET_OUT_HEADS_UP_MS) calibStatus("Next: let it out 😮‍💨", "");
+      if (phase === "puff" && total - elapsed <= LET_OUT_HEADS_UP_MS) {
+        calibStatus("Next: let it out 😮‍💨", "");
+        $("calib-status").classList.add("pulse");
+      }
       if (phase === "strain") sound.setGroan(Math.min(1, elapsed / total), false);
       else sound.setBurble(elapsed / total);
       await wait(50);
@@ -937,7 +941,11 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
  * won't sink (see buildInteractivePuffCalibration). null = abandoned.
  */
 async function letOut(token: number): Promise<FeatureVector[] | null> {
+  // A different prompt in the same spot is easy to miss mid-puff: it pops in, in another color (style.css).
+  const card = screens.calibrate.querySelector(".calib")!;
+  card.classList.add("letting-out");
   $("calib-prompt").textContent = "And let it out 😮‍💨";
+  $("calib-status").classList.remove("pulse");
   calibStatus("", "");
   $("calib-progress").style.width = "0%";
   const total = config.oceanLessonLetOutSeconds * 1000;
@@ -954,6 +962,7 @@ async function letOut(token: number): Promise<FeatureVector[] | null> {
     }
   } finally {
     stopSampling(mine.samples);
+    card.classList.remove("letting-out");
   }
   // The first moment is still the air going out.
   return mine.samples.filter((x) => x.t - start >= config.calibrationSettle * 1000).map((x) => x.f);
