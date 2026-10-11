@@ -616,6 +616,8 @@ const MIN_RELAXED_SAMPLES = 20;
 const WELCOME_MS = 2000;
 /** Longest the welcome waits for recognition to decide, once the relaxed read is done. */
 const WELCOME_RECOGNITION_MS = 4000;
+/** The puff hold's last stretch announces the let-out that follows it without a break. */
+const LET_OUT_HEADS_UP_MS = 1500;
 /** Failed tries of a phase before "Play anyway" shows. */
 const TRIES_BEFORE_SKIP = 2;
 
@@ -900,6 +902,8 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
       if (elapsed >= total) break;
       count.textContent = String(Math.ceil((total - elapsed) / 1000));
       progress.style.width = `${(elapsed / total) * 100}%`;
+      // The let-out starts right after the puff (its first moments are the data), so announce it.
+      if (phase === "puff" && total - elapsed <= LET_OUT_HEADS_UP_MS) calibStatus("Next: let it out 😮‍💨", "");
       if (phase === "strain") sound.setGroan(Math.min(1, elapsed / total), false);
       else sound.setBurble(elapsed / total);
       await wait(50);
@@ -925,6 +929,7 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
  */
 async function letOut(token: number): Promise<FeatureVector[] | null> {
   $("calib-prompt").textContent = "And let it out 😮‍💨";
+  calibStatus("", "");
   $("calib-progress").style.width = "0%";
   const total = config.oceanLessonLetOutSeconds * 1000;
   const start = performance.now();
