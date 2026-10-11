@@ -656,7 +656,8 @@ function needsPuffCalibration(): boolean {
  * One step of the swim lesson or the puff calibration: the fish shows it (a
  * puff step blows it up so it floats, the others shrink it so it sinks), and
  * the face is sampled as a puff or as relaxed. Puff steps last
- * oceanCalibrationSeconds, the others oceanRelaxSeconds.
+ * oceanCalibrationSeconds, the others oceanRelaxSeconds, unless the step has
+ * its own `seconds`.
  */
 interface PuffStep {
   kind: "relax" | "look" | "puff";
@@ -664,21 +665,30 @@ interface PuffStep {
   label: string;
   title: string;
   hint: string;
+  /** The step's length in s, read when it starts (default: by kind, see above). */
+  seconds?: () => number;
 }
 
 /**
- * The swim lesson, right after the dive: two puff/relax cycles after a
- * relaxed moment, while the world swims on in calm water. The relax steps
- * right after each puff matter most: a face just after a puff doesn't go back
- * to the relaxed face from before it, and the calibration has to know what
- * that looks like, or the fish won't sink (see buildInteractivePuffCalibration).
+ * The swim lesson, right after the dive: one puff/relax cycle after a relaxed
+ * moment, while the world swims on in calm water. The relax step right after
+ * the puff matters most: a face just after a puff doesn't go back to the
+ * relaxed face from before it, and the calibration has to know what that looks
+ * like, or the fish won't sink (see buildInteractivePuffCalibration). So it
+ * lasts oceanLessonLetOutSeconds, longer than the other steps: in the face
+ * dataset a second cycle sent more players into the calibration than it
+ * saved, but one player's fish wouldn't sink after a single short one.
  */
 const LESSON_STEPS: readonly PuffStep[] = [
   { kind: "relax", label: "Relax", title: "Swim, little pufferfish! 🐡", hint: "Keep your face relaxed for a moment…" },
   { kind: "puff", label: "Pucker & puff", title: "Pucker & puff!", hint: "Purse your lips and puff your cheeks: the fish blows up and floats." },
-  { kind: "relax", label: "Let it out", title: "Let it out", hint: "Relax your cheeks and lips: the fish shrinks and sinks." },
-  { kind: "puff", label: "Pucker & puff", title: "Again: pucker & puff!", hint: "Lips pursed, cheeks full. Hold it." },
-  { kind: "relax", label: "Let it out", title: "And let it out", hint: "Air out, lips loose." },
+  {
+    kind: "relax",
+    label: "Let it out",
+    title: "Let it out",
+    hint: "Relax your cheeks and lips: the fish shrinks and sinks.",
+    seconds: () => config.oceanLessonLetOutSeconds,
+  },
 ];
 
 /**
@@ -825,7 +835,8 @@ async function runPuffSteps(
     const puff = step.kind === "puff";
     setPuffOverlay(step.title, step.hint, puff ? "puffed" : "relaxed");
     if (scripted) scriptTarget = puff ? SCRIPT_PUFF : SCRIPT_RELAX;
-    const phase = await puffCalibrationPhase(token, puff ? config.oceanCalibrationSeconds : config.oceanRelaxSeconds, puff);
+    const seconds = step.seconds?.() ?? (puff ? config.oceanCalibrationSeconds : config.oceanRelaxSeconds);
+    const phase = await puffCalibrationPhase(token, seconds, puff);
     if (!phase || token !== flow) return null;
     (puff ? puffs : relaxed).push(...phase.samples);
     coverage = Math.min(coverage, phase.coverage);
