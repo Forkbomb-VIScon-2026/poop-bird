@@ -7,9 +7,10 @@
  * - `data-keys="R"`: more keys that press the button while it's visible.
  * - `data-shortcut="C"`: display only, for keys handled elsewhere.
  *
- * Each button gets a keycap badge on its corner (main button only, fades in)
- * and a tooltip with all its keys on hover or keyboard focus. Touch devices
- * hide both (CSS `.touch`).
+ * Each button gets a keycap badge on its corner (⏎ while it's the yellow
+ * button, else its first extra key; none on ghost buttons) and a tooltip
+ * with all its keys on hover or keyboard focus. Touch devices hide both
+ * (CSS `.touch`).
  */
 
 const LABELS: Record<string, string> = { Enter: "⏎ Enter", Space: "Space", Escape: "Esc" };
@@ -40,19 +41,22 @@ export function decorate(btn: HTMLElement): void {
   btn.classList.add("has-keys");
   btn.setAttribute("aria-keyshortcuts", [...defaults, ...extra].join(" "));
 
-  if (defaults.length) {
-    const badge = document.createElement("span");
-    badge.className = "key-badge";
-    badge.setAttribute("aria-hidden", "true");
-    badge.textContent = BADGES[defaults[0]] ?? defaults[0];
-    btn.append(badge);
-  }
+  if (defaults.length) btn.append(badge(defaults[0], "k-default"));
+  if (extra.length) btn.append(badge(extra[0], "k-extra"));
   const tip = document.createElement("span");
   tip.className = "key-tip";
   tip.setAttribute("aria-hidden", "true");
   for (const k of defaults) tip.append(kbd(k, "k-default"));
   for (const k of extra) tip.append(kbd(k));
   btn.append(tip);
+}
+
+function badge(key: string, cls: string): HTMLElement {
+  const el = document.createElement("span");
+  el.className = `key-badge ${cls}`;
+  el.setAttribute("aria-hidden", "true");
+  el.textContent = BADGES[key] ?? key;
+  return el;
 }
 
 function kbd(key: string, cls = ""): HTMLElement {

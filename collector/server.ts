@@ -9,17 +9,21 @@
 //   DELETE /api/recordings/<p>/<s>          dev token, or the X-Delete-Key returned by the upload
 //   DELETE /api/recordings/<p>              all sessions of a participant (dev token)
 //   GET    /api/health
+//   …      /api/leaderboard…                    the game's online leaderboard (leaderboard.ts)
 //
 // Data layout: <DATA_DIR>/sessions/<participant>/<session>.json.gz plus
-// <session>.meta.json (index row and the delete key's hash).
+// <session>.meta.json (index row and the delete key's hash), and
+// <DATA_DIR>/leaderboard/ (leaderboard.ts).
 
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { access, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { PARTICIPANT_RE, SESSION_RE, indexRow, validateSession, type IndexRow, type Session } from "../src/session.ts";
+import { HttpError, clientIp, exists, readBody, readdirSafe, safeEqual, send, sha256, writeAtomic } from "./http.ts";
+import { createLeaderboard } from "./leaderboard.ts";
 
 export interface CollectorOptions {
   dataDir: string;
@@ -29,20 +33,13 @@ export interface CollectorOptions {
   devToken: string;
   maxUploadBytes?: number;
   uploadsPerHour?: number;
+  leaderboardSubmitsPerHour?: number;
   now?: () => number;
 }
 
 interface Meta {
   row: IndexRow;
   deleteKeyHash: string;
-}
-
-class HttpError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
 }
 
 export function createCollector(opts: CollectorOptions): Server {
@@ -66,12 +63,15 @@ export function createCollector(opts: CollectorOptions): Server {
     data: join(sessionsDir, p, `${s}.json.gz`),
     meta: join(sessionsDir, p, `${s}.meta.json`),
   });
+  const leaderboard = createLeaderboard({
+    dataDir: opts.dataDir, isDev, submitsPerHour: opts.leaderboardSubmitsPerHour, now,
+  });
 
   async function upload(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!safeEqual(String(req.headers["x-collection-code"] ?? ""), opts.collectionCode)) {
       throw new HttpError(401, "Wrong collection code. Ask the team for the current one.");
     }
-    const ip = String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "").split(",")[0].trim();
+    const ip = clientIp(req);
     const recent = (uploads.get(ip) ?? []).filter((t) => now() - t < 3600_000);
     if (recent.length >= perHour) throw new HttpError(429, "Too many uploads from here. Try again in an hour.");
 
@@ -124,6 +124,7 @@ export function createCollector(opts: CollectorOptions): Server {
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts[0] !== "api") throw new HttpError(404, "Not found.");
     if (parts[1] === "health" && parts.length === 2 && req.method === "GET") return send(res, 200, { ok: true });
+    if (parts[1] === "leaderboard") return leaderboard(req, res, parts);
     if (parts[1] !== "recordings" || parts.length > 4) throw new HttpError(404, "Not found.");
     const [p, s] = [parts[2], parts[3]];
     if (p !== undefined && !PARTICIPANT_RE.test(p)) throw new HttpError(404, "No such participant.");
@@ -187,67 +188,6 @@ export function createCollector(opts: CollectorOptions): Server {
       send(res, 500, { error: "Something went wrong on the server." });
     });
   });
-}
-
-function send(res: ServerResponse, status: number, body: unknown): void {
-  if (res.headersSent) return void res.end();
-  res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-  res.end(JSON.stringify(body));
-}
-
-function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    if (Number(req.headers["content-length"] ?? 0) > limit) {
-      reject(new HttpError(413, "The upload is too large."));
-      req.resume();
-      return;
-    }
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > limit) {
-        reject(new HttpError(413, "The upload is too large."));
-        req.destroy();
-      } else chunks.push(chunk);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-/** Write to a temp file, then rename, so a crash never leaves half a file. */
-async function writeAtomic(path: string, data: string | Buffer): Promise<void> {
-  const tmp = `${path}.tmp-${randomBytes(4).toString("hex")}`;
-  await writeFile(tmp, data);
-  await rename(tmp, path);
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readdirSafe(dir: string): Promise<string[]> {
-  try {
-    return await readdir(dir);
-  } catch {
-    return [];
-  }
-}
-
-function sha256(s: string): string {
-  return createHash("sha256").update(s).digest("hex");
-}
-
-function safeEqual(a: string, b: string): boolean {
-  const x = Buffer.from(sha256(a));
-  const y = Buffer.from(sha256(b));
-  return timingSafeEqual(x, y) && a.length > 0;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

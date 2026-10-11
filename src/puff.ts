@@ -10,12 +10,19 @@
 // change. The puff phase uses robust stats: lips purse for a moment as the
 // cheeks fill, and that blip must not be what the fish listens to.
 //
+// The gesture is the "pufferfish face": cheeks puffed with the lips pursed.
+// A plain puff barely moves what MediaPipe reports for some people, while
+// pursed lips light up mouthPucker, so mouthPucker through a range (the
+// fallback) counts too, with or without a calibration. The range starts above
+// the player's resting pucker: a few people rest with slightly pursed lips.
+//
 // Unlike strain there is no hysteresis: the fish needs the analog value.
-//   features → rawPuff (weighted, normalized; or the fallback range)
+//   features → rawPuff (max of weighted/normalized and the fallback range)
 //   → stepPuff (time-corrected EMA, face-loss grace)
 //   → max(face puff, key puff) → Game.puffInput
 
 import {
+  FEATURE_NAMES,
   PUFF_FEATURES,
   buildCalibration,
   clamp,
@@ -27,6 +34,7 @@ import {
   type FeatureVector,
   type GeometryFeatureName,
   type PhaseCoverage,
+  zeroFeatures,
 } from "./strain";
 
 // --- Landmark geometry ---------------------------------------------------------
@@ -104,14 +112,87 @@ export function buildPuffCalibration(
   );
 }
 
-export interface PuffQualityParams {
-  featureClampMax: number;
+export interface InteractivePuffParams {
+  oceanPuffMinSeparation: number;
+  oceanPuffRelaxedQuantile: number;
+  oceanPuffMinGap: number;
+}
+
+/**
+ * Fits the puff calibration from the interactive calibration: relaxed faces
+ * (a relaxed read, and the relaxed faces right after each puff) vs. the puff
+ * holds. A face just after a puff doesn't return to the relaxed face from
+ * before it: the mouth stays narrower, the lips pressed or a bit pursed. With
+ * only the first relaxed face as the reference, those leftovers read as puff
+ * and the fish won't sink (in the face dataset, a fifth of relaxed frames
+ * floated, for some people half). So per feature:
+ *
+ * - "relaxed" (`neutral`) is the `oceanPuffRelaxedQuantile` of the relaxed
+ *   samples toward the puff side, so most relaxed faces score 0 on it;
+ * - "full" (`strain`) is the puff median (robust: the lips purse for a moment
+ *   as the cheeks fill);
+ * - the weight is the usual separation weight (change vs. noise), scaled down
+ *   unless the puff clears that relaxed edge by `oceanPuffMinGap` of its change.
+ *
+ * `neutralStd` holds the relaxed spread (MAD), which also places the pucker
+ * range above the relaxed faces (puckerRange).
+ */
+export function buildInteractivePuffCalibration(
+  relaxed: readonly FeatureVector[],
+  puff: readonly FeatureVector[],
+  p: InteractivePuffParams,
+): Calibration | null {
+  if (!relaxed.length || !puff.length) return null;
+  const neutral = zeroFeatures();
+  const strain = zeroFeatures();
+  const weights = zeroFeatures();
+  const neutralStd = zeroFeatures();
+  const q = clamp(p.oceanPuffRelaxedQuantile, 0.5, 1);
+  for (const f of FEATURE_NAMES) {
+    const r = relaxed.map((s) => s[f]);
+    const v = puff.map((s) => s[f]);
+    const relaxedMedian = quantile(r, 0.5);
+    const puffMedian = quantile(v, 0.5);
+    const up = puffMedian >= relaxedMedian;
+    const edge = quantile(r, up ? q : 1 - q);
+    neutral[f] = edge;
+    strain[f] = puffMedian;
+    neutralStd[f] = mad(r);
+    if (!PUFF_FEATURES.includes(f)) continue;
+    const change = Math.abs(puffMedian - relaxedMedian);
+    if (change < 1e-9) continue;
+    const gap = up ? puffMedian - edge : edge - puffMedian;
+    const separation = separationWeight(puffMedian - relaxedMedian, mad(r) + mad(v), p.oceanPuffMinSeparation);
+    weights[f] = separation * clamp(gap / change / Math.max(1e-3, p.oceanPuffMinGap), 0, 1);
+  }
+  return { neutral, strain, weights, neutralStd };
+}
+
+/** Linear-interpolated quantile, q in 0..1. */
+function quantile(values: readonly number[], q: number): number {
+  const s = [...values].sort((a, b) => a - b);
+  if (!s.length) return 0;
+  const i = clamp(q, 0, 1) * (s.length - 1);
+  const lo = Math.floor(i);
+  const hi = Math.min(s.length - 1, lo + 1);
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+}
+
+/** Median absolute deviation, scaled to a standard deviation for normal data. */
+function mad(values: readonly number[]): number {
+  const m = quantile(values, 0.5);
+  return 1.4826 * quantile(values.map((x) => Math.abs(x - m)), 0.5);
+}
+
+export interface PuffQualityParams extends RawPuffParams {
   oceanHoverPuff: number;
   oceanMinPuffChange: number;
   minFaceCoverage?: number;
   minSamples?: number;
   /** Fraction of puff samples that must score at or above the hover point. */
   minHitRate?: number;
+  /** Fraction of relaxed samples (if given) that must score below the hover point. */
+  minSinkRate?: number;
 }
 
 export interface PuffQuality {
@@ -120,29 +201,41 @@ export interface PuffQuality {
   totalChange: number;
   /** Fraction of puff-phase samples scoring at or above the hover point. */
   hitRate: number;
+  /** Fraction of relaxed samples scoring below the hover point (NaN without relaxed samples). */
+  sinkRate: number;
   reason?: string;
 }
 
-/** Checks that the puff phase was visible, clearly different from neutral, and steady. */
+/**
+ * Checks that the puff phase was visible, clearly different from relaxed, and
+ * steady; with `relaxedSamples`, also that the relaxed faces (the pucker range
+ * included, as in game) would let the fish sink.
+ */
 export function assessPuffCalibration(
   calib: Calibration,
   puffSamples: readonly FeatureVector[],
   coverage: Pick<PhaseCoverage, "strain">,
   p: PuffQualityParams,
+  relaxedSamples?: readonly FeatureVector[],
 ): PuffQuality {
   const minSamples = p.minSamples ?? 8;
   const minCoverage = p.minFaceCoverage ?? 0.6;
   const minHitRate = p.minHitRate ?? 0.6;
+  const minSinkRate = p.minSinkRate ?? 0.8;
   const totalChange = PUFF_FEATURES.reduce((s, f) => s + calib.weights[f], 0);
   let hits = 0;
   for (const s of puffSamples) if (rawStrain(s, calib, p.featureClampMax) >= p.oceanHoverPuff) hits++;
   const hitRate = puffSamples.length ? hits / puffSamples.length : 0;
-  const base = { totalChange, hitRate };
+  let sinks = 0;
+  for (const s of relaxedSamples ?? []) if (rawPuff(s, calib, p) < p.oceanHoverPuff) sinks++;
+  const sinkRate = relaxedSamples?.length ? sinks / relaxedSamples.length : NaN;
+  const base = { totalChange, hitRate, sinkRate };
   if (puffSamples.length < minSamples || coverage.strain < minCoverage) {
     return { ...base, ok: false, reason: "couldn't see your face" };
   }
   if (totalChange < p.oceanMinPuffChange) return { ...base, ok: false, reason: "puff looked like your relaxed face" };
   if (hitRate < minHitRate) return { ...base, ok: false, reason: "puff wasn't held steadily" };
+  if (sinkRate < minSinkRate) return { ...base, ok: false, reason: "your face didn't relax between puffs" };
   return { ...base, ok: true };
 }
 
@@ -153,25 +246,61 @@ export function fallbackPuff(score: number, min: number, max: number): number {
 }
 
 /**
- * The fallback's input: pressed lips (mouthPress), which stay pressed while
- * the cheeks are held full, or cheekPuff should a future model make it work.
- * Not mouthPucker: that only flickers as the cheeks fill. Geometry isn't used
- * here because its neutral values differ from face to face.
+ * The fallback's input: pursed lips (mouthPucker), the pufferfish face's
+ * signature, or cheekPuff should a future model make it work. In the face
+ * dataset mouthPucker stays near 0 while relaxed, looking around or laughing
+ * for everyone, and the pufferfish face lifts it to 0.2–1. Not mouthPress:
+ * some people rest with pressed lips (0.3 for one participant), which kept
+ * their fish afloat. Geometry isn't used here because its neutral values
+ * differ from face to face.
  */
 export function fallbackPuffScore(features: FeatureVector): number {
-  return Math.max(features.cheekPuff, features.mouthPress);
+  return Math.max(features.cheekPuff, features.mouthPucker);
 }
 
 export interface RawPuffParams {
   featureClampMax: number;
   oceanFallbackMin: number;
   oceanFallbackMax: number;
+  oceanFallbackRestSds: number;
+  oceanFallbackRestMargin: number;
 }
 
-/** Unsmoothed puff 0..1: the weighted puff calibration if there is one, else the fallback range. */
-export function rawPuff(features: FeatureVector, calib: Calibration | null, p: RawPuffParams): number {
-  if (calib) return rawStrain(features, calib, p.featureClampMax);
-  return fallbackPuff(fallbackPuffScore(features), p.oceanFallbackMin, p.oceanFallbackMax);
+/** The player's relaxed face: a calibration's neutral phase. */
+export type RestingFace = Pick<Calibration, "neutral" | "neutralStd">;
+
+/**
+ * The fallback's range, [oceanFallbackMin, oceanFallbackMax], moved up when
+ * the player's resting pucker sits near it: someone who rests at 0.2 with
+ * lips that relax "less" between puffs (0.5 in the dataset) would otherwise
+ * float all the time. Its width stays the same.
+ */
+export function puckerRange(rest: RestingFace | null, p: RawPuffParams): { min: number; max: number } {
+  const width = p.oceanFallbackMax - p.oceanFallbackMin;
+  if (!rest?.neutralStd) return { min: p.oceanFallbackMin, max: p.oceanFallbackMax };
+  const resting = fallbackPuffScore(rest.neutral);
+  const noise = Math.max(rest.neutralStd.cheekPuff, rest.neutralStd.mouthPucker);
+  const min = Math.max(p.oceanFallbackMin, resting + p.oceanFallbackRestSds * noise + p.oceanFallbackRestMargin);
+  return { min, max: min + width };
+}
+
+/**
+ * Unsmoothed puff 0..1: the fallback range, or with a puff calibration the
+ * higher of the two. The calibration learns the player's own scale, but its
+ * hold may have been a weak or plain puff; a full pufferfish face then still
+ * reaches the top through the fallback. `rest` (default: the puff
+ * calibration, which carries the main calibration's relaxed face) places the
+ * fallback range.
+ */
+export function rawPuff(
+  features: FeatureVector,
+  calib: Calibration | null,
+  p: RawPuffParams,
+  rest: RestingFace | null = calib,
+): number {
+  const range = puckerRange(rest, p);
+  const fallback = fallbackPuff(fallbackPuffScore(features), range.min, range.max);
+  return calib ? Math.max(rawStrain(features, calib, p.featureClampMax), fallback) : fallback;
 }
 
 export interface PuffState {
@@ -201,13 +330,14 @@ export function stepPuff(
   calib: Calibration | null,
   dtSeconds: number,
   p: PuffStepParams,
+  rest: RestingFace | null = calib,
 ): PuffState {
   if (features === null) {
     const missingFor = state.missingFor + Math.max(0, dtSeconds);
     if (missingFor <= p.faceLossGrace) return { ...state, faceVisible: false, missingFor };
     return { raw: 0, smoothed: 0, faceVisible: false, missingFor };
   }
-  const raw = rawPuff(features, calib, p);
+  const raw = rawPuff(features, calib, p, rest);
   const smoothed = smoothStrain(state.smoothed, raw, p.emaAlpha, dtSeconds);
   return { raw, smoothed, faceVisible: true, missingFor: 0 };
 }
