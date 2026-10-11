@@ -26,6 +26,7 @@ import {
   withDescriptors,
   type Descriptor,
   type KnownFace,
+  type Tutorial,
 } from "./known-faces";
 import { BOARD_KEEP, strainPercent, type RunStats } from "./leaderboard";
 import { showBoards, submitRun } from "./leaderboard-view";
@@ -42,16 +43,12 @@ import {
   loadBest,
   loadGraphics,
   loadKnownFacesJson,
-  loadSeenTutorials,
   saveBest,
   saveGraphics,
   saveKnownFacesJson,
-  saveSeenTutorials,
   storageGet,
   storageRemove,
   storageSet,
-  TUTORIALS,
-  type Tutorial,
 } from "./storage";
 import {
   FEATURE_NAMES,
@@ -189,8 +186,8 @@ let currentSnapshotUrl: string | null = null;
 let lastRun: { score: number; stats: RunStats; face: { url: string; strain: number } | null } | null = null;
 /** Smoothed `strainedness` of the face (the finest-strain snapshot's and the leaderboard's measure). */
 let faceStrain = 0;
-/** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
-const seenTutorials = loadSeenTutorials();
+/** Tutorials shown without a face to remember them with (keyboard mode, or no face recognition here); Forget all clears them. */
+const seenWithoutFace = new Set<Tutorial>();
 
 sound.setMuted(storageGet("poopybird.muted.v1") === "1");
 
@@ -304,6 +301,8 @@ const faceId = {
   /** Calibrations made for this face since the lock, remembered with it (rememberFace). */
   strain: null as { cal: Calibration; isDefault: boolean } | null,
   puff: null as Calibration | null,
+  /** Tutorials seen since the lock, remembered with the face (rememberFace). */
+  tutorials: new Set<Tutorial>(),
 };
 /**
  * Set by recognizeFace: the tracker callback aligns the next good view of the
@@ -326,6 +325,7 @@ function resetFaceId(): void {
   faceId.distance = Infinity;
   faceId.strain = null;
   faceId.puff = null;
+  faceId.tutorials = new Set();
   wantFaceCrop = false;
   faceCrop = null;
   // A failed fit was the previous face's: "Play anyway" mustn't hand it to this one.
@@ -433,7 +433,7 @@ function adoptKnownFace(face: KnownFace): void {
 /** Saves the calibrations made for the locked face with it, enrolling a new face with its first one. */
 function rememberFace(): void {
   if (faceId.status === "new" && (faceId.strain || faceId.puff)) {
-    const blank: KnownFace = { id: nextFaceId(knownFaces), descriptors: [], strain: null, strainIsDefault: false, puff: null, lastSeen: 0 };
+    const blank: KnownFace = { id: nextFaceId(knownFaces), descriptors: [], strain: null, strainIsDefault: false, puff: null, tutorials: [], lastSeen: 0 };
     faceId.known = withDescriptors(blank, faceId.descriptors);
     faceId.status = "known";
   }
@@ -444,6 +444,7 @@ function rememberFace(): void {
     strain: faceId.strain?.cal ?? f.strain,
     strainIsDefault: faceId.strain ? faceId.strain.isDefault : f.strainIsDefault,
     puff: faceId.puff ?? f.puff,
+    tutorials: [...new Set([...f.tutorials, ...faceId.tutorials])],
     lastSeen: Date.now(),
   };
   knownFaces = upsertFace(knownFaces, faceId.known);
@@ -468,6 +469,7 @@ function forgetFaces(): void {
   const n = knownFaces.length;
   knownFaces = [];
   saveKnownFacesJson(null);
+  seenWithoutFace.clear();
   resetFaceId();
   updateFacesSetting();
   console.info(`[faceid] forgot ${n} face${n === 1 ? "" : "s"}`);
@@ -477,7 +479,7 @@ function forgetFaces(): void {
 function updateFacesSetting(): void {
   const n = knownFaces.length;
   $("faces-count").textContent = n ? `${n} face${n === 1 ? "" : "s"} remembered in this tab.` : "No faces remembered.";
-  $<HTMLButtonElement>("btn-forget-faces").disabled = n === 0;
+  $<HTMLButtonElement>("btn-forget-faces").disabled = n === 0 && seenWithoutFace.size === 0;
 }
 
 /**
@@ -1069,21 +1071,24 @@ function dockCoach(perched: boolean): void {
 
 // --- Tutorials (new-player tips) ---------------------------------------------------------
 
-/** "I'm new here" in the menu: some tutorial hasn't been shown yet. */
-function isNewPlayer(): boolean {
-  return TUTORIALS.some((t) => !seenTutorials.has(t));
+/** Tutorials are per face: a face playing gets them once; without one (keyboard mode, no face recognition), once per tab. */
+function playsAsFace(): boolean {
+  return mode === "face" && faceId.status !== "off";
 }
 
-/** The menu toggle: on shows every tutorial again, off skips them all. */
-function setNewPlayer(isNew: boolean): void {
-  seenTutorials.clear();
-  if (!isNew) for (const t of TUTORIALS) seenTutorials.add(t);
-  saveSeenTutorials(seenTutorials);
+function tutorialSeen(t: Tutorial): boolean {
+  if (!playsAsFace()) return seenWithoutFace.has(t);
+  return faceId.tutorials.has(t) || !!faceId.known?.tutorials.includes(t);
 }
 
 function markTutorialSeen(t: Tutorial): void {
-  seenTutorials.add(t);
-  saveSeenTutorials(seenTutorials);
+  if (!playsAsFace()) {
+    seenWithoutFace.add(t);
+    updateFacesSetting();
+    return;
+  }
+  faceId.tutorials.add(t);
+  rememberFace();
 }
 
 /**
@@ -1092,7 +1097,7 @@ function markTutorialSeen(t: Tutorial): void {
  * puff was calibrated before the run, on the calibration screen.)
  */
 function onSubmerged(): void {
-  if (!seenTutorials.has("ocean")) void runSwimLesson();
+  if (!tutorialSeen("ocean")) void runSwimLesson();
   else showToast(mode === "face" ? "Puff your cheeks to float 🐡" : isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
 }
 
@@ -1332,7 +1337,7 @@ function takeOff(): void {
   state = "playing";
   showScreen(null);
   lessonCount.poops = lessonCount.accidents = 0;
-  if (!seenTutorials.has("city")) void runCityLesson();
+  if (!tutorialSeen("city")) void runCityLesson();
 }
 
 /**
@@ -1455,7 +1460,6 @@ function goToMenu(): void {
   show(cam, false);
   show(hud, false);
   game.startDemo();
-  $<HTMLInputElement>("opt-tips").checked = isNewPlayer();
   newTagline();
   showScreen("start");
 }
@@ -2201,9 +2205,6 @@ on("btn-again", () => {
 });
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
-$<HTMLInputElement>("opt-tips").addEventListener("change", (e) => {
-  setNewPlayer((e.target as HTMLInputElement).checked);
-});
 on("btn-download", () => {
   if (!currentSnapshotUrl) return;
   const a = document.createElement("a");

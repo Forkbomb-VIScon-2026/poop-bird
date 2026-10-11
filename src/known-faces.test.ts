@@ -28,7 +28,7 @@ function desc(base: number, i = 0, bump = 0): number[] {
 }
 
 function face(id: number, descriptors: Descriptor[], lastSeen = id): KnownFace {
-  return { id, descriptors, strain: null, strainIsDefault: false, puff: null, lastSeen };
+  return { id, descriptors, strain: null, strainIsDefault: false, puff: null, tutorials: [], lastSeen };
 }
 
 describe("matching", () => {
@@ -106,14 +106,20 @@ describe("storage format", () => {
   const cal = defaultCalibration(neutralFaceStats([zeroFeatures(), zeroFeatures()]), 1);
 
   it("round-trips faces with their calibrations", () => {
-    const f: KnownFace = { id: 3, descriptors: [desc(0.123456)], strain: cal, strainIsDefault: true, puff: null, lastSeen: 42 };
+    const f: KnownFace = { id: 3, descriptors: [desc(0.123456)], strain: cal, strainIsDefault: true, puff: null, tutorials: ["city"], lastSeen: 42 };
     const [back] = parseFaces(JSON.parse(serializeFaces([f])));
     expect(back.id).toBe(3);
     expect(back.descriptors[0][0]).toBeCloseTo(0.1235, 6);
     expect(back.strain?.weights).toEqual(cal.weights);
     expect(back.strainIsDefault).toBe(true);
     expect(back.puff).toBeNull();
+    expect(back.tutorials).toEqual(["city"]);
     expect(back.lastSeen).toBe(42);
+  });
+
+  it("gives a face saved before tutorials were per face none seen, and drops unknown ones", () => {
+    expect(parseFaces([{ id: 1, descriptors: [desc(0)] }])[0].tutorials).toEqual([]);
+    expect(parseFaces([{ id: 1, descriptors: [desc(0)], tutorials: ["ocean", "moon", 7] }])[0].tutorials).toEqual(["ocean"]);
   });
 
   it("drops malformed entries and keeps the rest", () => {

@@ -148,8 +148,8 @@ step moves on once the player has done it (the line turns green for a moment),
 not on a timer. On the perch it sits beside the bird; in the city and the
 ocean, over the game near the top. The ocean tips use it too.
 
-- **Flight lesson** (new players: the tutorial hasn't been seen on this
-  browser, or "I'm new here" is ticked): right after takeoff, in a **calm
+- **Flight lesson** (new players: this face hasn't seen it yet, see
+  [Tutorials are per face](#tutorials-are-per-face)): right after takeoff, in a **calm
   city** (`Game.calmCity`: no obstacles, paparazzi or kids, and the street
   bounces the bird back up instead of ending the run): "Squeeze & relax to
   stay up" until three poops (or 20 s), then "Nice flying!". The lesson counts
@@ -269,16 +269,16 @@ city by city (the debug panel's "Progression" group).
   your cheeks to float 🐡", or "Hold SPACE to puff up").
 - **New players** (the ocean tutorial hasn't been seen): the first dive swims
   on in **calm water** (`Game.calmWater`: no obstacles or jellyfish, no
-  spiking, the sea floor doesn't kill) under banners on how to puff (the
-  pufferfish face, or holding Space or the screen) and the ocean tip (spiking
-  out, and popping when held too long; what's in the sea is left to
-  discover); then
-  the level starts. A fish lying on the sand when the level starts isn't
+  spiking, the sea floor doesn't kill) for the **swim lesson**
+  (`runSwimLesson()`): "Puff your cheeks to rise" (or hold Space or the
+  screen) until the fish is near the surface, then "Let the air out to sink"
+  until it's near the floor (each step moves on after 15 s anyway), "Nice
+  swimming!", and the spikes tip (spiking out, and popping when held too
+  long; what's in the sea is left to discover); then the level starts. A fish lying on the sand when the level starts isn't
   killed by the sea floor until it swims off (at most `oceanCalmFloorGrace`,
   5 s). Nothing calibrates here: the puff was calibrated before the run. The
-  tips never stop the world. The tips show once per browser;
-  **⚙️ Options → "I'm new here: show tips"** in the menu turns them back on
-  (or off) for the next player.
+  lesson never stops the world. It shows once per face, like the flight
+  lesson.
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
@@ -567,9 +567,15 @@ the distance (`GROW_WITHIN`), so a borderline match can't widen a face until it
 matches someone else too. At most 20 faces are kept, the one seen longest ago
 going first.
 
+<a id="tutorials-are-per-face"></a>**Tutorials are per face.** A known face
+also remembers which tutorials (`TUTORIALS` in `known-faces.ts`: the flight and
+the swim lesson) it has seen, so each person gets them once, and someone new at
+the booth gets them again. Without a face to remember them with (keyboard mode,
+or no face recognition here), they show once per tab.
+
 The faces live in memory and `sessionStorage` only (`poopybird.knownFaces.v1`),
 so they go when the tab closes. **Settings → Faces → Forget all** deletes them
-at once. The model (6 MB) is loaded only in face mode, from `public/faceid`
+at once, and with them every tutorial seen: the next player starts fresh. The model (6 MB) is loaded only in face mode, from `public/faceid`
 (copied from `node_modules` on install). Without WebGL (tfjs's CPU backend
 blocks the page for a second per descriptor) or if loading fails, there's no
 recognition: a saved calibration is used whoever plays (Play skips the
