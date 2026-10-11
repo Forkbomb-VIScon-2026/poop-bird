@@ -26,7 +26,6 @@ import {
   withDescriptors,
   type Descriptor,
   type KnownFace,
-  TUTORIALS,
   type Tutorial,
 } from "./known-faces";
 import { BOARD_KEEP, strainPercent, type RunStats } from "./leaderboard";
@@ -189,6 +188,8 @@ let lastRun: { score: number; stats: RunStats; face: { url: string; strain: numb
 let faceStrain = 0;
 /** The player pressed "Skip tutorial": the lesson running ends (lessons reset it when they start). */
 let tutorialSkipped = false;
+/** The lesson that started last, and the face lock it started under: what "Skip tutorial" skips. */
+let activeLesson: { tutorial: Tutorial; lock: number } | null = null;
 /** Tutorials shown without a face to remember them with (keyboard mode, or no face recognition here); Forget all clears them. */
 const seenWithoutFace = new Set<Tutorial>();
 
@@ -1121,6 +1122,7 @@ async function runSwimLesson(): Promise<void> {
   const owner = claimCoach();
   game.calmWater = true;
   tutorialSkipped = false;
+  activeLesson = { tutorial: "ocean", lock };
   const face = mode === "face";
   const say = (line: CoachLine): void => coachSay(owner, { ...line, face: face ? line.face : null, skip: true });
   /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. */
@@ -1362,6 +1364,7 @@ async function runCityLesson(): Promise<void> {
   const owner = claimCoach();
   game.calmCity = true;
   tutorialSkipped = false;
+  activeLesson = { tutorial: "city", lock };
   const face = mode === "face";
   let line: CoachLine = { title: "" };
   const say = (title: string, hint: string, look: CoachFace | null, done = false): void => {
@@ -2227,7 +2230,9 @@ on("btn-again", () => {
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
 on("coach-skip", () => {
-  for (const t of TUTORIALS) markTutorialSeen(t, faceId.lock);
+  // Not while paused: Enter there mustn't skip the lesson underneath.
+  if (state !== "playing") return;
+  if (activeLesson) markTutorialSeen(activeLesson.tutorial, activeLesson.lock);
   tutorialSkipped = true;
   // Space puffs and flaps: it mustn't press this button again.
   $("coach-skip").blur();
