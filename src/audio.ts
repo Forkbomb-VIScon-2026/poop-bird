@@ -223,9 +223,8 @@ export class Sound {
     );
   }
 
-  splash(): void {
+  splash(delay: number = 0): void {
     const volume = 1;
-    const delay = 0;
     this.play("splash", volume, delay);
   }
 

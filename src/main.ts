@@ -1899,22 +1899,23 @@ function handleGameEvents(): void {
         break;
       case "gateEntered":
         if (e.to === "ocean") {
-          sound.splash();
+          sound.splash(0.6);
           // Keyboard players start at the hover point; in face mode the face decides.
           keyPuff = mode === "keyboard" ? config.oceanHoverPuff : 0;
         } else {
           keyPuff = 0;
+          sound.splash(0.3);
         }
         break;
       case "submerged":
         void onSubmerged();
         break;
       case "breached":
-        sound.splash();
+        // sound.splash();
         break;
       case "transformed":
       case "surfaced":
-        sound.splash();
+        // sound.splash();
         break;
       case "spike":
         sound.spike();
