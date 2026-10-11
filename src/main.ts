@@ -10,7 +10,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { FaceRecognizer, alignedFaceCrop } from "./faceid";
-import { BIRD_RADIUS, GROUND_Y, Game, VIEW_H, wireAt } from "./game";
+import { BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
@@ -157,14 +157,8 @@ let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FE
 let calibrationIsDefault = false;
 /** Puff calibration (neutral vs. full puff), on top of the fixed pucker range. null = the pucker range alone. */
 let puffCalibration: Calibration | null = loadCalibration(PUFF_CALIBRATION_KEY, PUFF_FEATURES);
-/** Flow token of the ocean tips in progress, if any. */
-let activePuffCalibration: number | null = null;
-/** Set to cut the ocean tips short. */
-let abortPuffCalibration = false;
 /** The coach (#coach) belongs to whoever claimed it last (claimCoach); older owners can't change or hide it. */
 let coachOwner = 0;
-/** The coach claim of the ocean tips in progress. */
-let puffCoach = 0;
 /** The coach claim of the perch. */
 let perchCoach = 0;
 /** Poops and accidents this run, for the city lesson. */
@@ -988,51 +982,6 @@ function forgetCalibration(): void {
   location.reload();
 }
 
-// --- Ocean tips --------------------------------------------------------------------
-
-/** The ocean tips for new players, as banners over the calm water, after `intro` if given. */
-async function oceanTipBanners(token: number, intro?: [string, string]): Promise<boolean> {
-  const tips: [string, string][] = [
-    ...(intro ? [intro] : []),
-    ["Spikes! 🐡", "Puff past the red line to spike out. Hold it too long and you pop"],
-  ];
-  for (const [title, hint] of tips) {
-    setPuffOverlay(title, hint, null, true);
-    if (!(await waitPlaying(token, 4500))) return false;
-  }
-  return true;
-}
-
-/** Waits `ms` of playing time (pauses don't count). false = abandoned. */
-async function waitPlaying(token: number, ms: number): Promise<boolean> {
-  let left = ms;
-  let last = performance.now();
-  while (left > 0) {
-    if (token !== flow || abortPuffCalibration) {
-      abortPuffCalibration = false;
-      return false;
-    }
-    const now = performance.now();
-    if (state === "playing") left -= now - last;
-    last = now;
-    await wait(50);
-  }
-  return true;
-}
-
-/** The lesson's coach line: a title, a hint and the face to make (null: no pictogram). `tips`: no progress bar, bigger hint. */
-function setPuffOverlay(title: string, hint: string, face: "relaxed" | "puffed" | null, tips = false): void {
-  coachSay(puffCoach, { title, hint, face, bar: !tips, tips });
-}
-
-/** Hides the lesson's coach if `token`'s lesson still owns it. */
-function endPuffCalibrationOverlay(token: number): void {
-  if (activePuffCalibration !== token) return;
-  activePuffCalibration = null;
-  releaseCoach(puffCoach);
-  sound.setBurble(-1);
-}
-
 // --- Coach (the tutorial banner) ---------------------------------------------------------
 
 type CoachFace = "relaxed" | "strained" | "puffed";
@@ -1138,36 +1087,70 @@ function markTutorialSeen(t: Tutorial): void {
 }
 
 /**
- * The bird just turned into a deflated fish. A new player gets the ocean tips
- * as banners over calm water; everyone else swims right into the level. (The
+ * The bird just turned into a deflated fish. A new player gets the swim
+ * lesson over calm water; everyone else swims right into the level. (The
  * puff was calibrated before the run, on the calibration screen.)
  */
 function onSubmerged(): void {
-  if (!seenTutorials.has("ocean")) void runOceanTips();
+  if (!seenTutorials.has("ocean")) void runSwimLesson();
   else showToast(mode === "face" ? "Puff your cheeks to float 🐡" : isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
 }
 
 /**
  * A new player's first dive: the fish swims on in calm water (see
- * Game.calmWater) under banners on how to puff and the ocean tips, then the
- * level starts. Belongs to the run's flow token.
+ * Game.calmWater) while the coach has them rise to the surface, then sink
+ * back down, then warns about spikes; then the level starts. Belongs to the
+ * run's flow token.
  */
-async function runOceanTips(): Promise<void> {
+async function runSwimLesson(): Promise<void> {
   const token = flow;
-  activePuffCalibration = token;
-  puffCoach = claimCoach();
-  abortPuffCalibration = false;
+  const owner = claimCoach();
   game.calmWater = true;
-  while (game.transition && token === flow) await wait(50);
-  const hold = isTouch ? "Hold the screen" : "Hold SPACE";
-  const done = await oceanTipBanners(token, [
-    "Swim, little pufferfish! 🐡",
-    mode === "face" ? "Puff your cheeks to float, let the air out to sink" : `${hold} to puff up and float, let go to sink`,
-  ]);
-  endPuffCalibrationOverlay(token);
-  if (token !== flow) return;
-  if (done) markTutorialSeen("ocean");
+  const face = mode === "face";
+  const say = (line: CoachLine): void => coachSay(owner, { ...line, face: face ? line.face : null });
+  /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. */
+  const until = async (done: () => boolean, ms: number): Promise<boolean | null> => {
+    let left = ms;
+    let last = performance.now();
+    while (!done()) {
+      if (token !== flow || state === "gameover") return null;
+      const now = performance.now();
+      if (state === "playing") left -= now - last;
+      last = now;
+      if (left <= 0) return false;
+      await wait(50);
+    }
+    return true;
+  };
+  const abandon = (): void => {
+    releaseCoach(owner);
+    if (token === flow) game.calmWater = false;
+  };
+
+  if ((await until(() => !game.transition, 10_000)) === null) return abandon();
+  say({
+    title: face ? "Puff your cheeks to rise ⬆️" : `${HOLD} to rise ⬆️`,
+    hint: "Swim up to the surface",
+    face: "puffed",
+    dots: [0, 2],
+  });
+  if ((await until(() => game.bird.y < SURFACE_Y + 110, 15_000)) === null) return abandon();
+  say({
+    title: face ? "Let the air out to sink ⬇️" : "Let go to sink ⬇️",
+    hint: "Dive down towards the sea floor",
+    face: "relaxed",
+    dots: [1, 2],
+  });
+  if ((await until(() => game.bird.y > GROUND_Y - 150, 15_000)) === null) return abandon();
+  say({ title: "Nice swimming! 🐡", hint: "", face: null, dots: [2, 2], done: true });
+  if ((await until(() => false, 1200)) === null) return abandon();
+
+  // Seen from here on, so a player who crashes soon after doesn't get the lesson again.
+  markTutorialSeen("ocean");
+  say({ title: "Spikes! 🐡", hint: "Puff past the red line to spike out. Hold it too long and you pop", tips: true });
+  if ((await until(() => false, 4000)) === null) return abandon();
   game.calmWater = false;
+  releaseCoach(owner);
 }
 
 let toastTimer = 0;
@@ -1722,9 +1705,7 @@ function frame(now: number): void {
 
   const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);
-  if (activePuffCalibration === null) {
-    sound.setBurble(state === "playing" && game.swimming && !game.stunned ? game.fish.puff : -1);
-  }
+  sound.setBurble(state === "playing" && game.swimming && !game.stunned ? game.fish.puff : -1);
 
   // Only audible during active city gameplay, and only when part of a line
   // is actually visible. Distance is to the nearest point on any visible wire.
