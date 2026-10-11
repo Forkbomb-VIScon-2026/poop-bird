@@ -112,8 +112,6 @@
       <!-- The coach: every tutorial step and the puff calibration, as one banner. On the perch it sits
            beside the bird (moved into #perch-coach-slot); in the city and the ocean, over the game. -->
       <div id="coach" class="coach hidden">
-        <!-- Puff calibration only: the steps, the current one highlighted (puff steps in red). -->
-        <ol id="coach-timeline" class="puff-timeline hidden"></ol>
         <div class="coach-line">
           <!-- The face for this step (or the next one, during a countdown). -->
           <svg id="coach-face" class="face coach-face hidden"><use id="coach-face-use" href="#face-relaxed" /></svg>
@@ -182,30 +180,35 @@
       </section>
 
       <!-- Calibration -->
+      <!-- Calibration, before the first run of a face nobody here knows: strain, then puff, each started
+           with a button. An example photo of the face sits next to the webcam (#cam, moved into
+           #calib-cam-slot). The relaxed face is read on its own meanwhile, from the moment a face shows. -->
       <section id="screen-calibrate" class="screen hidden">
         <div class="card calib">
-          <div id="calib-step" class="calib-step">Calibration</div>
-          <h2 id="calib-prompt">Get ready…</h2>
-          <div id="calib-run">
-            <div class="calib-row">
-              <svg class="face calib-face"><use id="calib-face-use" href="#face-relaxed" /></svg>
-              <div class="calib-count-col">
-                <div id="calib-count" class="calib-count">3</div>
-                <div class="calib-match">Make this face</div>
-              </div>
-            </div>
-            <div class="progress"><div id="calib-progress" class="progress-fill"></div></div>
-            <p id="calib-hint" class="hint">Look at the camera.</p>
+          <div id="calib-step" class="calib-step">Calibration 1/2</div>
+          <h2 id="calib-prompt">Strain like you really need to go 💩</h2>
+          <div class="calib-media">
+            <figure class="calib-example">
+              <img id="calib-example" alt="Example of the face to make" />
+              <figcaption>Like this</figcaption>
+            </figure>
+            <figure class="calib-you">
+              <div id="calib-cam-slot" class="calib-cam-slot"></div>
+              <figcaption>You</figcaption>
+            </figure>
           </div>
-          <div id="calib-result" class="hidden">
-            <p id="calib-result-text"></p>
-            <div class="buttons">
-              <button id="btn-calib-play" class="btn primary" data-default>Play!</button>
-              <button id="btn-calib-retry" class="btn" data-default data-shortcut="C">Recalibrate</button>
-            </div>
+          <p id="calib-hint" class="hint"></p>
+          <div id="calib-run" class="calib-run hidden">
+            <div id="calib-count" class="calib-count"></div>
+            <div class="progress"><div id="calib-progress" class="progress-fill"></div></div>
+          </div>
+          <p id="calib-status" class="calib-status"></p>
+          <div id="calib-buttons" class="buttons">
+            <button id="btn-calib-go" class="btn primary big" data-default>I'm ready</button>
+            <button id="btn-calib-skip" class="btn hidden" data-keys="S">Play anyway</button>
           </div>
           <div class="ghost-row">
-            <button id="btn-calib-keyboard" class="btn small ghost hidden">Play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span> instead</button>
+            <button id="btn-calib-keyboard" class="btn small ghost">Play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span> instead</button>
             <button id="btn-calib-cancel" class="btn small ghost" data-keys="Escape">Back to menu</button>
           </div>
         </div>
@@ -241,7 +244,7 @@
           <kbd id="ready-key" class="ready-key hidden"><span class="kbd-only">Space</span><span class="touch-only">👆 Tap &amp; hold</span></kbd>
           <div id="perch-help" class="perch-help">
             <span id="perch-help-text" class="perch-help-text"></span>
-            <button id="btn-tune" class="btn small" data-shortcut="C">Tune to my face</button>
+            <button id="btn-tune" class="btn small" data-shortcut="C">Recalibrate</button>
           </div>
           <p id="perch-slow" class="perch-slow hidden">🐢 Face tracking is slow here. <button id="btn-perch-keyboard" class="btn small ghost light">Play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span></button></p>
         </div>
