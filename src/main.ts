@@ -170,6 +170,8 @@ const SCRIPT_RATE = 1.2;
 const SCRIPT_PUFF = 0.75;
 const SCRIPT_RELAX = 0.05;
 let lastFace: FaceFrame | null = null;
+/** How far the player's mouth is open, 0..1 (smoothed jawOpen); the bird's beak mirrors it. */
+let mouthOpen = 0;
 let lastFaceTime = 0;
 let lastFaceSeen = 0;
 let keyHeld = false;
@@ -239,6 +241,9 @@ tracker.onFrame((frame) => {
     placeCamBox($("cam-crop"), debug.showFaceLock ? frame.crop : null);
   }
   faceStrain = frame.features ? smoothStrain(faceStrain, strainedness(frame.features), config.emaAlpha, dt) : 0;
+  const jaw = frame.features ? (frame.blendshapes.jawOpen ?? 0) : 0;
+  const open = Math.min(1, Math.max(0, (jaw - config.mouthOpenFrom) / Math.max(0.01, config.mouthOpenFull - config.mouthOpenFrom)));
+  mouthOpen = smoothStrain(mouthOpen, open, config.mouthOpenAlpha, dt);
   // Only while the game counts it as straining: a laugh or a blink isn't a finest strain.
   if (state === "playing" && game.phase === "playing" && game.stage === "city" && strain.active) {
     snapshot.offer(video, frame.box, faceStrain);
@@ -1758,6 +1763,7 @@ function frame(now: number): void {
     accumulator = 0;
   }
 
+  renderer.mouthOpen = mode === "face" && faceFresh() && !game.demo ? mouthOpen : 0;
   renderer.draw(game, state === "playing" || game.demo ? dt : 0);
 
   const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;

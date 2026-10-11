@@ -60,6 +60,7 @@ starts the face dataset collector (local credentials `local` /
 | Input | Action |
 | --- | --- |
 | Strain face (webcam) | City: charge; relax to poop |
+| Open your mouth (webcam) | The bird opens its beak with you (just for fun; MediaPipe's `jawOpen`, tuned under "Beak" in the debug panel; classic graphics only) |
 | Pufferfish face: puff cheeks, purse lips (webcam) | Ocean: inflate (more puff = rise, less = sink) |
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / ⏸ button | Pause, and resume |

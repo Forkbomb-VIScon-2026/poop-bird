@@ -260,6 +260,12 @@ export const CONFIG_SPEC = {
   oceanPuffRelaxedQuantile: { value: 0.8, min: 0.5, max: 1, step: 0.05, group: "Ocean puff", label: "Relaxed edge", hint: "share of the calibration's relaxed faces (also right after a puff) that score 0 on each feature" },
   oceanPuffMinGap: { value: 0.5, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min puff gap", hint: "a feature gets full weight once the puff clears the relaxed edge by this share of its change" },
   oceanPuffMinSinkRate: { value: 0.8, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min sink rate", hint: "calibration quality: share of its relaxed faces that must score below the hover point" },
+
+  // --- Beak ------------------------------------------------------------------
+  // The bird opens its beak when the player opens their mouth (MediaPipe's jawOpen blendshape).
+  mouthOpenFrom: { value: 0.15, min: 0, max: 1, step: 0.01, group: "Beak", label: "Mouth closed below", hint: "jawOpen at which the beak starts to open" },
+  mouthOpenFull: { value: 0.45, min: 0.05, max: 1, step: 0.01, group: "Beak", label: "Mouth wide at", hint: "jawOpen at which the beak is open all the way" },
+  mouthOpenAlpha: { value: 0.5, min: 0.05, max: 1, step: 0.01, group: "Beak", label: "Smoothing", hint: "EMA per frame at 30 fps; 1 = no smoothing" },
 } satisfies Record<string, TunableSpec>;
 
 export type ConfigKey = keyof typeof CONFIG_SPEC;
