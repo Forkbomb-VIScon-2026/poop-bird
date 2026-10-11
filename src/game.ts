@@ -151,6 +151,8 @@ export interface Splat {
   dy: number;
   r: number;
   seed: number;
+  /** Game time it landed (targets only): its drips run down from then. */
+  at?: number;
 }
 
 export interface Obstacle {
@@ -4069,7 +4071,7 @@ export class Game {
     for (const t of this.targets) {
       const rect = targetRect(t);
       if (!circleRect(p.x, p.y, p.r, rect)) continue;
-      t.splats.push({ dx: p.x - t.x, dy: Math.max(-t.h, p.y - t.y), r: p.r * 1.3, seed: Math.random() * 1000 });
+      t.splats.push({ dx: p.x - t.x, dy: Math.max(-t.h, p.y - t.y), r: p.r * 1.3, seed: Math.random() * 1000, at: this.time });
       t.hitFlash = 0.3;
       this.combo++;
       this.bestCombo = Math.max(this.bestCombo, this.combo);
