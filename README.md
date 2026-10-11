@@ -119,18 +119,19 @@ timer. On the perch it sits beside the bird; in the city and the ocean, over
 the game near the top. The swim lesson and the puff calibration use it too.
 
 - **Flight lesson** (new players: the tutorial hasn't been seen on this
-  browser, or "I'm new here" is ticked), six steps:
+  browser, or "I'm new here" is ticked), four steps:
   1. "Squeeze your face" (Hold Space) until the bird starts filling up,
   2. "Now relax": the poop hops the bird up, and the coach says "Pooping
      pushes you up!",
   3. "Squeeze longer to fly": a full bird takes off,
   4. in a **calm city** (`Game.calmCity`: no obstacles, paparazzi or kids,
      and the street bounces the bird back up instead of ending the run):
-     "Squeeze & relax to stay up" until three poops (or 20 s),
-  5. "Poop on the car! 🎯": a car drives on; until the first hit (or 12 s),
-  6. "Now dodge the buildings!": the lesson counts as seen, and the calm ends
-     once the bird is clear of the street (or after 8 s); the first obstacle
-     comes `firstObstacleDelay` later.
+     "Squeeze & relax to stay up" until three poops (or 20 s), then "Nice
+     flying!". The lesson counts as seen, and the calm ends (and the coach
+     goes) once the bird is clear of the street (or after 8 s); the first
+     obstacle comes `firstObstacleDelay` later, unannounced.
+  The lesson only teaches flying: the buildings, what to poop on, and what
+  the ocean's jellyfish and sharks do are left for the player to discover.
   An accident (held too long) shows "Too long! Relax as soon as it's full".
   The perch part and the city part are remembered separately (`perch`,
   `city` in `TUTORIALS`).
@@ -256,8 +257,9 @@ city by city (the debug panel's "Progression" group).
   used right away and the level starts. If not, a slower **calibration** runs,
   with a timeline of its steps (so the next switch is never a surprise) and
   a look-around; there the fish shows each step (puffs up and floats, shrinks
-  and sinks) whatever your face does. New players then get the ocean tips as two
-  banners. Everyone else gets a short "GET READY!" banner instead, while the
+  and sinks) whatever your face does. New players then get the ocean tip as one
+  banner (spiking out, and popping when held too long; what's in the sea is
+  left to discover). Everyone else gets a short "GET READY!" banner instead, while the
   fish swims to the middle of the sea on its own (`Game.guideY`), so the level
   never starts with it on the sand or at the surface. A fish lying on the sand when the level starts isn't killed by the
   sea floor until it swims off (at most `oceanCalmFloorGrace`, 5 s). Details
@@ -265,7 +267,7 @@ city by city (the debug panel's "Progression" group).
 - **New players.** In face mode a new player always gets the swim lesson,
   even with a saved puff calibration (which it then refits). In keyboard mode
   a new player's first dive also swims on in calm water, under banners on
-  holding Space (or the screen) to puff and the two ocean tips; then the
+  holding Space (or the screen) to puff and the ocean tip; then the
   level starts. Neither ever stops the world. The tips show once per browser;
   **⚙️ Options → "I'm new here: show tips"** in the menu turns them back on
   (or off) for the next player.
@@ -336,8 +338,8 @@ city by city (the debug panel's "Progression" group).
   sync across pauses (`Game.sharkTheme` is the clock). It cuts out the moment the shark bites into the spines; if it eats you, it plays on until the shark is gone. No new obstacles spawn
   in the last seconds before it arrives. Without that file, a synthesized
   two-note "dun-dun" plays instead, speeding up as it closes in. The shark
-  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it,
-  and "SPIKE UP!" flashes by the fish. Then it lunges, homing on the fish:
+  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it.
+  Then it lunges, homing on the fish:
   it can't be outswum, the only defence is to be spiked when it bites (the
   spines reach a bit further than its bite). Spiked, it yelps, turns tail
   with spines in its snout (×5, "NOT TODAY!"). Not spiked, it eats you
