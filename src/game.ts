@@ -231,6 +231,35 @@ export interface Jelly {
 }
 
 /**
+ * The shark's state. Stalking: it swims in from ahead, drifting to the fish's
+ * depth. Windup: it holds back, jaws open, a "!" over its head. Lunge: it
+ * charges, homing on the fish, so swimming away doesn't help: only spikes do.
+ * Chomped: it got the fish and swims off with it. Fleeing: it bit into the
+ * spines and turns tail. Leaving: it missed (or the run ended) and swims on.
+ */
+export type SharkState = "stalking" | "windup" | "lunge" | "chomped" | "fleeing" | "leaving";
+
+export interface Shark {
+  state: SharkState;
+  /** Seconds in the current state. */
+  t: number;
+  /** Body centre: screen x, ocean y. The nose is SHARK_NOSE ahead along `heading`. */
+  x: number;
+  y: number;
+  /** Screen-space velocity (px/s). */
+  vx: number;
+  vy: number;
+  /** Radians the nose points at (π = left, toward the fish). */
+  heading: number;
+  /** 0..1 how far the jaws are open. */
+  jaw: number;
+  /** Seconds to the next note of its two-note theme, and how many it's played. */
+  beat: number;
+  beats: number;
+  seed: number;
+}
+
+/**
  * The fisherman's state. Rowing: his boat comes in along the surface. Casting:
  * a "!" and the bobber plops in. Fishing: the hook sinks to the depth the fish
  * was at when he cast, and he jigs it gently there. Leaving: the hook went
@@ -547,6 +576,11 @@ export interface ScreenSplat {
 }
 
 export type GameEvent =
+  | { type: "sharkNote"; high: boolean; volume: number }
+  | { type: "sharkWindup" }
+  | { type: "sharkLunge" }
+  | { type: "sharkSpiked"; points: number; combo: number }
+  | { type: "chomp" }
   | { type: "release"; charge: number; sweet: boolean }
   | { type: "accident"; message: string }
   | { type: "splat"; big: boolean }
@@ -708,6 +742,17 @@ export const ANGLER_TOPPLE_TIME = 1.4;
 export const ANGLER_HAT_DX = 110;
 /** Extra room after the fisherman's slot before the next ocean obstacle. */
 const ANGLER_ROOM = 320;
+/** The shark's nose (and jaws) is this far ahead of its body centre. */
+export const SHARK_NOSE = 72;
+/** Bite radius around the nose. */
+const SHARK_JAW_R = 20;
+/** Extra room after the shark swims in before the next ocean obstacle, so it attacks in open water. */
+const SHARK_ROOM = 340;
+/** Seconds before the shark swims in that no new obstacles spawn (the last ones scroll past before it lunges). */
+const SHARK_CLEAR_TIME = 3.5;
+
+const SHARK_SPIKED_TEXT = ["OUCH!", "NOT TODAY!", "SPIKY SNACK!", "BITE ME!", "TOO PRICKLY!"];
+const CHOMP_MESSAGES = ["CHOMP!", "Snack time", "Should've puffed!", "Fish fingers", "Gulp."];
 
 export class Game {
   width = 1000;
@@ -820,6 +865,16 @@ export class Game {
   balloonsPopped = 0;
   angler: Angler | null = null;
   anglersSnapped = 0;
+  shark: Shark | null = null;
+  /**
+   * Seconds into the shark's theme music, which starts well before the shark
+   * shows up (null = no shark coming). The shark times its approach so it
+   * lunges at `sharkThemeAttack`; main.ts keeps the music in sync with this.
+   */
+  sharkTheme: number | null = null;
+  sharksSpiked = 0;
+  /** The run ended in a shark: the fish isn't drawn. */
+  eaten = false;
   /** The run ended on the fisherman's line: the trophy photo's id. */
   trophy: number | null = null;
   message: { text: string; life: number } | null = null;
@@ -848,6 +903,7 @@ export class Game {
   private weddingsSeen = 0;
   /** This ocean stage gets a fisherman who hasn't shown up yet. */
   private anglerPlanned = false;
+  private sharkPlanned = false;
 
   events: GameEvent[] = [];
 
@@ -935,6 +991,11 @@ export class Game {
     this.anglersSnapped = 0;
     this.trophy = null;
     this.anglerPlanned = false;
+    this.shark = null;
+    this.sharkTheme = null;
+    this.sharksSpiked = 0;
+    this.eaten = false;
+    this.sharkPlanned = false;
     this.lastKidAt = -Infinity;
     this.wedding = null;
     this.bouquet = null;
@@ -1215,12 +1276,14 @@ export class Game {
     this.updateBouquet(dt);
     this.updateJellies(dt, speed);
     this.updateAngler(dt, speed);
+    this.updateSharkTheme(dt);
+    this.updateShark(dt);
     this.updateEffects(dt, speed);
 
     if (this.phase === "dying") {
       this.dyingTime += dt;
       const landed = this.angler?.state === "landed";
-      if (landed ? this.dyingTime > 2.6 : this.dyingTime > 1.3 && this.bird.y >= this.floorY() - this.bodyRadius - 1) {
+      if (this.eaten ? this.dyingTime > 1.8 : landed ? this.dyingTime > 2.6 : this.dyingTime > 1.3 && this.bird.y >= this.floorY() - this.bodyRadius - 1) {
         this.phase = "over";
         this.events.push({ type: "gameover" });
       }
@@ -1361,7 +1424,7 @@ export class Game {
     b.flap = Math.max(0, b.flap - dt);
   }
 
-  private crash(cause: "crash" | "zap" = "crash"): void {
+  private crash(cause: "crash" | "zap" | "chomp" = "crash"): void {
     if (this.demo) return;
     this.phase = "dying";
     this.dyingTime = 0;
@@ -1488,6 +1551,7 @@ export class Game {
       this.reelFish(a, dt);
       return;
     }
+    if (this.eaten) return;
 
     const target = dying ? 260 : targetSwimVelocity(input, config);
     b.vy = applyWaterDrag(b.vy, target, dt, Math.max(0.02, config.oceanDragTime));
@@ -1587,6 +1651,7 @@ export class Game {
       const clear =
         this.shore?.kind !== "exit" &&
         !this.anglerBusy &&
+        !this.sharkBusy &&
         this.obstacles.every((o) => {
           const span = obstacleSpan(o);
           return span.left > sx + 70 || span.right < sx - 70;
@@ -1625,6 +1690,281 @@ export class Game {
     this.events.push({ type: "jellyPopped", points, combo: this.combo });
   }
 
+  // --- shark -----------------------------------------------------------------------
+
+  /** True while the shark is hunting (or about to show up): no jellyfish get in its way. */
+  private get sharkBusy(): boolean {
+    const s = this.shark?.state;
+    return this.sharkClearing || s === "stalking" || s === "windup" || s === "lunge";
+  }
+
+  /** Seconds into its theme when the shark swims in: it's on screen for `sharkStalkTime`, then winds up, then lunges at `sharkThemeAttack`. */
+  private get sharkSpawnAt(): number {
+    return Math.max(0, config.sharkThemeAttack - config.sharkWindup - config.sharkStalkTime);
+  }
+
+  /** The music's playing and the shark is due soon: no new obstacles, so it attacks in open water. */
+  private get sharkClearing(): boolean {
+    return this.sharkTheme !== null && !this.shark && this.sharkTheme >= this.sharkSpawnAt - SHARK_CLEAR_TIME;
+  }
+
+  private sharkThemeDue(before: number): boolean {
+    return (
+      this.sharkPlanned &&
+      this.sharkTheme === null &&
+      !this.shark &&
+      !this.anglerBusy &&
+      this.stageObstacles >= Math.round(config.sharkSlot) &&
+      this.stageObstacles < before - 2
+    );
+  }
+
+  /** The music starts; the shark follows `sharkSpawnAt` seconds later. */
+  private startSharkTheme(): void {
+    this.sharkPlanned = false;
+    this.sharkTheme = 0;
+  }
+
+  private updateSharkTheme(dt: number): void {
+    if (this.sharkTheme === null) return;
+    // The clock runs on while dying too, so the music doesn't jump; main.ts stops it at game over.
+    this.sharkTheme += dt;
+    // The swim lesson (calm water, no spikes) came up before the shark: call it off for now, it comes back later.
+    if (!this.shark && this.calmWater) {
+      this.sharkTheme = null;
+      this.sharkPlanned = true;
+      return;
+    }
+    // The far quay came up first (only a late debug shark): no shark, the music fades.
+    if (!this.shark && this.shore?.kind === "exit") {
+      this.sharkTheme = null;
+      return;
+    }
+    if (!this.shark && this.sharkTheme >= this.sharkSpawnAt && this.swimming && this.angler?.state !== "hooked") this.spawnShark();
+  }
+
+  /** A shark swims in from ahead at the fish's depth. */
+  private spawnShark(): void {
+    const y = Math.max(SURFACE_Y + 60, Math.min(GROUND_Y - 60, this.bird.y));
+    this.shark = {
+      state: "stalking", t: 0, x: this.width + 140, y, vx: 0, vy: 0,
+      heading: Math.PI, jaw: 0, beat: 0, beats: 0, seed: Math.random() * 1000,
+    };
+    this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + SHARK_ROOM + config.oceanSpacingMin);
+  }
+
+  /** Debug: the shark's music starts now, and the shark follows as it would in a run (ocean only). */
+  spawnSharkNow(): void {
+    if (this.phase !== "playing" || this.transition || this.stage !== "ocean" || this.shark || this.sharkTheme !== null) return;
+    // Not during the swim lesson: the fish can't spike yet.
+    if (this.calmWater) return;
+    this.startSharkTheme();
+  }
+
+  private setSharkState(s: Shark, state: SharkState): void {
+    s.state = state;
+    s.t = 0;
+  }
+
+  /** Where the shark's nose (and its bite) is. */
+  sharkNose(s: Shark): { x: number; y: number } {
+    return { x: s.x + Math.cos(s.heading) * SHARK_NOSE, y: s.y + Math.sin(s.heading) * SHARK_NOSE };
+  }
+
+  private updateShark(dt: number): void {
+    const s = this.shark;
+    if (!s) return;
+    s.t += dt;
+    const b = this.bird;
+    const hunting = this.phase === "playing" && this.stage === "ocean" && !this.transition && this.angler?.state !== "hooked";
+    if (!hunting && (s.state === "stalking" || s.state === "windup" || s.state === "lunge")) {
+      // The run ended some other way: it loses interest and swims on.
+      this.setSharkState(s, "leaving");
+      s.vx = -220;
+      s.vy = 0;
+    }
+    const turnToward = (target: number, rate: number): void => {
+      let d = target - s.heading;
+      d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+      s.heading += Math.max(-rate * dt, Math.min(rate * dt, d));
+    };
+    const aimAtFish = (): number => {
+      const nose = this.sharkNose(s);
+      return Math.atan2(b.y - nose.y, Math.min(-20, b.x - nose.x));
+    };
+    const keepInWater = (): void => {
+      s.y = Math.max(SURFACE_Y + 34, Math.min(GROUND_Y - 30, s.y));
+    };
+
+    // Its theme: low, high, low, high… slow and soft far off, faster and louder
+    // as it closes in, fastest through the windup; silent once it lunges.
+    if (s.state === "stalking" || s.state === "windup") {
+      s.beat -= dt;
+      if (s.beat <= 0) {
+        const far = this.sharkNose(s).x - b.x - config.sharkLungeRange;
+        const close = s.state === "windup" ? 1 : Math.max(0, Math.min(1, 1 - far / 550));
+        s.beat = s.state === "windup" ? 0.13 : 0.55 - 0.33 * close;
+        this.events.push({ type: "sharkNote", high: s.beats % 2 === 1, volume: 0.45 + 0.55 * close });
+        s.beats++;
+      }
+    }
+
+    switch (s.state) {
+      case "stalking": {
+        // Glides in, weaving lazily, drifting toward the fish's depth, timed to
+        // reach its lunge range as the music gets to the windup.
+        const left = config.sharkThemeAttack - config.sharkWindup - (this.sharkTheme ?? 0);
+        const toGo = this.sharkNose(s).x - b.x - config.sharkLungeRange;
+        s.vx = -Math.max(40, Math.min(600, toGo / Math.max(0.3, left)));
+        const want = b.y + Math.sin(s.t * 1.7 + s.seed) * 30;
+        s.vy = (want - s.y) * 1.4;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        keepInWater();
+        turnToward(Math.PI + Math.max(-0.35, Math.min(0.35, s.vy / 300)), 3);
+        s.jaw = Math.max(0, s.jaw - dt * 2);
+        if (this.sharkNose(s).x - b.x < config.sharkLungeRange) {
+          this.setSharkState(s, "windup");
+          this.events.push({ type: "sharkWindup" });
+        }
+        break;
+      }
+      case "windup": {
+        // Holds back a little, lines up on the fish and opens wide.
+        s.vx = 50;
+        s.vy = (b.y - s.y) * 3;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        keepInWater();
+        turnToward(aimAtFish(), 5);
+        s.jaw = Math.min(1, s.jaw + dt * 3);
+        // Lunges on the music's cue (or after the windup, if the clock is gone).
+        if (this.sharkTheme !== null ? this.sharkTheme >= config.sharkThemeAttack : s.t >= config.sharkWindup) {
+          this.setSharkState(s, "lunge");
+          this.shake = Math.max(this.shake, 4);
+          this.events.push({ type: "sharkLunge" });
+        }
+        break;
+      }
+      case "lunge": {
+        const nose = this.sharkNose(s);
+        // Homes on the fish until it's level with it.
+        if (nose.x > b.x) turnToward(aimAtFish(), config.sharkTurnRate);
+        const speed = config.sharkLungeSpeed;
+        s.vx = Math.cos(s.heading) * speed;
+        s.vy = Math.sin(s.heading) * speed;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        keepInWater();
+        s.jaw = 1;
+        const r = this.hitRadius;
+        const n = this.sharkNose(s);
+        const dist = Math.hypot(n.x - b.x, n.y - b.y);
+        const spiked = this.spike.spiked;
+        const reach = (r + SHARK_JAW_R) * (spiked ? config.sharkSpikeReach : 1);
+        if (dist < reach) {
+          if (spiked) this.spikeShark(s);
+          else this.chomp(s);
+        } else if (n.x < b.x - r - 40) {
+          this.setSharkState(s, "leaving");
+        }
+        break;
+      }
+      case "chomped":
+        // Swims off with its meal, jaws shut, a burp of bubbles now and then.
+        s.vx = -260;
+        s.vy = Math.sin(s.t * 3) * 30;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        keepInWater();
+        turnToward(Math.PI, 4);
+        s.jaw = Math.max(0, s.jaw - dt * 8);
+        if (Math.random() < dt * 6) this.bubbleAt(this.sharkNose(s).x, s.y - 6, 2);
+        break;
+      case "fleeing":
+        // Turns tail and bolts off ahead, diving away.
+        turnToward(0.35, 7);
+        s.vx += (420 - s.vx) * Math.min(1, dt * 3);
+        s.vy += (90 - s.vy) * Math.min(1, dt * 3);
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        s.y = Math.min(GROUND_Y + 60, s.y);
+        s.jaw = Math.max(0, s.jaw - dt * 6);
+        if (Math.random() < dt * 14) this.bubbleAt(s.x - Math.cos(s.heading) * 60, s.y, 1);
+        break;
+      case "leaving":
+        s.vx += (-260 - s.vx) * Math.min(1, dt * 2);
+        s.vy *= Math.exp(-dt * 2);
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        keepInWater();
+        turnToward(Math.PI, 3);
+        s.jaw = Math.max(0, s.jaw - dt * 3);
+        break;
+    }
+    if (s.x < -240 || s.x > this.width + 260) {
+      if (s.state === "fleeing" || s.state === "leaving" || s.state === "chomped") {
+        // It's gone, and so is its music.
+        this.shark = null;
+        this.sharkTheme = null;
+      }
+    }
+  }
+
+  private bubbleAt(x: number, y: number, n: number): void {
+    for (let i = 0; i < n; i++) {
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 10, y: y + (Math.random() - 0.5) * 10,
+        vx: (Math.random() - 0.5) * 40, vy: -30 - Math.random() * 40,
+        life: 0.6 + Math.random() * 0.5, maxLife: 1.1, size: 2 + Math.random() * 4,
+        color: "#e0fbfc", gravity: -120, world: true,
+      });
+    }
+  }
+
+  /** It bit into the spines: it yelps and flees, and the fish gets knocked back a little. */
+  private spikeShark(s: Shark): void {
+    this.setSharkState(s, "fleeing");
+    // Beaten: its music cuts out right away.
+    this.sharkTheme = null;
+    s.vx = 120;
+    s.vy = -60;
+    this.sharksSpiked++;
+    this.combo++;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    this.targetsHit++;
+    const points = Math.round(config.targetPoints * config.sharkMultiplier * this.comboMultiplier);
+    this.bonus += points;
+    const b = this.bird;
+    const n = this.sharkNose(s);
+    this.floaters.push({ x: n.x, y: n.y - 50, text: pick(SHARK_SPIKED_TEXT), color: "#ffd60a", size: 30, life: 1.2, maxLife: 1.2 });
+    const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
+    this.floaters.push({ x: n.x, y: n.y - 20, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
+    this.shake = Math.max(this.shake, 10);
+    b.vy += 80 * Math.sign(b.y - s.y || 1);
+    b.stretchV -= 8;
+    for (let i = 0; i < 20; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 80 + Math.random() * 200;
+      this.particles.push({
+        x: n.x, y: n.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 0.3 + Math.random() * 0.4, maxLife: 0.7, size: 2 + Math.random() * 4,
+        color: Math.random() < 0.5 ? "#ffd60a" : "#ffffff", gravity: 0, world: true,
+      });
+    }
+    this.events.push({ type: "sharkSpiked", points, combo: this.combo });
+  }
+
+  /** Not spiked: gulp. The run is over and the shark swims off with the fish. */
+  private chomp(s: Shark): void {
+    this.setSharkState(s, "chomped");
+    this.eaten = true;
+    this.combo = 0;
+    this.crash("chomp");
+    this.message = { text: pick(CHOMP_MESSAGES), life: 2.2 };
+    this.shake = 14;
+  }
+
   // --- fisherman -------------------------------------------------------------------
 
   /** True while the fisherman is a threat: no jellyfish crowd his hook. */
@@ -1638,7 +1978,8 @@ export class Game {
       this.anglerPlanned &&
       !this.angler &&
       this.stageObstacles >= Math.round(config.anglerSlot) &&
-      this.stageObstacles < before - 1
+      this.stageObstacles < before - 1 &&
+      !this.shark
     );
   }
 
@@ -2032,6 +2373,7 @@ export class Game {
       this.angler.hookX -= dx;
       this.angler.hatX -= dx;
     }
+    if (this.shark) this.shark.x -= dx;
   }
 
   /**
@@ -2059,10 +2401,16 @@ export class Game {
     this.bouquet = null;
     this.doves = [];
     this.angler = null;
+    this.shark = null;
+    this.sharkTheme = null;
     if (to === "city") {
       this.cityStage++;
       this.weddingPlanned = Math.random() < config.weddingChance;
-    } else this.anglerPlanned = Math.random() < config.anglerChance;
+    } else {
+      // One set piece per ocean stage: a shark or a fisherman, never both.
+      this.sharkPlanned = Math.random() < config.sharkChance;
+      this.anglerPlanned = !this.sharkPlanned && Math.random() < config.anglerChance;
+    }
     this.message = null;
     this.lastGapCenter = 260;
     this.jellySpawnAcc = 0;
@@ -2159,9 +2507,10 @@ export class Game {
       return;
     }
 
-    if (!this.gateSpawned && this.distance >= this.nextObstacleAt) {
+    if (!this.gateSpawned && this.distance >= this.nextObstacleAt && !this.sharkClearing) {
       const ocean = this.stage === "ocean";
       const before = Math.round(ocean ? config.oceanObstacles : config.cityObstaclesBeforeGate);
+      if (ocean && this.sharkThemeDue(before)) this.startSharkTheme();
       // The waterfront waits until a paparazzo's front page has hung in the city.
       const holdGate = !ocean && (this.pendingTabloids.length > 0 || this.targets.some((t) => t.pap?.state === "watching"));
       // A power line takes up more room: the next obstacle waits until it's past.

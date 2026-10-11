@@ -78,6 +78,7 @@ starts the face dataset collector (local credentials `local` /
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
+| **S** | With the debug panel open: a shark swims in (ocean only) |
 | **A** | With the debug panel open: a boat that drops its anchor comes in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 
@@ -327,6 +328,21 @@ city by city (the debug panel's "Progression" group).
     his hat flying off into the water. A moment later he sits up again, bald
     and shaking his fist. Unspiked, the fish just slips past the line.
   Tunables are in the debug panel's "Fisherman" group.
+- **Sharks:** most ocean stages (`sharkChance`) have a shark instead of the
+  fisherman. Its music starts a couple of obstacles in (`sharkSlot`), well
+  before it shows up: `shark_theme.mp3` (the Jaws theme, from the second
+  "do-doop"), timed so the shark shows up as the attack music kicks in
+  (17.5 s into the track) and lunges on the swell `sharkThemeAttack` (16.6 s) in, and kept in
+  sync across pauses (`Game.sharkTheme` is the clock). It cuts out the moment the shark bites into the spines; if it eats you, it plays on until the shark is gone. No new obstacles spawn
+  in the last seconds before it arrives. Without that file, a synthesized
+  two-note "dun-dun" plays instead, speeding up as it closes in. The shark
+  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it,
+  and "SPIKE UP!" flashes by the fish. Then it lunges, homing on the fish:
+  it can't be outswum, the only defence is to be spiked when it bites (the
+  spines reach a bit further than its bite). Spiked, it yelps, turns tail
+  with spines in its snout (×5, "NOT TODAY!"). Not spiked, it eats you
+  and swims off with your tail sticking out of its mouth. Spiking up at the
+  "!" leaves time before the spikes pop. Tunables are in the "Sharks" group.
 - **No poop underwater.** Charge, poops and city targets are off in the ocean.
 - **Leaping out.** After `oceanObstacles` (8) ocean obstacles the far quay's
   wall comes up ahead. Once the last obstacle is behind you and the wall is

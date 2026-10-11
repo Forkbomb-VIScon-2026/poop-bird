@@ -804,6 +804,7 @@ async function oceanTipBanners(token: number, intro?: [string, string]): Promise
     ...(intro ? [intro] : []),
     ["Spikes! 🐡", "Puff past the red line to spike out and pop jellyfish 🪼"],
     ["Watch out! 🪸", "Unspiked, jellyfish sting. Dodge the coral, rocks and sea floor"],
+    ["Shark! 🦈", "You can't outswim it. When it bares its teeth, spike up so it bites the spines"],
   ];
   for (const [title, hint] of tips) {
     setPuffOverlay(title, hint, null, true);
@@ -1566,6 +1567,7 @@ function onGameOver(): void {
   }
   $("go-balloons").textContent = String(game.balloonsPopped);
   $("go-lines").textContent = String(game.anglersSnapped);
+  $("go-sharks").textContent = String(game.sharksSpiked);
 
   // Landed by the fisherman: his trophy photo.
   show($("go-trophy"), game.trophy !== null);
@@ -1780,6 +1782,7 @@ function frame(now: number): void {
     }
   }
   sound.setPowerLineProximity(powerLineProximity);
+  sound.setSharkTheme(state === "playing" && game.sharkTheme !== null ? config.sharkThemeOffset + game.sharkTheme : null);
 
   updateHud();
   updateStrainBars();
@@ -1865,6 +1868,10 @@ function handleGameEvents(): void {
       case "crash":
         sound.splat(true);
         buzz(200);
+        break;
+      case "chomp":
+        sound.sharkBite();
+        buzz([80, 40, 200]);
         break;
       case "zap":
         sound.zap();
@@ -2014,6 +2021,19 @@ function handleGameEvents(): void {
         sound.lineSnap();
         buzz(60);
         break;
+      case "sharkNote":
+        sound.sharkNote(e.high, e.volume);
+        break;
+      case "sharkWindup":
+        break;
+      case "sharkLunge":
+        sound.sharkLunge();
+        break;
+      case "sharkSpiked":
+        sound.sharkYelp();
+        sound.hit(e.combo);
+        buzz([40, 30, 80]);
+        break;
       case "anchorWarn":
         // aaron removed this we dont want no fucking beep
         // sound.beep();
@@ -2103,6 +2123,10 @@ window.addEventListener("keydown", (e) => {
     case "h":
       // Debug shortcut: a fisherman rows in (ocean only).
       if (debug?.visible && state === "playing") game.spawnAnglerNow();
+      break;
+    case "s":
+      // Debug shortcut: a shark swims in (ocean only).
+      if (debug?.visible && state === "playing") game.spawnSharkNow();
       break;
     case "a":
       // Debug shortcut: a boat that drops its anchor (ocean only).

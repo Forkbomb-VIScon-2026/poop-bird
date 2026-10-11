@@ -401,6 +401,107 @@ describe("attract mode", () => {
   });
 });
 
+describe("sharks", () => {
+  const saved = { jelly: config.oceanJellyRate, angler: config.anglerChance };
+  afterEach(() => {
+    config.oceanJellyRate = saved.jelly;
+    config.anglerChance = saved.angler;
+  });
+
+  /** In the ocean, alone with a shark that just swam in; the fish hovers at y 300. */
+  function sharkAttack(): Game {
+    config.oceanJellyRate = 0;
+    config.anglerChance = 0;
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    expect(game.stage).toBe("ocean");
+    game.obstacles = [];
+    game["nextObstacleAt"] = Infinity;
+    Object.assign(game.bird, { y: 300, vy: 0 });
+    game.puffInput = config.oceanHoverPuff;
+    game.spawnSharkNow();
+    expect(game.sharkTheme).toBe(0);
+    // Its music plays a while before it shows up.
+    for (let i = 0; i < 60 * 20 && !game.shark; i++) game.step(1 / 60);
+    expect(game.shark?.state).toBe("stalking");
+    return game;
+  }
+
+  /** Steps until the shark winds up, then feeds `puff` until it's done with the fish (or 6 s pass). */
+  function waitAndPuff(game: Game, puff: number): void {
+    for (let i = 0; i < 60 * 10 && game.shark?.state === "stalking"; i++) game.step(1 / 60);
+    expect(game.shark?.state).toBe("windup");
+    game.puffInput = puff;
+    for (let i = 0; i < 60 * 6 && game.phase === "playing" && game.shark?.state !== "fleeing"; i++) game.step(1 / 60);
+  }
+
+  for (const width of [1000, 1400]) {
+    it(`lunges on the music's cue (${width} px wide)`, () => {
+      const game = sharkAttack();
+      game.resize(width);
+      for (let i = 0; i < 60 * 20 && game.shark?.state !== "lunge"; i++) game.step(1 / 60);
+      expect(game.shark?.state).toBe("lunge");
+      expect(game.sharkTheme!).toBeCloseTo(config.sharkThemeAttack, 1);
+    });
+  }
+
+  it("spawns no obstacles in the last seconds before it swims in", () => {
+    config.oceanJellyRate = 0;
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    game.obstacles = [];
+    game.puffInput = config.oceanHoverPuff;
+    game.spawnSharkNow();
+    const spawnAt = config.sharkThemeAttack - config.sharkWindup - config.sharkStalkTime;
+    let late = 0;
+    for (let i = 0; i < 60 * 20 && !game.shark; i++) {
+      // One obstacle falls due inside the clear window.
+      if (game.sharkTheme! > spawnAt - 3 && game.sharkTheme! < spawnAt - 3 + 1 / 30) game["nextObstacleAt"] = game.distance;
+      const before = game.obstacles.length;
+      game.step(1 / 60);
+      if (game.obstacles.length > before && game.sharkTheme! > spawnAt - 3) late++;
+      // Only the spawning is under test: wave the fish through the early ones.
+      for (const o of game.obstacles) Object.assign(o, { gapTop: -1000, gapBottom: 2000, anchor: false, bottom: "none" });
+    }
+    expect(game.shark).not.toBeNull();
+    expect(late).toBe(0);
+  });
+
+  it("stays away during the swim lesson, while the fish can't spike", () => {
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    game.calmWater = true;
+    game.spawnSharkNow();
+    expect(game.sharkTheme).toBeNull();
+  });
+
+  it("eats a fish that isn't spiked", () => {
+    const game = sharkAttack();
+    waitAndPuff(game, config.oceanHoverPuff);
+    expect(game.phase).not.toBe("playing");
+    expect(game.eaten).toBe(true);
+    expect(game.shark?.state).toBe("chomped");
+  });
+
+  it("can't be outswum: rising just short of spiking still gets you eaten", () => {
+    const game = sharkAttack();
+    waitAndPuff(game, config.oceanSpikeThreshold - 0.02);
+    expect(game.eaten).toBe(true);
+  });
+
+  it("bites into the spines and flees from a spiked fish", () => {
+    const game = sharkAttack();
+    const bonus = game.bonus;
+    waitAndPuff(game, 1);
+    expect(game.phase).toBe("playing");
+    expect(game.eaten).toBe(false);
+    expect(game.shark?.state).toBe("fleeing");
+    expect(game.sharksSpiked).toBe(1);
+    expect(game.sharkTheme).toBeNull(); // its music stops at once
+    expect(game.bonus).toBeGreaterThan(bonus);
+  });
+});
+
 describe("practice perch", () => {
   /** Strains for `strainS`, then relaxes for `relaxS`, on the perch. */
   function practise(game: Game, strainS: number, relaxS: number): void {
