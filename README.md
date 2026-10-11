@@ -65,6 +65,7 @@ starts the face dataset collector (local credentials `local` /
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / **Esc** / ⏸ button | Pause, and resume |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
+| **,** / ⚙ button | Settings (menu and in game; opening it mid-run pauses) |
 | **Enter** | Press the yellow button on any screen (Play, Play again…). Every button takes exactly one key, the one on the keycap badge on its corner |
 | **K** | Menu settings (the gear): play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
