@@ -1708,15 +1708,14 @@ export class Game {
     return this.sharkTheme !== null && !this.shark && this.sharkTheme >= this.sharkSpawnAt - SHARK_CLEAR_TIME;
   }
 
-  private sharkThemeDue(): boolean {
+  private sharkThemeDue(before: number): boolean {
     return (
       this.sharkPlanned &&
       this.sharkTheme === null &&
       !this.shark &&
-      // The fisherman goes first: the shark is the stage's climax.
-      !this.anglerPlanned &&
       !this.anglerBusy &&
-      this.stageObstacles >= Math.round(config.sharkSlot)
+      this.stageObstacles >= Math.round(config.sharkSlot) &&
+      this.stageObstacles < before - 2
     );
   }
 
@@ -1974,22 +1973,14 @@ export class Game {
     return s === "rowing" || s === "casting" || s === "fishing" || s === "tugging" || s === "hooked";
   }
 
-  private anglerDue(): boolean {
+  private anglerDue(before: number): boolean {
     return (
       this.anglerPlanned &&
       !this.angler &&
       this.stageObstacles >= Math.round(config.anglerSlot) &&
-      !this.shark &&
-      this.sharkTheme === null
+      this.stageObstacles < before - 1 &&
+      !this.shark
     );
-  }
-
-  /**
-   * A shark or the fisherman is still to come or under way this ocean stage: the far quay waits for them.
-   * With both, the stage runs long enough to fit the fisherman and then the shark.
-   */
-  private get oceanSetPieceAhead(): boolean {
-    return this.anglerPlanned || this.anglerBusy || this.sharkPlanned || this.sharkTheme !== null || this.shark !== null;
   }
 
   /** His boat rows in from the right. Returns the extra room it needs before the next obstacle. */
@@ -2416,9 +2407,9 @@ export class Game {
       this.cityStage++;
       this.weddingPlanned = Math.random() < config.weddingChance;
     } else {
-      // A shark, a fisherman, both (the fisherman first) or neither.
+      // One set piece per ocean stage: a shark or a fisherman, never both.
       this.sharkPlanned = Math.random() < config.sharkChance;
-      this.anglerPlanned = Math.random() < config.anglerChance;
+      this.anglerPlanned = !this.sharkPlanned && Math.random() < config.anglerChance;
     }
     this.message = null;
     this.lastGapCenter = 260;
@@ -2519,12 +2510,9 @@ export class Game {
     if (!this.gateSpawned && this.distance >= this.nextObstacleAt && !this.sharkClearing) {
       const ocean = this.stage === "ocean";
       const before = Math.round(ocean ? config.oceanObstacles : config.cityObstaclesBeforeGate);
-      if (ocean && this.sharkThemeDue()) this.startSharkTheme();
+      if (ocean && this.sharkThemeDue(before)) this.startSharkTheme();
       // The waterfront waits until a paparazzo's front page has hung in the city.
-      // In the ocean it waits for the stage's shark and fisherman.
-      const holdGate = ocean
-        ? this.oceanSetPieceAhead
-        : this.pendingTabloids.length > 0 || this.targets.some((t) => t.pap?.state === "watching");
+      const holdGate = !ocean && (this.pendingTabloids.length > 0 || this.targets.some((t) => t.pap?.state === "watching"));
       // A power line takes up more room: the next obstacle waits until it's past.
       // So does a balloon, which drifts along with the wind.
       // A pending front page always gets the next slot.
@@ -2535,7 +2523,7 @@ export class Game {
       const balloon = special && !powerLine && roll < powerLineChance + config.balloonChance;
       let extra = 0;
       if (this.stageObstacles >= before && !holdGate) this.spawnShore();
-      else if (ocean && this.anglerDue()) extra = this.spawnAngler();
+      else if (ocean && this.anglerDue(before)) extra = this.spawnAngler();
       else if (ocean) extra = this.spawnOceanObstacle();
       else if (this.weddingDue()) extra = this.spawnWedding();
       else if (powerLine) extra = this.spawnPowerLine();

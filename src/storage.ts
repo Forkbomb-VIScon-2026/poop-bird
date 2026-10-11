@@ -38,40 +38,6 @@ export function storageRemove(key: string): void {
   }
 }
 
-// --- Known faces (sessionStorage only) ------------------------------------------
-// Face descriptors are biometric data (known-faces.ts): they stay in this tab's
-// sessionStorage, so they go when the tab closes, and never in localStorage.
-
-const KNOWN_FACES_KEY = "poopbird.knownFaces.v1";
-
-function sessionStore(): Storage | null {
-  try {
-    return typeof sessionStorage === "undefined" ? null : sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-/** The stored known faces as parsed JSON (known-faces.ts parseFaces checks it); null if none. */
-export function loadKnownFacesJson(): unknown {
-  try {
-    const raw = sessionStore()?.getItem(KNOWN_FACES_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Stores the known faces (serializeFaces), or deletes them for null. */
-export function saveKnownFacesJson(json: string | null): void {
-  try {
-    if (json === null) sessionStore()?.removeItem(KNOWN_FACES_KEY);
-    else sessionStore()?.setItem(KNOWN_FACES_KEY, json);
-  } catch {
-    // ignore: the faces are still known in memory for this page
-  }
-}
-
 // --- Calibrations (written by main.ts, also read by the collect page) --------
 
 export const CALIBRATION_KEY = "poopbird.calibration.v1";

@@ -6,7 +6,7 @@ FROM mirror.gcr.io/library/node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY scripts ./scripts
-# postinstall copies the MediaPipe WASM into public/mediapipe/wasm and the face-ID weights into public/faceid
+# postinstall copies the MediaPipe WASM into public/mediapipe/wasm
 RUN npm ci
 COPY . .
 # Uses the model from the build context if present, otherwise downloads it once.

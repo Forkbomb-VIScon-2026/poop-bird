@@ -2,8 +2,6 @@ node_modules/
 dist/
 # Generated: copied from node_modules by `npm run copy-wasm` (runs on npm install)
 public/mediapipe/wasm/
-# Generated the same way: the face recognition weights (public/faceid)
-public/faceid/
 # Downloaded by `npm run fetch-model`
 public/mediapipe/face_landmarker.task
 *.log
