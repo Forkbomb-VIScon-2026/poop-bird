@@ -59,3 +59,5 @@ The pictures in this folder are cut out of (or cropped from) photos on Wikimedia
 | `walker4.png` | [Fort Greene Brooklyn NY assorted photos near Fulton Street 2 lady walking four dogs.jpg](https://commons.wikimedia.org/wiki/File%3AFort_Greene_Brooklyn_NY_assorted_photos_near_Fulton_Street_2_lady_walking_four_dogs.jpg) | Tomwsulcer | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `walker5.png` | [Jogging towards Willoughby on the Wolds - geograph.org.uk - 3606681.jpg](https://commons.wikimedia.org/wiki/File%3AJogging_towards_Willoughby_on_the_Wolds_-_geograph.org.uk_-_3606681.jpg) | JThomas | [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0/) |
 | `fish-deflated.png`, `fish-puffed.png` | Supplied by the project owner | — | Check before publishing |
+
+`calib-strained.jpg` and `calib-puffed.jpg` (the calibration screen's example faces) are AI-generated (not a real person), cropped from one two-panel image.

@@ -2,13 +2,15 @@
 // calibration (strain, and puff at the first dive), sound and the debug panel.
 
 import "./style.css";
+import calibPuffedUrl from "./assets/calib-puffed.jpg";
+import calibStrainedUrl from "./assets/calib-strained.jpg";
 import { config } from "./config";
 import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { FaceRecognizer, alignedFaceCrop } from "./faceid";
-import { BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, VIEW_H, wireAt } from "./game";
+import { BIRD_RADIUS, GROUND_Y, Game, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
@@ -61,8 +63,7 @@ import {
   defaultCalibration,
   featureStats,
   initialStrainState,
-  neutralFaceStats,
-  neutralFalseRate,
+  robustFeatureStats,
   restoreCalibration,
   smoothStrain,
   stepStrain,
@@ -109,7 +110,7 @@ function show(el: HTMLElement, visible: boolean): void {
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
-  dockCam(name === "ready" && mode === "face");
+  dockCam(mode !== "face" ? null : name === "ready" ? "perch" : name === "calibrate" ? "calib" : null);
   dockCoach(name === "ready");
   // Game over gets longer: players often die mid-press, and shouldn't skip their score.
   armButtonKeys(name === "gameover" ? 800 : 300);
@@ -125,7 +126,7 @@ function armButtonKeys(ms: number): void {
 // --- State ------------------------------------------------------------------------
 
 type AppState =
-  | "menu" | "loading" | "calibrating" | "calibrated" | "ready" | "playing" | "paused" | "gameover";
+  | "menu" | "loading" | "calibrating" | "ready" | "playing" | "paused" | "gameover";
 type Mode = "face" | "keyboard";
 
 let state: AppState = "menu";
@@ -143,30 +144,24 @@ const debug = DEBUG
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
 
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
-/** `calibration` is the default one, fitted to a quick relaxed-face read and never saved. */
+/** `calibration` is a guess from the relaxed face ("Play anyway" after failed strains), not a fitted one. */
 let calibrationIsDefault = false;
 /** Puff calibration (neutral vs. full puff), on top of the fixed pucker range. null = the pucker range alone. */
 let puffCalibration: Calibration | null = loadCalibration(PUFF_CALIBRATION_KEY, PUFF_FEATURES);
-/** The puff calibration ran (and passed or failed) this session; later dives skip it. Reset by C. */
-let puffCalibrationTried = false;
-/** The last puff calibration attempt, passed or not (console: poopyBird.lastPuffAttempt). */
-let lastPuffAttempt: { cal: Calibration; quality: ReturnType<typeof assessPuffCalibration> } | null = null;
-/** Flow token of the puff calibration in progress, if any. */
+/** Flow token of the ocean tips in progress, if any. */
 let activePuffCalibration: number | null = null;
-/** Set when a different face got locked mid puff calibration: there's no relaxed read of them to compare with, so it's abandoned. */
+/** Set to cut the ocean tips short. */
 let abortPuffCalibration = false;
 /** The coach (#coach) belongs to whoever claimed it last (claimCoach); older owners can't change or hide it. */
 let coachOwner = 0;
-/** The coach claim of the puff calibration in progress. */
+/** The coach claim of the ocean tips in progress. */
 let puffCoach = 0;
 /** The coach claim of the perch. */
 let perchCoach = 0;
 /** Poops and accidents this run, for the city lesson. */
 const lessonCount = { poops: 0, accidents: 0, lastAccident: -Infinity };
-/** A calibration that failed the quality check; used only if the player picks "Play anyway". */
+/** The last strain calibration that failed the quality check; used only if the player picks "Play anyway". */
 let rejectedCalibration: Calibration | null = null;
-/** Whether the calibration result screen is showing a failed calibration. */
-let calibrationFailed = false;
 /**
  * Bumped on every screen-flow transition. Async flows (camera startup,
  * calibration) capture it and bail out if it changed, so a stale
@@ -177,14 +172,6 @@ let strain = initialStrainState();
 let puffSignal = initialPuffState();
 /** Analog puff from Space / pointer (inflates while held, deflates otherwise). */
 let keyPuff = 0;
-/** While the swim lesson shows a step: the puff the fish is driven to, whatever the face does. null = the player's puff. */
-let scriptTarget: number | null = null;
-/** The scripted puff, easing toward scriptTarget at SCRIPT_RATE per second. */
-let scriptedPuff = 0;
-const SCRIPT_RATE = 1.2;
-/** Scripted puff on puff steps (it floats) and on relax steps (it sinks). */
-const SCRIPT_PUFF = 0.75;
-const SCRIPT_RELAX = 0.05;
 let lastFace: FaceFrame | null = null;
 /** How far the player's mouth is open, 0..1 (smoothed jawOpen); the bird's beak mirrors it. */
 let mouthOpen = 0;
@@ -221,7 +208,6 @@ function facePuff(): number {
 
 /** The single puff signal for the fish: max of face and key (only one is ever nonzero, see manualHeld()). */
 function puffInput(): number {
-  if (scriptTarget !== null) return scriptedPuff;
   return Math.max(keyPuff, facePuff());
 }
 
@@ -254,6 +240,7 @@ tracker.onFrame((frame) => {
   }
   calibFrames?.push(frame.time);
   if (calibSamples && frame.features) calibSamples.push({ t: frame.time, f: frame.features });
+  if (frame.features) readRelaxed(frame.features);
   strain = stepStrain(strain, frame.features, calibration, dt, config);
   puffSignal = stepPuff(puffSignal, frame.features, puffCalibration, dt, config, puffCalibration ?? calibration);
   if (debug) {
@@ -280,12 +267,9 @@ function onNewFace(): void {
   strain = initialStrainState();
   puffSignal = initialPuffState();
   newFaceLock();
+  // The relaxed read and any hold so far were someone else's: start over (a known face skips it).
   if (state === "calibrating") void runCalibration();
-  // The default calibration was fitted to the previous face's relaxed read. With face
-  // recognition any calibration may be the previous face's: the perch reads the new
-  // one, and recognition gives them theirs back if they're known.
-  else if (state === "ready" && (calibrationIsDefault || faceIdWorks())) void runDefaultCalibration();
-  if (activePuffCalibration !== null) abortPuffCalibration = true;
+  // On the perch, recognition decides (recognizeFace): a new face calibrates first.
 }
 
 // --- Face recognition: who's playing ----------------------------------------------------
@@ -341,6 +325,8 @@ function resetFaceId(): void {
   faceId.puff = null;
   wantFaceCrop = false;
   faceCrop = null;
+  // A failed fit was the previous face's: "Play anyway" mustn't hand it to this one.
+  rejectedCalibration = null;
 }
 
 /** The tracker locked onto a face that may be someone else: recognize it. */
@@ -402,14 +388,16 @@ async function recognizeFace(): Promise<void> {
   } else {
     faceId.status = "new";
     faceId.descriptors = samples;
-    // Someone new took over mid-run: the puff calibration is someone else's, so the next dive samples theirs.
-    if (!faceId.puff && puffCalibration && activePuffCalibration === null) {
+    // Someone new took over (mid-run, say): the puff calibration is someone else's. Pursed lips until they calibrate.
+    if (!faceId.puff && puffCalibration) {
       puffCalibration = null;
-      puffCalibrationTried = false;
       puffSignal = initialPuffState();
     }
   }
   rememberFace();
+  // Someone not calibrated here sat down at the perch: calibrate them first. (Mid-run
+  // the run goes on; the next one starts with the calibration, see startFaceMode.)
+  if (state === "ready" && mode === "face" && !faceCalibrated()) void runCalibration(false);
 }
 
 /**
@@ -431,6 +419,10 @@ function adoptKnownFace(face: KnownFace): void {
     puffCalibration = face.puff;
     puffSignal = initialPuffState();
     adopted = true;
+  } else if (!face.puff && !faceId.puff && puffCalibration) {
+    // They skipped the puff: pursed lips alone, not whoever's puff was active.
+    puffCalibration = null;
+    puffSignal = initialPuffState();
   }
   if (adopted) showToast("👋 Welcome back! You're still calibrated", 2500);
 }
@@ -579,11 +571,11 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   if (freshCamera) newFaceLock();
   else void recognizeFace();
   show(cam, true);
-  if (forceCalibrate) await runCalibration();
-  // Without face recognition a saved full calibration is used, whoever plays. With it, the
-  // face decides: the perch reads the face, and recognition gives a known face its own back.
-  else if (calibration && !calibrationIsDefault && !faceIdWorks()) startReady();
-  else await runDefaultCalibration();
+  // A calibrated face goes straight to the perch; anyone else (or still being recognized)
+  // gets the calibration screen, which lets a face that turns out to be known through.
+  // Without face recognition a saved calibration is used, whoever plays.
+  if (!forceCalibrate && (faceCalibrated() || (!faceIdWorks() && calibration && !calibrationIsDefault))) startReady();
+  else await runCalibration(forceCalibrate);
 }
 
 function startKeyboardMode(): void {
@@ -610,129 +602,359 @@ function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function runCalibration(): Promise<void> {
+// The calibration screen: before the first run of a face this tab doesn't
+// know, the player strains once and puffs once, each started with a button,
+// with an example photo next to their webcam. The relaxed face is never asked
+// for: it's read in the background from the moment a face shows, while the
+// player reads the screen. Nothing else in the game calibrates.
+
+/** What the calibration screen is doing, and its relaxed-face read. */
+const calib = {
+  /** Read the relaxed face from the tracker: only during the welcome, before any example face shows. */
+  relaxing: false,
+  relaxed: [] as FeatureVector[],
+  /** The button was pressed (cleared when a phase starts waiting for it). */
+  pressed: false,
+  skipped: false,
+  /** The player chose to recalibrate: a known face doesn't skip it. */
+  forced: false,
+};
+
+/** Relaxed-face samples kept (the newest): ~10 s of a 30 fps tracker. */
+const RELAXED_KEEP = 300;
+/** Fewest relaxed-face samples a calibration needs. */
+const MIN_RELAXED_SAMPLES = 20;
+/** The welcome lasts at least this long with a face in view (the relaxed read). */
+const WELCOME_MS = 2000;
+/** Longest the welcome waits for recognition to decide, once the relaxed read is done. */
+const WELCOME_RECOGNITION_MS = 4000;
+/** Failed tries of a phase before "Play anyway" shows. */
+const TRIES_BEFORE_SKIP = 2;
+
+const examples = { strain: calibStrainedUrl, puff: calibPuffedUrl };
+
+/** Called by the tracker with each face frame: the relaxed-face read. */
+function readRelaxed(features: FeatureVector): void {
+  if (!calib.relaxing || state !== "calibrating") return;
+  calib.relaxed.push(features);
+  if (calib.relaxed.length > RELAXED_KEEP) calib.relaxed.splice(0, calib.relaxed.length - RELAXED_KEEP);
+}
+
+/**
+ * The face has been through the calibration screen here: a known face, or
+ * (without face recognition) a saved calibration. A phase they skipped stays
+ * skipped; Recalibrate redoes both.
+ */
+function faceCalibrated(): boolean {
+  if (faceId.status === "known" && faceId.known) return !!faceId.known.strain;
+  return faceId.status === "off" && !!calibration;
+}
+
+/**
+ * The calibration screen. `forced`: the player asked to recalibrate (a known
+ * face doesn't skip it). Ends on the perch, or abandoned when the flow moves on.
+ */
+async function runCalibration(forced = calib.forced): Promise<void> {
   const token = ++flow;
-  // A new player (or a fresh start): the next dive samples their puff again.
-  clearPuffCalibration();
+  calib.forced = forced;
   state = "calibrating";
   showScreen("calibrate");
   show(hud, false);
   show(cam, true);
-  cam.classList.add("large");
-  show($("calib-result"), false);
-  show($("btn-calib-keyboard"), false);
-  show($("calib-run"), true);
-
-  const neutral = await calibrationPhase(token, 1, "Relax your face", "Neutral face. Look at the screen and relax completely.", false);
-  if (token !== flow) return;
-  const strained = await calibrationPhase(
-    token, 2, "STRAIN! Like you're really constipated 💩",
-    "Brows down, eyes squeezed, nose wrinkled, lips pressed. Hold it!", true,
-  );
-  if (token !== flow) return;
-
-  const cal = buildCalibration(featureStats(neutral.samples), featureStats(strained.samples), config);
-  const quality = assessCalibration(cal, neutral.samples, strained.samples, config, {
-    neutral: neutral.coverage,
-    strain: strained.coverage,
-  });
-  console.info("[calibration]", { cal, quality, neutral, strained });
-  // Only a calibration that passed the check replaces the saved one.
-  if (quality.ok) {
-    calibration = cal;
-    calibrationIsDefault = false;
-    rejectedCalibration = null;
-    saveCalibration(CALIBRATION_KEY, cal);
-    rememberStrain(cal, false);
-  } else {
-    rejectedCalibration = quality.totalChange > 0 ? cal : null;
-  }
-  strain = initialStrainState();
-  if (!quality.ok) {
-    showCalibrationResult(quality);
-    return;
-  }
-  // Straight back onto the perch to try it out.
-  startReady();
-  showToast(`Tuned to your face 💪 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
-}
-
-/**
- * The start without calibration: the bird's perch opens right away and the
- * default calibration is fitted to a short read of the player's relaxed face.
- * It's never saved for the browser, so the next player gets their own read;
- * face recognition remembers it for this face, for this tab. Tuning from the
- * perch replaces it. A face recognized as known (now, or during the read)
- * gets its own calibrations back instead.
- */
-async function runDefaultCalibration(): Promise<void> {
-  // A new player: the next dive samples their puff again.
-  clearPuffCalibration();
-  calibration = null;
-  calibrationIsDefault = true;
+  calib.relaxed = [];
   rejectedCalibration = null;
-  faceId.strain = null;
   strain = initialStrainState();
+  // Both get redone: nothing of the last player's may carry over (Play anyway on the puff means none).
+  puffCalibration = null;
+  puffSignal = initialPuffState();
+  if (!(await welcome(token))) return;
+  const strained = await calibrateStrain(token);
+  const puffed = strained === null ? null : await calibratePuff(token);
+  if (token === flow) calib.relaxing = false;
+  if (token !== flow || strained === null || puffed === null) return;
+  strain = initialStrainState();
+  puffSignal = initialPuffState();
   startReady();
-  const token = flow;
-  if (faceId.known) adoptKnownFace(faceId.known);
-  if (!calibration) enterPerchStep("reading");
-  // A read whose own samples would trip the meter (fidgeting, blinking,
-  // jittery tracking) is read again. The last try is kept regardless, since
-  // the player can always calibrate.
-  for (let attempt = 1; !calibration; attempt++) {
-    // A calibration turning up meanwhile came from recognition: no need to read on.
-    const neutral = await readRelaxedFace(token, () => calibration !== null);
-    if (token !== flow) return;
-    if (!neutral) {
-      if (calibration) break;
-      return;
-    }
-    const cal = defaultCalibration(neutralFaceStats(neutral), config.defaultStrainScale);
-    const falseRate = neutralFalseRate(cal, neutral, config);
-    console.info("[default calibration]", { cal, falseRate, attempt, neutral });
-    if (falseRate <= MAX_NEUTRAL_FALSE_RATE || attempt >= MAX_RELAXED_READS) {
-      calibration = cal;
-      rememberStrain(cal, true);
-      break;
-    }
-    perchHint("Hold still…", 10_000);
-  }
-  strain = initialStrainState();
-  enterPerchStep(seenTutorials.has("perch") ? "go" : "strain");
+  showToast(strained && puffed ? "All set! 💪 The bird and the fish know your face now" : "Let's go! Recalibrate (C) any time", 3500);
 }
 
-/** Relaxed-face reads before the default calibration takes the last one, steady or not. */
-const MAX_RELAXED_READS = 3;
+/**
+ * The screen opens with a welcome and no example face, so nobody practises a
+ * face yet: the relaxed face is read meanwhile (WELCOME_MS of a face in view)
+ * and then kept as it is, and recognition gets a moment to decide (a known
+ * face goes on to the perch). false = abandoned, or the face was known.
+ */
+async function welcome(token: number): Promise<boolean> {
+  $("calib-step").textContent = "Calibration";
+  $("calib-prompt").textContent = "Hi! 👋 Let's get the game to know your face";
+  $("calib-hint").textContent = "Just look at the camera for a moment…";
+  screens.calibrate.classList.add("welcome");
+  show($("calib-buttons"), false);
+  show($("calib-run"), true);
+  $("calib-count").textContent = "";
+  const progress = $("calib-progress");
+  progress.style.width = "0%";
+  calibStatus("", "");
+  calib.relaxing = true;
+  let faceFor = 0;
+  let doneAt = -1;
+  let last = performance.now();
+  try {
+    for (; ;) {
+      await wait(50);
+      if (token !== flow) return false;
+      const now = performance.now();
+      if (faceVisible()) faceFor += now - last;
+      last = now;
+      if (!calib.forced && faceCalibrated()) {
+        calib.relaxing = false;
+        startReady();
+        showToast("👋 Welcome back! You're still calibrated", 2500);
+        return false;
+      }
+      const read = Math.min(faceFor / WELCOME_MS, calib.relaxed.length / MIN_RELAXED_SAMPLES, 1);
+      progress.style.width = `${read * 100}%`;
+      if (read < 1) {
+        calibStatus(faceVisible() ? "" : "Looking for your face… 👀", "");
+        continue;
+      }
+      calib.relaxing = false;
+      if (doneAt < 0) doneAt = now;
+      const deciding = faceId.status === "running" || faceId.status === "idle";
+      if (!calib.forced && deciding && faceIdWorks() && now - doneAt < WELCOME_RECOGNITION_MS) {
+        calibStatus("Have we met? Checking… 🤔", "");
+        continue;
+      }
+      return true;
+    }
+  } finally {
+    calib.relaxing = false;
+    screens.calibrate.classList.remove("welcome");
+  }
+}
 
-/** Fewest face samples the relaxed-face read takes, so a slow detector just reads for longer. */
-const MIN_RELAXED_SAMPLES = 8;
+/** The strain phase, until a good calibration (true) or "Play anyway" (false). null = abandoned (or skipped by recognition). */
+async function calibrateStrain(token: number): Promise<boolean | null> {
+  for (let tries = 0; ; tries++) {
+    const go = await calibrationIntro(token, "strain", tries);
+    if (!go) return null;
+    if (go === "skip") {
+      // Play anyway: the closest thing to their strain we have (else a guess from the relaxed face).
+      const neutral = robustFeatureStats(calib.relaxed);
+      calibration = rejectedCalibration ?? defaultCalibration(neutral, config.defaultStrainScale);
+      calibrationIsDefault = true;
+      rememberStrain(calibration, true);
+      return false;
+    }
+    const held = await holdFace(token, "strain");
+    if (!held) return null;
+    const neutral = [...calib.relaxed];
+    const cal = buildCalibration(robustFeatureStats(neutral), featureStats(held.samples), config);
+    const quality = assessCalibration(cal, neutral, held.samples, config, { neutral: 1, strain: held.coverage });
+    console.info("[calibration] strain", { cal, quality, relaxed: neutral.length, strained: held.samples.length });
+    if (quality.ok) {
+      calibration = cal;
+      calibrationIsDefault = false;
+      rejectedCalibration = null;
+      saveCalibration(CALIBRATION_KEY, cal);
+      rememberStrain(cal, false);
+      return true;
+    }
+    if (quality.totalChange > 0) rejectedCalibration = cal;
+    calibStatus(strainRetryReason(quality), "bad");
+  }
+}
+
+/** The puff phase: a hold, then "let it out". Like calibrateStrain. */
+async function calibratePuff(token: number): Promise<boolean | null> {
+  for (let tries = 0; ; tries++) {
+    const go = await calibrationIntro(token, "puff", tries);
+    if (!go) return null;
+    // Play anyway: pursed lips alone (the pucker range) drive the fish.
+    if (go === "skip") {
+      puffCalibration = null;
+      storageRemove(PUFF_CALIBRATION_KEY);
+      puffSignal = initialPuffState();
+      // Also for the face, so recognition doesn't bring back the one they just skipped.
+      faceId.puff = null;
+      if (faceId.known) {
+        faceId.known = { ...faceId.known, puff: null };
+        rememberFace();
+      }
+      return false;
+    }
+    const held = await holdFace(token, "puff");
+    if (!held) return null;
+    const after = await letOut(token);
+    if (!after) return null;
+    const relaxed = [...calib.relaxed, ...after];
+    const cal = buildInteractivePuffCalibration(relaxed, held.samples, config);
+    const quality = cal
+      ? assessPuffCalibration(cal, held.samples, { strain: held.coverage }, { ...config, minSinkRate: config.oceanPuffMinSinkRate }, relaxed)
+      : null;
+    console.info("[calibration] puff", { cal, quality, relaxed: relaxed.length, puffs: held.samples.length });
+    if (cal && quality?.ok) {
+      puffCalibration = cal;
+      saveCalibration(PUFF_CALIBRATION_KEY, cal);
+      rememberPuff(cal);
+      return true;
+    }
+    calibStatus(puffRetryReason(quality?.reason), "bad");
+  }
+}
+
+function strainRetryReason(q: ReturnType<typeof assessCalibration>): string {
+  if (q.reason?.startsWith("I couldn't see")) return "I couldn't see your face well. Face the camera, in good light.";
+  if (q.totalChange < config.minCalibrationChange) return "That looked a lot like your normal face. Strain harder! Scrunch up everything.";
+  if (q.strainHitRate < 0.6) return "Hold the strain for the whole bar, then try again.";
+  if (q.neutralFalseRate > MAX_NEUTRAL_FALSE_RATE) return "Your strain looked too much like your normal face. Strain much harder!";
+  return q.reason ?? "That didn't work. Try again!";
+}
+
+function puffRetryReason(reason: string | undefined): string {
+  switch (reason) {
+    case "puff looked like your relaxed face": return "That looked like your normal face. Fill your cheeks with air and purse your lips!";
+    case "puff wasn't held steadily": return "Keep the cheeks puffed for the whole bar, then try again.";
+    case "your face didn't relax between puffs": return "Let all the air out after the puff, lips loose.";
+    case "couldn't see your face": return "I couldn't see your face well. Face the camera, in good light.";
+    default: return "That didn't work. Try again!";
+  }
+}
+
+const CALIB_TEXT = {
+  strain: {
+    step: "Calibration 1/2: poop face",
+    prompt: "Strain like you really need to go 💩",
+    hint: "Brows down, eyes squeezed, lips pressed. You'll hold it for 3 seconds.",
+  },
+  puff: {
+    step: "Calibration 2/2: pufferfish face",
+    prompt: "Puff your cheeks like a pufferfish 🐡",
+    hint: "Cheeks full of air, lips pursed. Hold it, then let the air out.",
+  },
+};
 
 /**
- * Samples the relaxed face for at least `defaultNeutralSeconds` and
- * MIN_RELAXED_SAMPLES face frames. Starts over if too few frames had a face
- * (no one in view yet). null = abandoned, or `done` turned true.
+ * Shows a phase's instructions and waits for the button. "go" once pressed
+ * with a face in view;
+ * "skip" for Play anyway; null = abandoned, or the face turned out to be
+ * calibrated already (then it's on the perch).
  */
-async function readRelaxedFace(token: number, done?: () => boolean): Promise<FeatureVector[] | null> {
-  const total = config.defaultNeutralSeconds * 1000;
-  let start = performance.now();
-  let mine = startSampling();
+async function calibrationIntro(token: number, phase: "strain" | "puff", tries: number): Promise<"go" | "skip" | null> {
+  const text = CALIB_TEXT[phase];
+  $("calib-step").textContent = text.step;
+  $("calib-prompt").textContent = text.prompt;
+  $("calib-hint").textContent = text.hint;
+  $<HTMLImageElement>("calib-example").src = examples[phase];
+  screens.calibrate.querySelector(".calib")!.classList.remove("holding");
+  show($("calib-run"), false);
+  const go = $<HTMLButtonElement>("btn-calib-go");
+  go.textContent = tries ? "Try again" : "I'm ready";
+  decorate(go);
+  show($("calib-buttons"), true);
+  show($("btn-calib-skip"), tries >= TRIES_BEFORE_SKIP);
+  if (!tries) calibStatus("", "");
+  armButtonKeys(300);
+  calib.pressed = calib.skipped = false;
   for (; ;) {
     await wait(50);
-    if (token !== flow || calibSamples !== mine.samples || !calibFrames || done?.()) {
-      stopSampling(mine.samples);
+    if (token !== flow) return null;
+    // A face this tab knows (recognized late, while they read this): straight to the perch.
+    if (!calib.forced && phase === "strain" && !tries && faceCalibrated()) {
+      startReady();
+      showToast("👋 Welcome back! You're still calibrated", 2500);
       return null;
     }
-    if (performance.now() - start < total) continue;
-    if (mine.samples.length < mine.frames.length * config.minFaceCoverage) {
-      start = performance.now();
-      mine = startSampling();
-    } else if (mine.samples.length >= MIN_RELAXED_SAMPLES) {
-      break;
-    }
+    if (calib.skipped) return "skip";
+    if (!tries) calibStatus(faceVisible() ? "" : "Looking for your face… 👀", "");
+    if (calib.pressed && faceVisible()) return "go";
+    if (calib.pressed && !faceVisible()) calibStatus("I can't see you. Face the camera, then press again.", "bad");
+    if (!faceVisible()) calib.pressed = false;
   }
-  stopSampling(mine.samples);
-  return mine.samples.map((s) => s.f);
+}
+
+/** The calibration screen's status line (`kind`: "bad" for a failed try, "" for news). */
+function calibStatus(text: string, kind: "" | "bad"): void {
+  const el = $("calib-status");
+  if (el.textContent !== text) el.textContent = text;
+  el.classList.toggle("bad", kind === "bad");
+}
+
+/**
+ * "3, 2, 1", then holds the phase's face while it's sampled (calibrationSeconds
+ * for the strain, oceanCalibrationSeconds for the puff; the first
+ * calibrationSettle s don't count). null = abandoned.
+ */
+async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samples: FeatureVector[]; coverage: number } | null> {
+  show($("calib-buttons"), false);
+  calibStatus("", "");
+  show($("calib-run"), true);
+  const card = screens.calibrate.querySelector(".calib")!;
+  const count = $("calib-count");
+  const progress = $("calib-progress");
+  progress.style.width = "0%";
+  $("calib-prompt").textContent = phase === "strain" ? "Get ready to strain…" : "Get ready to puff…";
+  for (let i = 3; i > 0; i--) {
+    count.textContent = String(i);
+    await wait(800);
+    if (token !== flow) return null;
+  }
+  $("calib-prompt").textContent = phase === "strain" ? "STRAIN! Hold it! 💩" : "PUFF! Hold it! 🐡";
+  card.classList.add("holding");
+  const total = (phase === "strain" ? config.calibrationSeconds : config.oceanCalibrationSeconds) * 1000;
+  const settle = config.calibrationSettle * 1000;
+  const start = performance.now();
+  const mine = startSampling();
+  try {
+    for (; ;) {
+      if (token !== flow) return null;
+      const elapsed = performance.now() - start;
+      if (elapsed >= total) break;
+      count.textContent = String(Math.ceil((total - elapsed) / 1000));
+      progress.style.width = `${(elapsed / total) * 100}%`;
+      if (phase === "strain") sound.setGroan(Math.min(1, elapsed / total), false);
+      else sound.setBurble(elapsed / total);
+      await wait(50);
+    }
+  } finally {
+    sound.setGroan(-1, false);
+    sound.setBurble(-1);
+    card.classList.remove("holding");
+    stopSampling(mine.samples);
+  }
+  progress.style.width = "100%";
+  count.textContent = "✓";
+  const samples = mine.samples.filter((x) => x.t - start >= settle).map((x) => x.f);
+  const frames = mine.frames.filter((t) => t - start >= settle).length;
+  return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
+}
+
+/**
+ * After the puff: "let it out" for oceanLessonLetOutSeconds, sampled as the
+ * relaxed face right after a puff, which isn't the one from before (the
+ * mouth stays narrower, the lips pressed): the fit needs it, or the fish
+ * won't sink (see buildInteractivePuffCalibration). null = abandoned.
+ */
+async function letOut(token: number): Promise<FeatureVector[] | null> {
+  $("calib-prompt").textContent = "And let it out 😮‍💨";
+  $("calib-progress").style.width = "0%";
+  const total = config.oceanLessonLetOutSeconds * 1000;
+  const start = performance.now();
+  const mine = startSampling();
+  try {
+    for (; ;) {
+      if (token !== flow) return null;
+      const elapsed = performance.now() - start;
+      if (elapsed >= total) break;
+      $("calib-count").textContent = "";
+      $("calib-progress").style.width = `${(elapsed / total) * 100}%`;
+      await wait(50);
+    }
+  } finally {
+    stopSampling(mine.samples);
+  }
+  // The first moment is still the air going out.
+  return mine.samples.filter((x) => x.t - start >= config.calibrationSettle * 1000).map((x) => x.f);
 }
 
 /** Starts collecting face samples into fresh shared arrays (filled by the tracker callback). */
@@ -751,57 +973,6 @@ function stopSampling(samples: readonly unknown[] | null): void {
   if (samples && calibSamples !== samples) return;
   calibSamples = null;
   calibFrames = null;
-}
-
-interface PhaseResult {
-  samples: FeatureVector[];
-  /** Fraction of detection frames after the settle time that had a face. */
-  coverage: number;
-}
-
-async function calibrationPhase(
-  token: number, step: number, prompt: string, hint: string, strainPhase: boolean,
-): Promise<PhaseResult> {
-  const card = screens.calibrate.querySelector(".calib")!;
-  const count = $("calib-count");
-  const progress = $("calib-progress");
-  $("calib-step").textContent = `Calibration ${step}/2`;
-  $("calib-prompt").textContent = step === 1 ? "Get ready to relax…" : "Get ready to STRAIN…";
-  $("calib-hint").textContent = hint;
-  $("calib-face-use").setAttribute("href", strainPhase ? "#face-strained" : "#face-relaxed");
-  card.classList.remove("strain");
-  progress.style.width = "0%";
-  for (let i = 2; i > 0; i--) {
-    count.textContent = String(i);
-    await wait(600);
-    if (token !== flow) return { samples: [], coverage: 0 };
-  }
-
-  $("calib-prompt").textContent = prompt;
-  card.classList.toggle("strain", strainPhase);
-  const total = config.calibrationSeconds * 1000;
-  const settle = config.calibrationSettle * 1000;
-  const start = performance.now();
-  const mine = startSampling();
-  while (performance.now() - start < total) {
-    if (token !== flow) {
-      stopSampling(mine.samples);
-      sound.setGroan(-1, false);
-      return { samples: [], coverage: 0 };
-    }
-    const elapsed = performance.now() - start;
-    count.textContent = String(Math.ceil((total - elapsed) / 1000));
-    progress.style.width = `${(elapsed / total) * 100}%`;
-    if (strainPhase) sound.setGroan(Math.min(1, elapsed / total), false);
-    await wait(50);
-  }
-  if (strainPhase) sound.setGroan(-1, false);
-  progress.style.width = "100%";
-  const samples = mine.samples.filter((s) => s.t - start >= settle).map((s) => s.f);
-  const frames = mine.frames.filter((t) => t - start >= settle).length;
-  stopSampling(mine.samples);
-  card.classList.remove("strain");
-  return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
 
 const FEATURE_LABELS: Record<FeatureName, string> = {
@@ -831,37 +1002,6 @@ function topFeatureLabels(cal: Calibration): string[] {
     .map((f) => FEATURE_LABELS[f]);
 }
 
-/** A calibration that failed the quality check: try again, or play with it anyway. */
-function showCalibrationResult(result: ReturnType<typeof assessCalibration>): void {
-  state = "calibrated";
-  showScreen("calibrate");
-  show(hud, false);
-  show(cam, true);
-  cam.classList.add("large");
-  show($("calib-run"), false);
-  show($("calib-result"), true);
-  show($("btn-calib-keyboard"), true);
-  const playBtn = $<HTMLButtonElement>("btn-calib-play");
-  const retryBtn = $<HTMLButtonElement>("btn-calib-retry");
-  screens.calibrate.querySelector(".calib")!.classList.remove("strain");
-  $("calib-step").textContent = "Calibration";
-  armButtonKeys(300);
-  $("calib-prompt").textContent = "Hmm, that didn't work well";
-  $("calib-result-text").textContent = result.reason ?? "Try again.";
-  setPrimary(retryBtn, playBtn);
-  calibrationFailed = true;
-  retryBtn.textContent = "Try again";
-  playBtn.textContent = "Play anyway";
-  decorate(playBtn);
-  decorate(retryBtn);
-  playBtn.disabled = !(rejectedCalibration ?? calibration);
-}
-
-function setPrimary(primary: HTMLElement, secondary: HTMLElement): void {
-  primary.classList.add("primary");
-  secondary.classList.remove("primary");
-}
-
 function saveCalibration(key: string, cal: Calibration): void {
   storageSet(key, JSON.stringify(cal));
 }
@@ -885,177 +1025,7 @@ function forgetCalibration(): void {
   location.reload();
 }
 
-// --- Puff calibration (first dive, in game) ---------------------------------------------
-
-function clearPuffCalibration(): void {
-  puffCalibration = null;
-  puffCalibrationTried = false;
-  // A known face's remembered one may still come back (adoptKnownFace).
-  faceId.puff = null;
-  puffSignal = initialPuffState();
-  storageRemove(PUFF_CALIBRATION_KEY);
-}
-
-/** The next dive samples the player's puff: face mode, nothing saved, not tried yet this session. */
-function needsPuffCalibration(): boolean {
-  return mode === "face" && tracker.ready && puffCalibration === null && !puffCalibrationTried;
-}
-
-/**
- * One step of the swim lesson or the puff calibration: the fish shows it (a
- * puff step blows it up so it floats, the others shrink it so it sinks), and
- * the face is sampled as a puff or as relaxed. Puff steps last
- * oceanCalibrationSeconds, the others oceanRelaxSeconds, unless the step has
- * its own `seconds`.
- */
-interface PuffStep {
-  kind: "relax" | "look" | "puff";
-  /** Short name, for the heads-up and the timeline. */
-  label: string;
-  title: string;
-  hint: string;
-  /** The step's length in s, read when it starts (default: by kind, see above). */
-  seconds?: () => number;
-}
-
-/**
- * The swim lesson, right after the dive: one puff/relax cycle after a relaxed
- * moment, while the world swims on in calm water. The relax step right after
- * the puff matters most: a face just after a puff doesn't go back to the
- * relaxed face from before it, and the calibration has to know what that looks
- * like, or the fish won't sink (see buildInteractivePuffCalibration). So it
- * lasts oceanLessonLetOutSeconds, longer than the other steps: in the face
- * dataset a second cycle sent more players into the calibration than it
- * saved, but one player's fish wouldn't sink after a single short one.
- */
-const LESSON_STEPS: readonly PuffStep[] = [
-  { kind: "relax", label: "Relax", title: "Swim, little pufferfish! 🐡", hint: "Keep your face relaxed for a moment…" },
-  { kind: "puff", label: "Pucker & puff", title: "Pucker & puff!", hint: "Purse your lips and puff your cheeks: the fish blows up and floats." },
-  {
-    kind: "relax",
-    label: "Let it out",
-    title: "Let it out",
-    hint: "Relax your cheeks and lips: the fish shrinks and sinks.",
-    seconds: () => config.oceanLessonLetOutSeconds,
-  },
-];
-
-/**
- * The calibration, when the lesson's reading wasn't clear: with a look-around
- * (so features that move with the head don't count as a puff) and a timeline
- * of the steps, and the fish shows each step.
- */
-const CALIBRATION_STEPS: readonly PuffStep[] = [
-  { kind: "relax", label: "Relax", title: "Relax", hint: "Relaxed face, lips loose." },
-  { kind: "look", label: "Look around", title: "Look around 👀", hint: "Keep your face relaxed and look around the screen." },
-  { kind: "puff", label: "Pucker & puff", title: "Pucker & puff!", hint: "Purse your lips and puff your cheeks. Hold it." },
-  { kind: "relax", label: "Let it out", title: "Let it out", hint: "Let the air out and relax your lips completely." },
-  { kind: "puff", label: "Pucker & puff", title: "Again: pucker & puff!", hint: "The same pufferfish face. Hold it." },
-  { kind: "relax", label: "Let it out", title: "And let it out", hint: "Air out, lips loose." },
-];
-
-/**
- * The first dive in face mode. The fish swims on right away in calm water (no
- * obstacles; see Game.calmWater) while banners, each with a pictogram of the
- * face to make, walk the player through LESSON_STEPS. The fish follows the
- * measured puff meanwhile (the pucker range, as there's no puff calibration
- * yet), and the face is sampled. With a clear reading (assessPuffCalibration)
- * the calibration is used right away and the level starts; if not,
- * CALIBRATION_STEPS run (oceanPuffCalibrationAttempts times at most, then the
- * pucker range alone), and there the fish shows each step whatever the face
- * does. New players then get the ocean tips as banners. Belongs to the current
- * run's flow token, so going to the menu or recalibrating abandons it (the
- * next run resets the game).
- */
-async function runSwimLesson(): Promise<void> {
-  const token = flow;
-  activePuffCalibration = token;
-  puffCoach = claimCoach();
-  // Cleared once per lesson, not per step: a new face between steps still aborts.
-  abortPuffCalibration = false;
-  game.calmWater = true;
-  scriptTarget = null;
-  puffSignal = initialPuffState();
-  // Let the dive finish: the fish lands and swims, then the lesson starts.
-  while (game.transition && token === flow) await wait(50);
-
-  const attempts = Math.max(1, Math.round(config.oceanPuffCalibrationAttempts));
-  let steps = LESSON_STEPS;
-  let calibrationRuns = 0;
-  let why = "";
-  for (; ;) {
-    const lesson = steps === LESSON_STEPS;
-    if (!lesson) {
-      calibrationRuns++;
-      scriptedPuff = game.fish.puff;
-      scriptTarget = SCRIPT_RELAX;
-      setPuffOverlay("Let's calibrate 🐡", `${why} Follow the steps above.`, null);
-      showTimeline(steps);
-      if (!(await waitPlaying(token, 3500))) return abandonPuffCalibration(token);
-    }
-    const headsUp = lesson ? config.oceanLessonHeadsUp : config.oceanCalibrationHeadsUp;
-    const result = await runPuffSteps(token, steps, headsUp, !lesson);
-    if (!result) return abandonPuffCalibration(token);
-    scriptTarget = null;
-    showTimeline(null);
-
-    const { relaxed, puffs, coverage } = result;
-    const cal = buildInteractivePuffCalibration(relaxed, puffs, config);
-    const quality = cal
-      ? assessPuffCalibration(cal, puffs, { strain: coverage }, { ...config, minSinkRate: config.oceanPuffMinSinkRate }, relaxed)
-      : null;
-    console.info("[puff calibration]", { steps: lesson ? "lesson" : "calibration", cal, quality });
-    lastPuffAttempt = cal && quality ? { cal, quality } : null;
-
-    if (cal && quality?.ok) {
-      puffCalibration = cal;
-      puffCalibrationTried = true;
-      puffSignal = initialPuffState();
-      saveCalibration(PUFF_CALIBRATION_KEY, cal);
-      rememberPuff(cal);
-      showToast(`Puff calibrated! 🐡 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
-      break;
-    }
-    const reason = quality?.reason ?? "couldn't see your face";
-    if (calibrationRuns >= attempts) {
-      puffCalibrationTried = true;
-      const fallback = puffCalibration ? "keeping your saved puff" : "pursed lips only";
-      showToast(`Couldn't read your puff (${reason}): ${fallback}. Recalibrate with C.`, 4000);
-      break;
-    }
-    why = `Couldn't read your pufferfish face yet (${reason}).`;
-    steps = CALIBRATION_STEPS;
-  }
-  if (!seenTutorials.has("ocean")) {
-    if (!(await oceanTipBanners(token))) return abandonPuffCalibration(token);
-    markTutorialSeen("ocean");
-  } else if (!(await swimToMiddle(token))) return abandonPuffCalibration(token);
-  // The level starts. A relaxed player's fish may lie on the sand: the sea floor spares it until it swims off (Game).
-  endPuffCalibrationOverlay(token);
-  game.calmWater = false;
-}
-
-/**
- * Without the tips, the level would start wherever the lesson left the fish
- * (often on the sea floor or at the surface). So it swims to the middle on its
- * own first (Game.guideY), under a heads-up banner. false = abandoned.
- */
-async function swimToMiddle(token: number): Promise<boolean> {
-  // A heads-up, not a step: no progress bar.
-  coachSay(puffCoach, { title: "GET READY! 🐡", hint: "Here come the rocks.", face: null, bar: false });
-  game.guideY = OCEAN_MID_Y;
-  try {
-    // At least a moment to read the banner; at most long enough to cross the whole sea.
-    for (let t = 0; t < 4000; t += 50) {
-      if (!(await waitPlaying(token, 50))) return false;
-      const there = Math.abs(game.bird.y - OCEAN_MID_Y) < 15 && Math.abs(game.bird.vy) < 25;
-      if (t >= 1500 && there) break;
-    }
-  } finally {
-    game.guideY = null;
-  }
-  return true;
-}
+// --- Ocean tips --------------------------------------------------------------------
 
 /** The ocean tips for new players, as banners over the calm water, after `intro` if given. */
 async function oceanTipBanners(token: number, intro?: [string, string]): Promise<boolean> {
@@ -1066,74 +1036,6 @@ async function oceanTipBanners(token: number, intro?: [string, string]): Promise
   for (const [title, hint] of tips) {
     setPuffOverlay(title, hint, null, true);
     if (!(await waitPlaying(token, 4500))) return false;
-  }
-  return true;
-}
-
-/** The lesson or calibration was abandoned (new face, or the run ended). */
-function abandonPuffCalibration(token: number): void {
-  scriptTarget = null;
-  if (token !== flow) return endPuffCalibrationOverlay(token);
-  // A different face got locked: this run uses the default puff.
-  endPuffCalibrationOverlay(token);
-  puffCalibration = null;
-  puffCalibrationTried = true;
-  puffSignal = initialPuffState();
-  game.calmWater = false;
-  showToast("New face: using default puff. Recalibrate (C) to tune it.", 3500);
-}
-
-/**
- * Runs `steps` once, with a heads-up countdown of `headsUp` s whenever the
- * player has to switch between puffing and not. `scripted`: the fish shows
- * each step instead of following the face. null = abandoned.
- */
-async function runPuffSteps(
-  token: number,
-  steps: readonly PuffStep[],
-  headsUp: number,
-  scripted: boolean,
-): Promise<{ relaxed: FeatureVector[]; puffs: FeatureVector[]; coverage: number } | null> {
-  const relaxed: FeatureVector[] = [];
-  const puffs: FeatureVector[] = [];
-  let coverage = 1;
-  for (const [i, step] of steps.entries()) {
-    const prev = steps[i - 1];
-    if (prev && headsUp > 0 && (prev.kind === "puff") !== (step.kind === "puff")) {
-      if (!(await headsUpCountdown(token, step, headsUp))) return null;
-    }
-    markTimeline(i);
-    const puff = step.kind === "puff";
-    setPuffOverlay(step.title, step.hint, puff ? "puffed" : "relaxed");
-    if (scripted) scriptTarget = puff ? SCRIPT_PUFF : SCRIPT_RELAX;
-    const seconds = step.seconds?.() ?? (puff ? config.oceanCalibrationSeconds : config.oceanRelaxSeconds);
-    const phase = await puffCalibrationPhase(token, seconds, puff);
-    if (!phase || token !== flow) return null;
-    (puff ? puffs : relaxed).push(...phase.samples);
-    coverage = Math.min(coverage, phase.coverage);
-  }
-  markTimeline(steps.length);
-  return { relaxed, puffs, coverage };
-}
-
-/** "PUCKER & PUFF IN 3… 2… 1…", with the next step's face. false = abandoned. */
-async function headsUpCountdown(token: number, next: PuffStep, seconds: number): Promise<boolean> {
-  const puff = next.kind === "puff";
-  const hint = puff ? "Get ready to purse your lips and puff your cheeks." : "Get ready to let the air out and relax your lips.";
-  let left = seconds * 1000;
-  let last = performance.now();
-  $("coach-progress").style.width = "0%";
-  while (left > 0) {
-    if (token !== flow || abortPuffCalibration) {
-      abortPuffCalibration = false;
-      return false;
-    }
-    const now = performance.now();
-    if (state === "playing") left -= now - last;
-    last = now;
-    setPuffOverlay(`${next.label} in ${Math.max(1, Math.ceil(left / 1000))}…`, hint, puff ? "puffed" : "relaxed");
-    $("coach-progress").style.width = `${(1 - Math.max(0, left) / (seconds * 1000)) * 100}%`;
-    await wait(50);
   }
   return true;
 }
@@ -1155,30 +1057,6 @@ async function waitPlaying(token: number, ms: number): Promise<boolean> {
   return true;
 }
 
-/** The calibration's timeline of steps (null hides it). */
-function showTimeline(steps: readonly PuffStep[] | null): void {
-  const el = $("coach-timeline");
-  el.replaceChildren(
-    ...(steps ?? []).map((s) => {
-      const li = document.createElement("li");
-      li.textContent = s.label;
-      li.className = s.kind === "puff" ? "puff" : "relax";
-      return li;
-    }),
-  );
-  show(el, !!steps);
-}
-
-/** Highlights step `i` of the timeline; the ones before are done. */
-function markTimeline(i: number): void {
-  $("coach-timeline")
-    .querySelectorAll("li")
-    .forEach((li, j) => {
-      li.classList.toggle("done", j < i);
-      li.classList.toggle("now", j === i);
-    });
-}
-
 /** The lesson's coach line: a title, a hint and the face to make (null: no pictogram). `tips`: no progress bar, bigger hint. */
 function setPuffOverlay(title: string, hint: string, face: "relaxed" | "puffed" | null, tips = false): void {
   coachSay(puffCoach, { title, hint, face, bar: !tips, tips });
@@ -1190,50 +1068,6 @@ function endPuffCalibrationOverlay(token: number): void {
   activePuffCalibration = null;
   releaseCoach(puffCoach);
   sound.setBurble(-1);
-}
-
-/**
- * Collects one step's samples for `seconds`, dropping the settle time. Pausing
- * restarts the step after resume. `burble` plays the puffing sound. null = abandoned.
- */
-async function puffCalibrationPhase(token: number, seconds: number, burble: boolean): Promise<PhaseResult | null> {
-  const progress = $("coach-progress");
-  const total = seconds * 1000;
-  const settle = config.calibrationSettle * 1000;
-  let start = -1;
-  let mine: ReturnType<typeof startSampling> | null = null;
-  for (; ;) {
-    if (token !== flow || abortPuffCalibration) {
-      abortPuffCalibration = false;
-      stopSampling(mine?.samples ?? null);
-      return null;
-    }
-    if (state !== "playing") {
-      // Paused: start over after resuming, so the samples are one continuous step.
-      start = -1;
-      stopSampling(mine?.samples ?? null);
-      mine = null;
-      progress.style.width = "0%";
-      await wait(50);
-      continue;
-    }
-    const now = performance.now();
-    if (start < 0) {
-      start = now;
-      mine = startSampling();
-    }
-    const elapsed = now - start;
-    if (elapsed >= total) break;
-    progress.style.width = `${(elapsed / total) * 100}%`;
-    sound.setBurble(burble ? elapsed / total : -1);
-    await wait(50);
-  }
-  progress.style.width = "100%";
-  sound.setBurble(-1);
-  const samples = (mine?.samples ?? []).filter((s) => s.t - start >= settle).map((s) => s.f);
-  const frames = (mine?.frames ?? []).filter((t) => t - start >= settle).length;
-  stopSampling(mine?.samples ?? null);
-  return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
 
 // --- Coach (the tutorial banner) ---------------------------------------------------------
@@ -1268,7 +1102,6 @@ function releaseCoach(owner: number): void {
 
 function coachHide(): void {
   show($("coach"), false);
-  showTimeline(null);
 }
 
 /** Shows `line` on the coach, if `owner` still has it. Cheap to call every frame. */
@@ -1342,24 +1175,21 @@ function markTutorialSeen(t: Tutorial): void {
 }
 
 /**
- * The bird just turned into a deflated fish. In face mode, the swim lesson
- * when there's no puff calibration yet or the player is new (it ends with the
- * ocean tips); a new keyboard player gets the tips as banners over calm
- * water. Everyone else swims right into the level.
+ * The bird just turned into a deflated fish. A new player gets the ocean tips
+ * as banners over calm water; everyone else swims right into the level. (The
+ * puff was calibrated before the run, on the calibration screen.)
  */
 function onSubmerged(): void {
-  const tutorial = !seenTutorials.has("ocean");
-  if (needsPuffCalibration() || (tutorial && mode === "face" && tracker.ready)) void runSwimLesson();
-  else if (tutorial && mode === "keyboard") void runKeyboardOceanTips();
-  else if (mode === "keyboard") showToast(isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
+  if (!seenTutorials.has("ocean")) void runOceanTips();
+  else showToast(mode === "face" ? "Puff your cheeks to float 🐡" : isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
 }
 
 /**
- * A new keyboard player's first dive: the fish swims on in calm water (see
+ * A new player's first dive: the fish swims on in calm water (see
  * Game.calmWater) under banners on how to puff and the ocean tips, then the
- * level starts. Belongs to the run's flow token, like the swim lesson.
+ * level starts. Belongs to the run's flow token.
  */
-async function runKeyboardOceanTips(): Promise<void> {
+async function runOceanTips(): Promise<void> {
   const token = flow;
   activePuffCalibration = token;
   puffCoach = claimCoach();
@@ -1369,7 +1199,7 @@ async function runKeyboardOceanTips(): Promise<void> {
   const hold = isTouch ? "Hold the screen" : "Hold SPACE";
   const done = await oceanTipBanners(token, [
     "Swim, little pufferfish! 🐡",
-    `${hold} to puff up and float, let go to sink`,
+    mode === "face" ? "Puff your cheeks to float, let the air out to sink" : `${hold} to puff up and float, let go to sink`,
   ]);
   endPuffCalibrationOverlay(token);
   if (token !== flow) return;
@@ -1397,16 +1227,9 @@ function hideToast(): void {
 
 // --- Ready & run -----------------------------------------------------------------
 
-/** "Play anyway" after a failed calibration uses the rejected one for this session only. */
-function playAfterCalibration(): void {
-  if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
-  if (calibration) startReady();
-}
-
 /**
- * Debug: a fresh run that dives straight into the ocean (no city). In face
- * mode the dive runs the puff calibration if one is due. From the menu it
- * starts in keyboard mode; mid-calibration it does nothing.
+ * Debug: a fresh run that dives straight into the ocean (no city). From the
+ * menu it starts in keyboard mode; mid-calibration it does nothing.
  */
 function startOceanRun(): void {
   if (state === "loading" || state === "calibrating") return;
@@ -1414,9 +1237,6 @@ function startOceanRun(): void {
     sound.unlock();
     mode = "keyboard";
     tracker.stopCamera();
-  } else if (state === "calibrated") {
-    if (calibrationFailed && rejectedCalibration) calibration = rejectedCalibration;
-    if (!calibration) return;
   }
   startReady(true);
 }
@@ -1468,15 +1288,13 @@ function startReady(ocean = false): void {
 }
 
 /**
- * - reading: the default calibration reads the relaxed face (no strain yet).
- *   Only the bird and the webcam show; the gauge slides in after.
  * - strain / relax: a new player's guided practice poop.
  * - pushed: that poop pushed the bird up; the coach says so for a moment.
  * - fill: practice done; a full poop takes off.
  * - go: a returning player; a full poop takes off.
  * Smaller poops just hop on the lamp, so a stray strain never starts the run.
  */
-type PerchStep = "reading" | "strain" | "relax" | "pushed" | "fill" | "go";
+type PerchStep = "strain" | "relax" | "pushed" | "fill" | "go";
 
 const perch = {
   step: "go" as PerchStep,
@@ -1505,7 +1323,6 @@ interface PerchLine {
 const HOLD = isTouch ? "Hold the screen" : "Hold Space";
 
 const PERCH_TEXT: Record<PerchStep, PerchLine> = {
-  reading: { face: "Relax and look here", faceHint: "", keys: "", keysHint: "", look: "relaxed" },
   strain: {
     face: "Squeeze your face", faceHint: "Like you really need to go 💩",
     keys: HOLD, keysHint: "The bird fills up", look: "strained",
@@ -1537,7 +1354,6 @@ function enterPerchStep(step: PerchStep): void {
   perch.stepSince = performance.now();
   perch.reached = false;
   perch.hintUntil = 0;
-  $("perch").classList.toggle("intro", step === "reading");
   updatePerchText(perch.stepSince);
 }
 
@@ -1566,7 +1382,6 @@ function updatePerchText(now: number): void {
 
 /** What charges the bird on the perch: the player, once armed and the relaxed read is done. */
 function perchStraining(): boolean {
-  if (perch.step === "reading") return false;
   if (!straining()) readyArmed = true;
   return readyArmed && straining();
 }
@@ -1641,7 +1456,7 @@ function updatePerchNudge(now: number): void {
   const inStep = now - perch.stepSince;
   const strainFor = perch.strainSince < 0 ? 0 : now - perch.strainSince;
   const asksStrain = perch.step === "strain" || perch.step === "fill" || perch.step === "go";
-  if (perch.step !== "reading" && perch.step !== "pushed" && faceVisible()) {
+  if (perch.step !== "pushed" && faceVisible()) {
     if (strainFor > (perch.step === "relax" ? 3000 : 6000)) perch.nudge = "Bar stuck even when you relax?";
     else if (asksStrain && !perch.reached && inStep > (perch.step === "strain" ? 7000 : 10000)) {
       perch.nudge = "Bar not reacting to your face?";
@@ -1721,11 +1536,14 @@ async function runCityLesson(): Promise<void> {
   releaseCoach(owner);
 }
 
-/** Moves the webcam preview beside the bird on the perch, or back to its corner. */
-function dockCam(perched: boolean): void {
-  if (perched === cam.classList.contains("perched")) return;
-  cam.classList.toggle("perched", perched);
-  if (perched) $("perch-cam-slot").append(cam);
+/** Moves the webcam preview beside the bird on the perch, into the calibration card, or back to its corner. */
+function dockCam(slot: "perch" | "calib" | null): void {
+  const now = cam.classList.contains("perched") ? "perch" : cam.classList.contains("in-calib") ? "calib" : null;
+  if (slot === now) return;
+  cam.classList.toggle("perched", slot === "perch");
+  cam.classList.toggle("in-calib", slot === "calib");
+  if (slot === "perch") $("perch-cam-slot").append(cam);
+  else if (slot === "calib") $("calib-cam-slot").append(cam);
   else camHome.parent.insertBefore(cam, camHome.next);
 }
 
@@ -2008,11 +1826,6 @@ function frame(now: number): void {
         keyPuff = game.stunned
           ? 0
           : stepKeyPuff(keyPuff, manualHeld(), STEP, config.oceanKeyInflateRate, config.oceanKeyDeflateRate);
-      }
-      // The swim lesson shows each step with the fish, whatever the face does.
-      if (scriptTarget !== null) {
-        const d = scriptTarget - scriptedPuff;
-        scriptedPuff += Math.sign(d) * Math.min(Math.abs(d), SCRIPT_RATE * STEP);
       }
       game.puffInput = puffInput();
       game.step(STEP);
@@ -2508,11 +2321,13 @@ on("btn-hud-mute", toggleMute);
 on("btn-hud-pause", togglePause);
 on("btn-loading-retry", () => void startFaceMode());
 on("btn-loading-keyboard", startKeyboardMode);
-on("btn-calib-play", () => {
+on("btn-calib-go", () => {
   goLandscape();
-  playAfterCalibration();
+  calib.pressed = true;
 });
-on("btn-calib-retry", () => void runCalibration());
+on("btn-calib-skip", () => {
+  calib.skipped = true;
+});
 on("btn-calib-keyboard", () => {
   goLandscape();
   startKeyboardMode();
@@ -2528,7 +2343,9 @@ on("btn-resume", togglePause);
 on("btn-pause-menu", goToMenu);
 on("btn-again", () => {
   goLandscape();
-  startReady();
+  // Someone new took over mid-run: they calibrate first.
+  if (mode === "face" && faceId.status === "new") void runCalibration(false);
+  else startReady();
 });
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
@@ -2603,7 +2420,6 @@ if (DEBUG) {
       get puffCalibration() { return puffCalibration; },
       /** Face recognition: who the locked face is, and the faces this tab knows. */
       get faceId() { return { ...faceId, recognizer: recognizer.status, describeMs: recognizer.lastMs, knownFaces }; },
-      get lastPuffAttempt() { return lastPuffAttempt; },
       openDatasetRecorder,
     },
   });
