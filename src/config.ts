@@ -58,6 +58,15 @@ export const CONFIG_SPEC = {
   },
   faceRelockSeconds: { value: 2.0, min: 0.2, max: 5, step: 0.1, group: "Face lock", label: "Relock after", hint: "s without the locked face before searching the full frame again" },
 
+  // --- Face recognition (faceid.ts, known-faces.ts) -------------------------------
+  faceIdSameDistance: {
+    value: 0.45, min: 0.2, max: 0.9, step: 0.01, group: "Face ID", label: "Same person under",
+    hint: "descriptor distance (median over the samples) under which a face is one this tab calibrated (dlib says 0.6, but two different people scored 0.54 in testing; a miss only means a new read)",
+  },
+  faceIdSamples: { value: 3, min: 1, max: 8, step: 1, group: "Face ID", label: "Samples", hint: "descriptors taken to recognize a face" },
+  faceIdSpacing: { value: 0.3, min: 0, max: 2, step: 0.05, group: "Face ID", label: "Sample spacing", hint: "s between the descriptors, so they see different moments" },
+  faceIdMinFacePx: { value: 80, min: 30, max: 300, step: 5, group: "Face ID", label: "Min face width", hint: "px in the video for a descriptor (smaller faces wait)" },
+
   // --- Strain detection ----------------------------------------------------
   strainOn: { value: 0.45, min: 0.05, max: 0.95, step: 0.01, group: "Strain", label: "On threshold" },
   strainOff: { value: 0.3, min: 0.02, max: 0.9, step: 0.01, group: "Strain", label: "Off threshold" },
@@ -138,7 +147,7 @@ export const CONFIG_SPEC = {
   poopGravity: { value: 1000, min: 100, max: 3000, step: 50, group: "Targets", label: "Poop gravity", hint: "px/s² (separate from the bird so aiming stays the same)" },
   targetSpawnRate: { value: 0.55, min: 0, max: 3, step: 0.05, group: "Targets", label: "Spawn rate", hint: "targets per second" },
   statueChance: { value: 0.05, min: 0, max: 0.5, step: 0.01, group: "Targets", label: "Statue chance", hint: "share of street targets that are statues (skipped where they'd overlap a building or pole)" },
-  angryChance: { value: 0.4, min: 0, max: 1, step: 0.05, group: "Targets", label: "Angry chance", hint: "share of splatted pedestrians that stop and curse at the bird (one already cursing always does again)" },
+  angryChance: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Targets", label: "Angry chance", hint: "share of splatted pedestrians that stop and curse at the bird (one already cursing always does again)" },
   angryDuration: { value: 2.2, min: 0.5, max: 6, step: 0.1, group: "Targets", label: "Angry time", hint: "seconds a cursing pedestrian stands and shakes a fist before walking on" },
   targetPoints: { value: 50, min: 0, max: 500, step: 5, group: "Targets", label: "Points per hit", hint: "base; cars ×1, pedestrians ×1.5, statue ×2" },
   comboStep: { value: 0.5, min: 0, max: 2, step: 0.05, group: "Targets", label: "Combo step", hint: "multiplier added per consecutive hit" },
@@ -232,7 +241,7 @@ export const CONFIG_SPEC = {
   anglerCloseMultiplier: { value: 1, min: 0, max: 10, step: 0.5, group: "Fisherman", label: "Close-one points", hint: "× points for dodging the hook by a whisker" },
 
   // --- Sharks --------------------------------------------------------------
-  sharkChance: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Sharks", label: "Chance", hint: "chance an ocean stage has a shark (the fisherman only comes when it doesn't)" },
+  sharkChance: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Sharks", label: "Chance", hint: "chance an ocean stage has a shark (with a fisherman too, it comes after him)" },
   sharkSlot: { value: 2, min: 0, max: 20, step: 1, group: "Sharks", label: "Slot", hint: "ocean obstacles before its music starts" },
   sharkThemeOffset: { value: 0, min: 0, max: 60, step: 0.1, group: "Sharks", label: "Music start", hint: "s into shark_theme.mp3 where playback starts (the file already starts at the second \"do-doop\")" },
   sharkThemeAttack: { value: 16.6, min: 3, max: 60, step: 0.1, group: "Sharks", label: "Music → lunge", hint: "s after the music starts that the shark lunges (on the swell at 21 s into the original track); it shows up sharkStalkTime + sharkWindup earlier, as the attack music kicks in" },

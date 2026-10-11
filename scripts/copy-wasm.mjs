@@ -1,6 +1,9 @@
-// Copies the MediaPipe tasks-vision WASM runtime from node_modules into
-// public/mediapipe/wasm so it is served locally (no CDN at runtime).
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+// Copies runtime files from node_modules into public/ so they are served
+// locally (no CDN at runtime):
+// - the MediaPipe tasks-vision WASM runtime → public/mediapipe/wasm
+// - the face recognition weights that tell players apart (dlib's ResNet face
+//   model, public domain, shipped in @vladmandic/face-api) → public/faceid
+import { copyFileSync, cpSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,3 +18,14 @@ if (!existsSync(src)) {
 mkdirSync(dest, { recursive: true });
 cpSync(src, dest, { recursive: true });
 console.log(`[copy-wasm] copied MediaPipe WASM to ${dest}`);
+
+const faceIdSrc = join(root, "node_modules", "@vladmandic", "face-api", "model");
+const faceIdDest = join(root, "public", "faceid");
+const FACE_ID_FILES = ["face_recognition_model-weights_manifest.json", "face_recognition_model.bin"];
+if (FACE_ID_FILES.every((f) => existsSync(join(faceIdSrc, f)))) {
+  mkdirSync(faceIdDest, { recursive: true });
+  for (const f of FACE_ID_FILES) copyFileSync(join(faceIdSrc, f), join(faceIdDest, f));
+  console.log(`[copy-wasm] copied face recognition weights to ${faceIdDest}`);
+} else {
+  console.warn(`[copy-wasm] ${faceIdSrc} has no face recognition weights, skipping (every face then counts as new)`);
+}
