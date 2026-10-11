@@ -44,6 +44,7 @@ export const SOUND_NAMES = [
   "angler_hooked",
   "reel_click",
   "line_snap",
+  "shark_theme",
   "shark_note_low",
   "shark_note_high",
   "shark_bite",

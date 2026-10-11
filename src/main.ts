@@ -1225,6 +1225,7 @@ function frame(now: number): void {
     }
   }
   sound.setPowerLineProximity(powerLineProximity);
+  sound.setSharkTheme(state === "playing" && game.sharkTheme !== null ? config.sharkThemeOffset + game.sharkTheme : null);
 
   updateHud();
   updateStrainBars();

@@ -188,6 +188,9 @@ describe("sharks", () => {
     Object.assign(game.bird, { y: 300, vy: 0 });
     game.puffInput = config.oceanHoverPuff;
     game.spawnSharkNow();
+    expect(game.sharkTheme).toBe(0);
+    // Its music plays a while before it shows up.
+    for (let i = 0; i < 60 * 20 && !game.shark; i++) game.step(1 / 60);
     expect(game.shark?.state).toBe("stalking");
     return game;
   }
@@ -199,6 +202,38 @@ describe("sharks", () => {
     game.puffInput = puff;
     for (let i = 0; i < 60 * 6 && game.phase === "playing" && game.shark?.state !== "fleeing"; i++) game.step(1 / 60);
   }
+
+  for (const width of [1000, 1400]) {
+    it(`lunges on the music's cue (${width} px wide)`, () => {
+      const game = sharkAttack();
+      game.resize(width);
+      for (let i = 0; i < 60 * 20 && game.shark?.state !== "lunge"; i++) game.step(1 / 60);
+      expect(game.shark?.state).toBe("lunge");
+      expect(game.sharkTheme!).toBeCloseTo(config.sharkThemeAttack, 1);
+    });
+  }
+
+  it("spawns no obstacles in the last seconds before it swims in", () => {
+    config.oceanJellyRate = 0;
+    const game = atHarbour(80, 240, 0);
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    game.obstacles = [];
+    game.puffInput = config.oceanHoverPuff;
+    game.spawnSharkNow();
+    const spawnAt = config.sharkThemeAttack - config.sharkWindup - config.sharkStalkTime;
+    let late = 0;
+    for (let i = 0; i < 60 * 20 && !game.shark; i++) {
+      // One obstacle falls due inside the clear window.
+      if (game.sharkTheme! > spawnAt - 3 && game.sharkTheme! < spawnAt - 3 + 1 / 30) game["nextObstacleAt"] = game.distance;
+      const before = game.obstacles.length;
+      game.step(1 / 60);
+      if (game.obstacles.length > before && game.sharkTheme! > spawnAt - 3) late++;
+      // Only the spawning is under test: wave the fish through the early ones.
+      for (const o of game.obstacles) Object.assign(o, { gapTop: -1000, gapBottom: 2000, anchor: false, bottom: "none" });
+    }
+    expect(game.shark).not.toBeNull();
+    expect(late).toBe(0);
+  });
 
   it("eats a fish that isn't spiked", () => {
     const game = sharkAttack();

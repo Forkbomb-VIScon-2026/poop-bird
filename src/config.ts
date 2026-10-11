@@ -223,9 +223,11 @@ export const CONFIG_SPEC = {
   anglerCloseMultiplier: { value: 1, min: 0, max: 10, step: 0.5, group: "Fisherman", label: "Close-one points", hint: "× points for dodging the hook by a whisker" },
 
   // --- Sharks --------------------------------------------------------------
-  sharkChance: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Sharks", label: "Chance", hint: "chance an ocean stage has a shark" },
-  sharkSlot: { value: 5, min: 0, max: 20, step: 1, group: "Sharks", label: "Slot", hint: "ocean obstacles before the shark comes" },
-  sharkApproach: { value: 150, min: 20, max: 500, step: 5, group: "Sharks", label: "Approach speed", hint: "px/s it glides in on screen while stalking" },
+  sharkChance: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Sharks", label: "Chance", hint: "chance an ocean stage has a shark (the fisherman only comes when it doesn't)" },
+  sharkSlot: { value: 2, min: 0, max: 20, step: 1, group: "Sharks", label: "Slot", hint: "ocean obstacles before its music starts" },
+  sharkThemeOffset: { value: 4, min: 0, max: 60, step: 0.1, group: "Sharks", label: "Music start", hint: "s into shark_theme.mp3 where playback starts" },
+  sharkThemeAttack: { value: 12.5, min: 3, max: 60, step: 0.1, group: "Sharks", label: "Music → lunge", hint: "s after the music starts that the shark lunges (16.5 s into the file at the default start)" },
+  sharkStalkTime: { value: 3, min: 0.5, max: 10, step: 0.1, group: "Sharks", label: "On screen before windup", hint: "s it glides in before the \"!\"" },
   sharkLungeRange: { value: 380, min: 150, max: 800, step: 10, group: "Sharks", label: "Lunge range", hint: "px ahead of the fish where it stops, opens wide and winds up" },
   sharkWindup: { value: 0.7, min: 0.1, max: 2, step: 0.05, group: "Sharks", label: "Windup", hint: "s of the \"!\" before it lunges (time to spike up)" },
   sharkLungeSpeed: { value: 560, min: 150, max: 1200, step: 10, group: "Sharks", label: "Lunge speed", hint: "px/s" },

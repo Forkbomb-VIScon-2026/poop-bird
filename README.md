@@ -249,9 +249,14 @@ city by city (the debug panel's "Progression" group).
     his hat flying off into the water. A moment later he sits up again, bald
     and shaking his fist. Unspiked, the fish just slips past the line.
   Tunables are in the debug panel's "Fisherman" group.
-- **Sharks:** most ocean stages (`sharkChance`) have a shark, a few obstacles
-  in (`sharkSlot`), in open water. It glides in from ahead at the fish's depth
-  (its two-note "dun-dun… dun-dun" theme speeds up and swells as it closes in), stops, opens its jaws and a "!" pops over it,
+- **Sharks:** most ocean stages (`sharkChance`) have a shark instead of the
+  fisherman. Its music starts a couple of obstacles in (`sharkSlot`), well
+  before it shows up: `shark_theme.mp3` from `sharkThemeOffset` (4 s) on,
+  timed so the shark lunges `sharkThemeAttack` (12.5 s) later, and kept in
+  sync across pauses (`Game.sharkTheme` is the clock). No new obstacles spawn
+  in the last seconds before it arrives. Without that file, a synthesized
+  two-note "dun-dun" plays instead, speeding up as it closes in. The shark
+  glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it,
   and "SPIKE UP!" flashes by the fish. Then it lunges, homing on the fish:
   it can't be outswum, the only defence is to be spiked when it bites (the
   spines reach a bit further than its bite). Spiked, it yelps, turns tail

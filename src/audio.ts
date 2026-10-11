@@ -12,6 +12,8 @@ export class Sound {
   private readonly active = new Map<SoundName, ActiveSound>();
   private readonly lastPlayed = new Map<SoundName, number>();
   private powerLine: ActiveSound | null = null;
+  /** The shark's music, and the context time at which its position 0 would have played. */
+  private theme: { sound: ActiveSound; zeroAt: number } | null = null;
   muted = false;
 
   /** A real asset takes priority; otherwise use its named bell placeholder. */
@@ -179,8 +181,37 @@ export class Sound {
   anglerHooked(): void { this.play("angler_hooked"); }
   reelClick(): void { this.play("reel_click", 0.5, 0.25); }
   lineSnap(): void { this.play("line_snap"); }
-  /** One note of the shark's two-note ostinato (low, high, low, high, …), louder as it closes in. */
-  sharkNote(high: boolean, volume: number): void { this.play(high ? "shark_note_high" : "shark_note_low", volume); }
+  /** One note of the synthesized two-note ostinato, louder as it closes in. Only without a shark_theme recording. */
+  sharkNote(high: boolean, volume: number): void {
+    if (this.buffers.has("shark_theme")) return;
+    this.play(high ? "shark_note_high" : "shark_note_low", volume);
+  }
+
+  /**
+   * Keeps the shark's music at `position` seconds into shark_theme (null =
+   * fade it out). Called every frame; it restarts at the right spot if it has
+   * drifted, e.g. after a pause.
+   */
+  setSharkTheme(position: number | null): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const playing = this.theme;
+    if (playing) {
+      const drift = ctx.currentTime - playing.zeroAt - (position ?? Infinity);
+      if (Math.abs(drift) < 0.3) return;
+      playing.sound.gain.gain.setTargetAtTime(0, ctx.currentTime, position === null ? 0.25 : 0.02);
+      playing.sound.source.stop(ctx.currentTime + (position === null ? 1.2 : 0.1));
+      this.theme = null;
+    }
+    const buffer = this.buffers.get("shark_theme");
+    if (position === null || !buffer || !this.master || position >= buffer.duration) return;
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    source.buffer = buffer;
+    source.connect(gain).connect(this.master);
+    source.start(0, Math.max(0, position));
+    this.theme = { sound: { source, gain }, zeroAt: ctx.currentTime - position };
+  }
   sharkBite(): void { this.play("shark_bite"); }
   sharkYelp(): void { this.play("shark_yelp"); }
 }
