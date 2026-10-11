@@ -1,6 +1,7 @@
 // Canvas rendering. Simple shapes, chunky outlines, no image assets.
 
 import { config } from "./config";
+import type { BirdLook, FishLook, RenderFrame } from "./runtime/render-frame";
 import {
   RTX,
   RtxPlayer,
@@ -64,7 +65,6 @@ import {
   type Angler,
   type Balloon,
   type Shark,
-  type Game,
   type Jelly,
   type Obstacle,
   type Pebble,
@@ -83,9 +83,6 @@ import {
 
 /** A captured photo: a face crop from the webcam, or a crop of the game canvas around the bird. */
 export type Photo = HTMLCanvasElement;
-
-/** What drawBird reads (captureBird draws the bird outside the game). */
-type BirdLook = Pick<Game, "bird" | "charge" | "stunned" | "phase" | "overstrainProgress" | "zapped" | "zapFlash" | "time">;
 
 const OUTLINE = "#2b2d42";
 /** The perch's nest, relative to the perched bird's centre (PERCH_Y): its rim, depth and half-width. */
@@ -165,7 +162,7 @@ export class Renderer {
   }
 
   /** Keyboard-mode photo: a close-up of the bird, always caught mid-strain (that's the joke), without HUD. */
-  captureBird(game: Game): Photo | null {
+  captureBird(game: RenderFrame): Photo | null {
     const out = document.createElement("canvas");
     out.width = 200;
     out.height = 200;
@@ -181,17 +178,15 @@ export class Renderer {
     const zoom = 2.1;
     octx.setTransform(zoom, 0, 0, zoom, 100 - game.bird.x * zoom, 105 - game.bird.y * zoom);
     const main = this.ctx;
-    const charge = game.charge;
-    const relief = game.bird.relief;
     this.ctx = octx;
-    game.charge = { ...charge, charge: Math.max(charge.charge, 0.9) };
-    game.bird.relief = 0;
     try {
-      this.drawBird(game);
+      this.drawBird({
+        ...game, bird: { ...game.bird, relief: 0 },
+        charge: { ...game.charge, charge: Math.max(game.charge.charge, 0.9) },
+        stunned: game.stunned, overstrainProgress: game.overstrainProgress,
+      });
     } finally {
       this.ctx = main;
-      game.charge = charge;
-      game.bird.relief = relief;
     }
     return out;
   }
@@ -207,7 +202,7 @@ export class Renderer {
     return this.width;
   }
 
-  draw(game: Game, dt: number): void {
+  draw(game: RenderFrame, dt: number): void {
     RTX.on = this.graphics === "rtx";
     if (RTX.on) this.rtxPlayer.tick(game, dt);
     const ctx = this.ctx;
@@ -286,7 +281,7 @@ export class Renderer {
    * The city's sky is cut off at the water level, so the two meet at the
    * surface.
    */
-  private drawScenery(game: Game): void {
+  private drawScenery(game: RenderFrame): void {
     const ctx = this.ctx;
     const cam = game.cameraY;
     const cityVisible = cam < OCEAN_DEPTH - 0.5;
@@ -313,7 +308,7 @@ export class Renderer {
   }
 
   /** The x range of the quay (land) and of the harbour water, in screen x. Without a shore, it's all land. */
-  private landRange(game: Game): { land: [number, number]; water: [number, number] | null } {
+  private landRange(game: RenderFrame): { land: [number, number]; water: [number, number] | null } {
     const s = game.shore;
     const lo = -40;
     const hi = this.width + 40;
@@ -327,7 +322,7 @@ export class Renderer {
    * shore, down to the sea floor. Above the water it's dry stone with a
    * bollard at the edge; below, it's tinted blue-green with a weed line.
    */
-  private drawQuay(game: Game): void {
+  private drawQuay(game: RenderFrame): void {
     const ctx = this.ctx;
     const s = game.shore!;
     const { land } = this.landRange(game);
@@ -424,7 +419,7 @@ export class Renderer {
   }
 
   /** The harbour seen from above: a rippling surface at WATER_Y over the water, the sea showing through below. */
-  private drawHarbourSurface(game: Game): void {
+  private drawHarbourSurface(game: RenderFrame): void {
     const ctx = this.ctx;
     const { water } = this.landRange(game);
     if (!water || water[1] - water[0] < 1) return;
@@ -456,7 +451,7 @@ export class Renderer {
 
   // --- sky & ground -----------------------------------------------------------
 
-  private drawSky(game: Game): void {
+  private drawSky(game: RenderFrame): void {
     if (RTX.on && rtxSky(this.ctx, this.width, this.bgOffset, game.time)) return;
     const ctx = this.ctx;
     const w = this.width + 40;
@@ -518,7 +513,7 @@ export class Renderer {
   }
 
   /** Sidewalk and road, only where there's land (up to the quay's edge). */
-  private drawGround(game: Game): void {
+  private drawGround(game: RenderFrame): void {
     const ctx = this.ctx;
     const [x0, x1] = this.landRange(game).land;
     if (x1 - x0 < 1) return;
@@ -1195,12 +1190,12 @@ export class Renderer {
 
   // --- poops, particles, text -------------------------------------------------
 
-  private drawPoops(game: Game): void {
+  private drawPoops(game: RenderFrame): void {
     const ctx = this.ctx;
     for (const p of game.poops) drawPoopBlob(ctx, p.x, p.y, p.r, p.rot);
   }
 
-  private drawParticles(game: Game): void {
+  private drawParticles(game: RenderFrame): void {
     const ctx = this.ctx;
     for (const p of game.particles) {
       ctx.globalAlpha = Math.max(0, Math.min(1, p.life / (p.maxLife * 0.5)));
@@ -1212,7 +1207,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
-  private drawFloaters(game: Game): void {
+  private drawFloaters(game: RenderFrame): void {
     const ctx = this.ctx;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -1230,7 +1225,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
-  private drawScreenSplats(game: Game): void {
+  private drawScreenSplats(game: RenderFrame): void {
     const ctx = this.ctx;
     for (const s of game.screenSplats) {
       const a = Math.min(0.85, s.life / 1.2);
@@ -1504,7 +1499,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawChargeMeter(game: Game): void {
+  private drawChargeMeter(game: RenderFrame): void {
     const ctx = this.ctx;
     const b = game.bird;
     const c = game.charge.charge;
@@ -1553,7 +1548,7 @@ export class Renderer {
    * The aim of a kid who's winding up: a dotted arc that reaches out further
    * the more he pulls, ending in a crosshair on the bird.
    */
-  private drawKidAim(t: Target, game: Game): void {
+  private drawKidAim(t: Target, game: RenderFrame): void {
     const k = t.kid;
     if (!k || k.state !== "aiming" || game.phase !== "playing") return;
     const ctx = this.ctx;
@@ -1610,7 +1605,7 @@ export class Renderer {
   /**
    * The paparazzo's timer: a ring with a camera that fills as he closes in.
    */
-  private drawPaparazzoTimer(t: Target, game: Game): void {
+  private drawPaparazzoTimer(t: Target, game: RenderFrame): void {
     const p = t.pap;
     if (!p || p.state !== "watching" || game.phase !== "playing") return;
     const ctx = this.ctx;
@@ -1652,7 +1647,7 @@ export class Renderer {
   }
 
   /** The fresh shot pops up as a polaroid in the top corner. */
-  private drawPolaroid(game: Game): void {
+  private drawPolaroid(game: RenderFrame): void {
     const p = game.polaroid;
     if (!p) return;
     const ctx = this.ctx;
@@ -1716,7 +1711,7 @@ export class Renderer {
    * a pulsing "KISS!" heart whose ring runs out with the jackpot window. A
    * ruined kiss breaks the heart. The run's first wedding gets a hint.
    */
-  private drawWeddingCue(w: Wedding, game: Game): void {
+  private drawWeddingCue(w: Wedding, game: RenderFrame): void {
     const ctx = this.ctx;
     const x = weddingX(w);
     if (x < -80 || x > this.width + 80) return;
@@ -1783,7 +1778,7 @@ export class Renderer {
    * bird photobombing from the corner. In face mode `face` (the player's
    * face at the kiss) is stuck on the bird. Kept in memory for this run only.
    */
-  captureWedding(game: Game, face: Photo | null): Photo | null {
+  captureWedding(game: RenderFrame, face: Photo | null): Photo | null {
     const w = game.wedding;
     if (!w) return null;
     const W = 320;
@@ -1811,10 +1806,6 @@ export class Renderer {
     const birdCharge = ruined ? 0 : 0.9;
 
     const main = this.ctx;
-    const b = game.bird;
-    const savedBird = { ...b };
-    const savedCharge = game.charge;
-    const savedZap = game.zapFlash;
     this.ctx = octx;
     try {
       octx.setTransform(s, 0, 0, s, W / 2 - focusX * s, groundY - feet * s);
@@ -1831,15 +1822,15 @@ export class Renderer {
       this.drawParticles(game);
       // The bird photobombs: straining if the kiss went through, blissfully relieved if it just let go on them.
       const at = toWorld(birdAt.x, birdAt.y);
-      Object.assign(b, { x: at.x, y: at.y, rot: -0.3, stretch: 1, stretchV: 0, relief: ruined ? 0.4 : 0, flap: 0 });
-      game.charge = { ...savedCharge, charge: birdCharge };
-      game.zapFlash = 0;
-      this.drawBird(game);
+      this.drawBird({
+        ...game,
+        bird: { ...game.bird, x: at.x, y: at.y, rot: -0.3, stretch: 1, stretchV: 0, relief: ruined ? 0.4 : 0, flap: 0 },
+        charge: { ...game.charge, charge: birdCharge }, zapFlash: 0,
+        stunned: game.stunned,
+        overstrainProgress: birdCharge >= 1 ? game.overstrainProgress : 0,
+      });
     } finally {
       this.ctx = main;
-      Object.assign(b, savedBird);
-      game.charge = savedCharge;
-      game.zapFlash = savedZap;
     }
     octx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -1927,7 +1918,7 @@ export class Renderer {
    * the water, him sitting in it in his yellow oilskins and sou'wester, his
    * line running down through the bobber to the hook and its worm.
    */
-  private drawAngler(a: Angler, game: Game): void {
+  private drawAngler(a: Angler, game: RenderFrame): void {
     const ctx = this.ctx;
     const time = game.time;
     // The boat rides low: its waterline centre sits under the surface, so he fits in view above it.
@@ -2037,7 +2028,7 @@ export class Renderer {
   }
 
   /** On the line: the hook stays in the fish's mouth while he reels it in. */
-  private drawHookedCue(a: Angler, game: Game): void {
+  private drawHookedCue(a: Angler, game: RenderFrame): void {
     if (a.state !== "hooked" && a.state !== "landed") return;
     drawHook(this.ctx, a.hookX, a.hookY, false, game.time);
   }
@@ -2046,7 +2037,7 @@ export class Renderer {
    * The fisherman's trophy photo: him in his boat, grinning, holding up the
    * pufferfish he just landed. Kept in memory for this run only.
    */
-  captureTrophy(game: Game): Photo | null {
+  captureTrophy(game: RenderFrame): Photo | null {
     const W = 320;
     const H = 240;
     const out = document.createElement("canvas");
@@ -2088,13 +2079,6 @@ export class Renderer {
     const fs = 1.3;
     const tip = { x: fishAt.x + 2, y: 22 };
     const main = this.ctx;
-    const b = game.bird;
-    const savedBird = { ...b };
-    const savedFish = { ...game.fish };
-    const savedSpike = game.spike;
-    const savedPhase = game.phase;
-    const savedTransition = game.transition;
-    const savedStage = game.stage;
     this.ctx = octx;
     try {
       octx.setTransform(s, 0, 0, s, boatAt.x, boatAt.y);
@@ -2115,23 +2099,16 @@ export class Renderer {
       line(octx, tip.x, tip.y, fishAt.x + 2, fishAt.y - 40);
       // The fish dangles, nose up, puffed up in a last protest.
       octx.setTransform(fs, 0, 0, fs, fishAt.x, fishAt.y);
-      game.stage = "ocean";
-      game.phase = "playing";
-      game.transition = null;
-      game.spike = initialSpikeState();
-      Object.assign(game.fish, { puff: 1, spikes: 0, flare: 0 });
-      Object.assign(b, { x: 0, y: 0, vy: 0, rot: -Math.PI / 2 + 0.15, stretch: 1, stretchV: 0 });
-      this.drawFish(game);
+      this.drawFish({
+        bird: { ...game.bird, x: 0, y: 0, vy: 0, rot: -Math.PI / 2 + 0.15, stretch: 1, stretchV: 0 },
+        fish: { puff: 1, spikes: 0, flare: 0 }, phase: "playing", stunned: false,
+        popProgress: 0, popWarning: false, spike: initialSpikeState(),
+        bodyRadius: BIRD_RADIUS * config.oceanHitboxMax, time: game.time,
+      });
       octx.setTransform(1, 0, 0, 1, 0, 0);
       drawHook(octx, fishAt.x + 2, fishAt.y - 36, false, 0);
     } finally {
       this.ctx = main;
-      Object.assign(b, savedBird);
-      Object.assign(game.fish, savedFish);
-      game.spike = savedSpike;
-      game.phase = savedPhase;
-      game.transition = savedTransition;
-      game.stage = savedStage;
     }
 
     // Soft vignette
@@ -2145,7 +2122,7 @@ export class Renderer {
 
   // --- ocean ------------------------------------------------------------------
 
-  private drawOcean(game: Game): void {
+  private drawOcean(game: RenderFrame): void {
     const ctx = this.ctx;
     const w = this.width + 40;
     const time = game.time;
@@ -2745,7 +2722,7 @@ export class Renderer {
    * swims left, so its belly stays down). Grey back, white belly, a dorsal
    * fin, and jaws that open wide with two rows of teeth.
    */
-  private drawShark(s: Shark, game: Game): void {
+  private drawShark(s: Shark, game: RenderFrame): void {
     const ctx = this.ctx;
     const fast = s.state === "lunge" || s.state === "fleeing";
     const tw = Math.sin(game.time * (fast ? 20 : 7) + s.seed) * (fast ? 10 : 7);
@@ -2933,7 +2910,7 @@ export class Renderer {
   }
 
   /** Windup: a "!" over the shark, and a "SPIKE UP!" nudge by the fish while it isn't spiked. */
-  private drawSharkCue(s: Shark, game: Game): void {
+  private drawSharkCue(s: Shark, game: RenderFrame): void {
     if (game.phase !== "playing") return;
     const ctx = this.ctx;
     if (s.state === "windup") {
@@ -2996,7 +2973,7 @@ export class Renderer {
    * slim torpedo; puffing rounds it into a ball with a sagging white belly. Fins and eye keep
    * their size while the body inflates.
    */
-  private drawFish(game: Game): void {
+  private drawFish(game: FishLook): void {
     if (RTX.on && this.rtxPlayer.drawFish(this.ctx, game, game.bodyRadius)) {
       const ctx = this.ctx;
       const b = game.bird;
@@ -3342,7 +3319,7 @@ export class Renderer {
   }
 
   /** Puff meter next to the fish, with the hover level and the spike threshold marked. */
-  private drawPuffMeter(game: Game): void {
+  private drawPuffMeter(game: RenderFrame): void {
     if (game.stunned) return;
     const ctx = this.ctx;
     const b = game.bird;

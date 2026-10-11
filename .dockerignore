@@ -1,5 +1,7 @@
 node_modules
 dist
+target
+public/game-wasm
 .git
 public/mediapipe/wasm
 *.log

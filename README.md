@@ -12,9 +12,14 @@ to the [leaderboard](#leaderboard).
 
 ## Run it
 
-Needs Node 24 and npm.
+Needs Node 24, npm and rustup on the migration branch. See
+[Rust/WASM build instructions](docs/rust-build.md) and
+[migration progress](docs/migration-progress.md). The existing TypeScript game
+remains active while the Rust implementation is verified incrementally.
 
 ```sh
+rustup show           # installs the pinned toolchain and WASM target
+cargo install wasm-bindgen-cli --version 0.2.104 --locked
 npm install          # also copies the MediaPipe WASM into public/mediapipe/wasm
 npm run fetch-model  # downloads face_landmarker.task into public/mediapipe/ (once)
 npm run dev          # http://localhost:5173 (no debug tooling, same as production)
@@ -826,7 +831,8 @@ src/
   face.ts       MediaPipe + webcam, detection loop
   game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
-  audio.ts      WebAudio synth sounds
+  audio.ts      Sample-based WebAudio playback
+  audio-cues.ts Fixed/random/state-dependent event playback definitions
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, your leaderboard runs

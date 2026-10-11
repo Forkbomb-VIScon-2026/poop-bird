@@ -24,9 +24,15 @@ A fresh worktree has none of the gitignored runtime files, and the game fails
 without them. Before running or previewing anything:
 
 ```sh
+rustup show          # migration branch: pinned Rust toolchain and WASM target
+cargo install wasm-bindgen-cli --version 0.2.104 --locked
 npm install          # dependencies; also copies the WASM into public/mediapipe/wasm
 npm run fetch-model  # public/mediapipe/face_landmarker.task
 ```
+
+The migration branch builds game WASM before dev/build; see docs/rust-build.md.
+Read docs/migration-progress.md and [the migration handoff guide](docs/migration-handoff.md) before continuing migration work. The legacy
+TypeScript world remains authoritative until full parity is recorded there.
 
 Instead of downloading, you can copy the model from another checkout that
 already has it (e.g. `cp ../../../repos/poop-bird/public/mediapipe/face_landmarker.task
@@ -94,7 +100,7 @@ Stages: a run alternates city → ocean → city → …. `Game.stage` is `"city
 
 Output: `Game` pushes `GameEvent`s into `game.events`; `main.ts` `handleGameEvents()` drains them each frame into `audio.ts` (sample-based WebAudio playback using `src/audio-assets.ts` and `public/assets/audio/`; release samples follow `poopSoundMiddle` / `poopSoundLarge` thresholds) and UI. `render.ts` `Renderer` reads `Game` state and draws everything procedurally on canvas (no sprites) by default. The optional RTX style (settings menu, gear top right → Graphics → RTX; saved via `storage.ts`) swaps in real photo cut-outs: `rtx.ts` loads them from `src/assets/` (credits in `src/assets/CREDITS.md`) the first time RTX is on, and `render.ts` drawing functions check `RTX.on` and hand what has a photo to it, falling back to their own drawing for everything else (so new things only need a classic look). The logical playfield is 600 px tall (`VIEW_H`).
 
-Audio assets: `src/audio-assets.ts` lists the sound IDs, and `src/audio.ts` caches decoded recordings. It loads `public/assets/audio/<name>.mp3` or `<name>.wav`, then logs the missing sound and tries `tmp_<name>.mp3`. Add new effects to `SOUND_NAMES` and provide the named asset; don't edit legacy `sounds/`. `release(size, charge, sweet)` plays `poop_weak`, `poop_middle`, or `poop_large` as selected by `main.ts` using `config.poopSoundMiddle` and `config.poopSoundLarge`. See `public/assets/audio/README.md`.
+Audio assets: `src/audio-assets.ts` lists the sound IDs, and `src/audio.ts` caches decoded recordings. It loads `public/assets/audio/<name>.mp3` or `<name>.wav`, then logs the missing sound and tries `tmp_<name>.mp3`. Add new effects to `SOUND_NAMES` and provide the named asset; don't edit legacy `sounds/`. `src/audio-cues.ts` defines fixed, random, shuffled-bag and state-dependent event playback. `Sound.event()` resolves release samples from live `config.poopSoundMiddle` and `config.poopSoundLarge`; main.ts handles UI and haptics separately. See `public/assets/audio/README.md`.
 
 Conventions that span files:
 - Debug tooling is opt-in: `src/env.ts` `DEBUG` is true only in `--mode debug`. Without it `debug` is null (use `debug?.`), saved tuning overrides are ignored, `window.poopBird` isn't set, and `[data-debug-only]` elements are removed.

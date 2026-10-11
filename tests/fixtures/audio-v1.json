@@ -1,0 +1,1694 @@
+{
+  "baseline": "4208bf7",
+  "description": "Captured original Sound.play calls from original main.ts event routing, seeded at 1234 per event",
+  "cases": [
+    {
+      "event": {
+        "type": "release",
+        "charge": 0.349999,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "poop_weak",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "release",
+        "charge": 0.35,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "poop_middle",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "release",
+        "charge": 0.749999,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "poop_middle",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "release",
+        "charge": 0.75,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "poop_large",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "release",
+        "charge": 1,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "poop_large",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "accident",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "accident",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "splat",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "splat",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "hit",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "hit",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "crash",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "splat",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "chomp",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "shark_bite",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "zap",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "zap",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "droneDown",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "power_down",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "droneCrashed",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "drone_crash",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "gameover",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": []
+    },
+    {
+      "event": {
+        "type": "gateEntered",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "splash",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "submerged",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": []
+    },
+    {
+      "event": {
+        "type": "breached",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "splash",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "transformed",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "splash",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "surfaced",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "splash",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "spike",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "spike",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "pop",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "deflate",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "jellyPopped",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "jelly_pop",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "paparazzoBeep",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "camera_beep",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "photo",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "shutter",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "cameraSmashed",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "smash",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "slingshotDraw",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "slingshot_draw",
+          "volume": 1,
+          "delay": 0.5
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "slingshotFire",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "slingshot_fire",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "bonk",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "bonk",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "pebbleShot",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "pebble_shot",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "ricochet",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "ricochet",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "kidCried",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "kid_cry",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "curse",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "curse_4",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "weddingArrived",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "wedding_arrived",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "weddingBeat",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "wedding_beat",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "weddingKiss",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "wedding_kiss",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "weddingRuined",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "wedding_ruined",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "weddingMarried",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "wedding_married",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "weddingPhoto",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "shutter",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "bouquetThrown",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "bouquet_thrown",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "bouquetCaught",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "bouquet_caught",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "bouquetHit",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "bouquet_hit",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "balloonPop",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "balloon_pop",
+          "volume": 1,
+          "delay": 0
+        },
+        {
+          "sample": "hit",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "chuteOpen",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "chute_open_2",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "basketLanded",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "basket_landed",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "burner",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "burner",
+          "volume": 1,
+          "delay": 0.3
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "threaded",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "hit",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anglerCast",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "angler_cast",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anglerHooked",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "angler_hooked",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anglerReel",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "reel_click",
+          "volume": 0.5,
+          "delay": 0.25
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anglerLanded",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "splash",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anglerPhoto",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "shutter",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "lineSnapped",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "line_snap",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "sharkNote",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "shark_note_high",
+          "volume": 0.35,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "sharkNote",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": true,
+      "calls": []
+    },
+    {
+      "event": {
+        "type": "sharkWindup",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": []
+    },
+    {
+      "event": {
+        "type": "sharkLunge",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "shark_lunge",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "sharkSpiked",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "shark_yelp",
+          "volume": 1,
+          "delay": 0
+        },
+        {
+          "sample": "hit",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anchorWarn",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": []
+    },
+    {
+      "event": {
+        "type": "anchorRattle",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "reel_click",
+          "volume": 0.8,
+          "delay": 0.1
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anchorSnapped",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "line_snap",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "event": {
+        "type": "anchorLanded",
+        "charge": 0.5,
+        "sweet": true,
+        "big": true,
+        "combo": 4,
+        "timer": 1,
+        "windup": 0.3,
+        "count": 2,
+        "angry": true,
+        "high": true,
+        "volume": 0.35,
+        "to": "ocean",
+        "points": 100,
+        "photoId": 1,
+        "kind": "car",
+        "message": "test"
+      },
+      "theme": false,
+      "calls": [
+        {
+          "sample": "bonk",
+          "volume": 1,
+          "delay": 0
+        }
+      ]
+    }
+  ]
+}

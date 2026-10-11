@@ -5,7 +5,9 @@
 // else as usual, so new things on the classic side keep working with RTX on.
 // The photos only load the first time RTX is turned on.
 
-import { BIRD_RADIUS, GROUND_Y, SURFACE_Y, poleX, type Game, type PowerLine } from "./game";
+import { BIRD_RADIUS, GROUND_Y, SURFACE_Y, poleX, type PowerLine } from "./game";
+
+import type { BirdLook, FishLook } from "./runtime/render-frame";
 
 import asphaltUrl from "./assets/asphalt.jpg";
 import balloonUrl from "./assets/balloon.png";
@@ -608,7 +610,7 @@ class GooglyEye {
 
 // --- the player ---------------------------------------------------------------------
 
-type BirdState = Pick<Game, "bird" | "charge" | "stunned" | "phase" | "time">;
+type BirdState = BirdLook;
 
 /** The RTX player: the photo pigeon and the photo pufferfish, googly-eyed (or wearing the player's face). */
 export class RtxPlayer {
@@ -714,7 +716,7 @@ export class RtxPlayer {
    * whenever its puff changes, with a googly eye (pinpoint when it's about to pop). False until
    * the photos have loaded.
    */
-  drawFish(ctx: CanvasRenderingContext2D, game: Game, r: number): boolean {
+  drawFish(ctx: CanvasRenderingContext2D, game: FishLook, r: number): boolean {
     const { fishDeflated, fishPuffed } = sprites();
     if (!spriteReady(fishDeflated) || !spriteReady(fishPuffed)) return false;
     const b = game.bird;
