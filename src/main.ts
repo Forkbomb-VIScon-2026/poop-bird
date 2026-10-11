@@ -815,7 +815,6 @@ async function oceanTipBanners(token: number, intro?: [string, string]): Promise
   const tips: [string, string][] = [
     ...(intro ? [intro] : []),
     ["Spikes! 🐡", "Puff past the red line to spike out. Hold it too long and you pop"],
-    ["Watch out! 🪸", "Dodge the coral, rocks and sea floor"],
   ];
   for (const [title, hint] of tips) {
     setPuffOverlay(title, hint, null, true);

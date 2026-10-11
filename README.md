@@ -257,8 +257,9 @@ city by city (the debug panel's "Progression" group).
   used right away and the level starts. If not, a slower **calibration** runs,
   with a timeline of its steps (so the next switch is never a surprise) and
   a look-around; there the fish shows each step (puffs up and floats, shrinks
-  and sinks) whatever your face does. New players then get the ocean tips as two
-  banners. Everyone else gets a short "GET READY!" banner instead, while the
+  and sinks) whatever your face does. New players then get the ocean tip as one
+  banner (spiking out, and popping when held too long; what's in the sea is
+  left to discover). Everyone else gets a short "GET READY!" banner instead, while the
   fish swims to the middle of the sea on its own (`Game.guideY`), so the level
   never starts with it on the sand or at the surface. A fish lying on the sand when the level starts isn't killed by the
   sea floor until it swims off (at most `oceanCalmFloorGrace`, 5 s). Details
@@ -266,7 +267,7 @@ city by city (the debug panel's "Progression" group).
 - **New players.** In face mode a new player always gets the swim lesson,
   even with a saved puff calibration (which it then refits). In keyboard mode
   a new player's first dive also swims on in calm water, under banners on
-  holding Space (or the screen) to puff and the two ocean tips; then the
+  holding Space (or the screen) to puff and the ocean tip; then the
   level starts. Neither ever stops the world. The tips show once per browser;
   **⚙️ Options → "I'm new here: show tips"** in the menu turns them back on
   (or off) for the next player.
