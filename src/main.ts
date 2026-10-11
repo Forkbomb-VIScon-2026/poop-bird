@@ -1,5 +1,7 @@
-// App glue: screens, input, the fixed-timestep game loop, face tracking,
-// calibration (strain, and puff at the first dive), sound and the debug panel.
+// App glue: screens, input, the fixed-timestep game loop, face tracking and
+// recognition, calibration (strain, and puff at the first dive), the lessons,
+// and the debug panel. Self-contained UI pieces live in ui/, event sounds in
+// feedback.ts.
 
 import "./style.css";
 import { config } from "./config";
