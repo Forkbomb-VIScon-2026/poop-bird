@@ -668,13 +668,12 @@ async function runCalibration(forced = calib.forced): Promise<void> {
   puffSignal = initialPuffState();
   if (!(await welcome(token))) return;
   const strained = await calibrateStrain(token);
-  const puffed = strained === null ? null : await calibratePuff(token);
   if (token === flow) calib.relaxing = false;
-  if (token !== flow || strained === null || puffed === null) return;
+  if (token !== flow || strained === null) return;
   strain = initialStrainState();
   puffSignal = initialPuffState();
   startReady();
-  showToast(strained && puffed ? "All set! 💪 The bird and the fish know your face now" : "Let's go! Recalibrate (C) any time", 3500);
+  showToast(strained ? "Ready to fly! 💪" : "Let's go! Recalibrate (C) any time", 3500);
 }
 
 /**
@@ -1191,8 +1190,47 @@ function markTutorialSeen(t: Tutorial): void {
  * puff was calibrated before the run, on the calibration screen.)
  */
 function onSubmerged(): void {
-  if (!seenTutorials.has("ocean")) void runOceanTips();
+  if (mode === "face" && !puffCalibration && !waterPuffAttempted) void runWaterPuffCalibration();
+  else if (!seenTutorials.has("ocean")) void runOceanTips();
   else showToast(mode === "face" ? "Puff your cheeks to float 🐡" : isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
+}
+
+/** Only one automatic puff lesson per run; retries remain inside calibratePuff. */
+let waterPuffAttempted = false;
+
+/** Pause the actual underwater game, calibrate, then resume the same fish. */
+async function runWaterPuffCalibration(): Promise<void> {
+  waterPuffAttempted = true;
+  const token = ++flow;
+  game.calmWater = true;
+  state = "calibrating";
+  showScreen("calibrate");
+  show(hud, false);
+  show(cam, true);
+  calib.forced = true;
+  calib.pressed = calib.skipped = false;
+  calib.relaxed = [];
+  calib.relaxing = true;
+  $("calib-step").textContent = "Inflate your fish!";
+  $("calib-prompt").textContent = "Puff your cheeks to stay afloat 🐡";
+  $("calib-hint").textContent = "First, look at the camera with a relaxed face.";
+  show($("calib-buttons"), false);
+  show($("calib-run"), true);
+  $("calib-progress").style.width = "0%";
+  const start = performance.now();
+  while (token === flow && (calib.relaxed.length < MIN_RELAXED_SAMPLES || performance.now() - start < WELCOME_MS)) {
+    await wait(50);
+  }
+  calib.relaxing = false;
+  if (token !== flow) return;
+  const result = await calibratePuff(token);
+  if (token !== flow || result === null) return;
+  puffSignal = initialPuffState();
+  state = "playing";
+  showScreen(null);
+  show(hud, true);
+  game.calmWater = false;
+  if (!seenTutorials.has("ocean")) void runOceanTips();
 }
 
 /**
@@ -1276,6 +1314,7 @@ function startReady(ocean = false): void {
   keyHeld = false;
   heldPointers.clear();
   keyPuff = 0;
+  waterPuffAttempted = false;
   hideToast();
   show(hud, true);
   if (ocean) {
