@@ -94,10 +94,19 @@ const screens = {
 };
 const hud = $("hud");
 const cam = $("cam");
-/** Where #cam lives in the DOM when it isn't docked beside the bird on the perch. */
-const camHome = { parent: cam.parentElement!, next: cam.nextElementSibling };
+/**
+ * A marker where `el` lives in the DOM, to put it back after docking it elsewhere.
+ * Not its next sibling: that may be docked away too (#cam follows the coach).
+ */
+function homeOf(el: HTMLElement): Comment {
+  const marker = document.createComment(`${el.id} home`);
+  el.after(marker);
+  return marker;
+}
+/** Where #cam lives in the DOM when it isn't docked on the calibration screen. */
+const camHome = homeOf(cam);
 /** Where the coach lives when it isn't docked on the perch. */
-const coachHome = { parent: $("coach").parentElement!, next: $("coach").nextElementSibling };
+const coachHome = homeOf($("coach"));
 const rotateScreen = $("screen-rotate");
 
 /** A phone or tablet: no hover, coarse pointer. Swaps key hints for touch wording (CSS `.touch`). */
@@ -1138,7 +1147,7 @@ function dockCoach(perched: boolean): void {
   el.classList.toggle("docked", perched);
   if (perched) $("perch-coach-slot").append(el);
   else {
-    coachHome.parent.insertBefore(el, coachHome.next);
+    coachHome.before(el);
     releaseCoach(perchCoach);
   }
 }
@@ -1438,7 +1447,7 @@ function dockCam(inCalib: boolean): void {
   if (inCalib === cam.classList.contains("in-calib")) return;
   cam.classList.toggle("in-calib", inCalib);
   if (inCalib) $("calib-cam-slot").append(cam);
-  else camHome.parent.insertBefore(cam, camHome.next);
+  else camHome.before(cam);
 }
 
 function toggleMute(): void {
