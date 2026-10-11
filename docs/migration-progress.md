@@ -29,7 +29,7 @@ Baseline: `4208bf7f765c6968283ea264aa49f2a9ab3dccde` on `main`.
 | 0 | Audit, branch, baseline fixtures and progress record | Complete |
 | 1 | Rust/WASM toolchain, crates, build/CI/Docker integration | Complete locally; Docker/remote CI unverified |
 | 2 | Charge, swimming, collision and RNG kernels with differential tests | Complete |
-| 3 | Commands, immutable render frames, batched bridge and audio registry | Pending |
+| 3 | Commands, immutable render frames, batched bridge and audio registry | Partial: commands/frames/audio/shadow complete; world/frame ABI pending |
 | 4 | Basic city, effects, scoring, demo, perch and lessons | Pending |
 | 5 | Power lines, kids, weddings, balloons and photo events | Pending |
 | 6 | Ocean transitions, fish, hazards, anglers and sharks | Pending |
@@ -78,4 +78,37 @@ No placeholder or disconnected module counts as a completed milestone.
   integration. CI and Docker files were updated but Docker is unavailable here.
 - Explicit seeded RNG injection is being added to the TypeScript reference;
   legacy production randomness remains unchanged until engine parity is ready.
+- `3652dba`: renderer now accepts presentation data and uses local photo poses.
+  Six bird/wedding/trophy variants are pixel-identical to the audited renderer
+  in the same Chromium run; drawing and capture accept deeply frozen state.
+- `e1cb0c9`: injected seeded reference RNG and batched kernel observer. All
+  24,000 live demo/ocean charge/spike steps match WASM exactly (2,000 batches).
+- Centralized fixed/random/bag/state-dependent audio event routing. Frozen
+  61 original playback traces verify sample IDs, volume, delay and variant
+  selection; bag tests cover no-repeat boundaries. Continuous channels/theme
+  scheduling are preserved. Assets have not been changed.
+- Added explicit application commands for reset/resize/demo/perch/takeoff,
+  lessons, guidance and debug spawning. Continuous inputs still enter the
+  TypeScript tick loop until the full Rust world is implemented.
+- Local browser smoke passed in Chromium 153.0.8010.0: actual WASM load and
+  shadow checks, keyboard takeoff, pause/resume/menu, immutable capture/draw,
+  and all 49 available logical audio IDs decoded. Five missing IDs are baseline
+  exceptions. Actual audible output, real webcam, Firefox/Safari and reliable
+  desktop frame-time comparisons remain unverified.
+- Vite needs an absolute URL for the public WASM JS module; relative dynamic
+  imports were rewritten with ?import and rejected. The loader is fixed and
+  exercised in the browser smoke test. Production output excludes the audit hook.
 
+## Next implementation work
+
+The game is still authoritative TypeScript. No complete Rust world, entity/frame
+ABI, advanced encounter migration or default engine switch is claimed. Implement
+the Rust city world against seeded snapshots next, then advanced city and ocean
+encounters, before connecting authoritative frame output and retiring legacy code.
+
+
+Latest local checks: ESLint and both TypeScript checks passed; 211 TypeScript
+unit tests in 14 files, 4 native Rust tests, 2,067 frozen WASM cases and 24,000
+live batched comparisons passed; production and debug builds passed. The browser
+smoke test passed after the public-module URL fix. Docker and remote CI have not
+been run locally. No performance gain or complete migration is claimed.

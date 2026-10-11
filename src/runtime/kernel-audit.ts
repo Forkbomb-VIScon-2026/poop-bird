@@ -75,7 +75,8 @@ export class KernelAudit implements KernelObserver {
 }
 
 export async function loadKernelAudit(): Promise<KernelAudit> {
-  const url = `${import.meta.env.BASE_URL}game-wasm/poop_bird_wasm.js?v=${__APP_COMMIT__}`;
+  // An absolute URL keeps Vite from rewriting this public module as a source import.
+  const url = new URL(`${import.meta.env.BASE_URL}game-wasm/poop_bird_wasm.js?v=${__APP_COMMIT__}`, location.href).href;
   const module: Module = await import(/* @vite-ignore */ url);
   await module.default();
   if (module.protocol_version() !== 1) throw new Error("Unsupported Rust kernel protocol");

@@ -32,8 +32,9 @@
     "build:wasm": "node scripts/build-game-wasm.mjs",
     "test:rust": "cargo test --workspace --locked",
     "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings",
-    "test:wasm": "node scripts/migration/test-wasm.mjs",
-    "bench:simulation": "node scripts/run-ts.mjs scripts/migration/baseline.ts"
+    "test:wasm": "node scripts/migration/test-wasm.mjs && node scripts/run-ts.mjs scripts/migration/test-audit.ts",
+    "bench:simulation": "node scripts/run-ts.mjs scripts/migration/baseline.ts",
+    "test:browser": "npm run build:wasm && node scripts/migration/browser-check.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.0"
@@ -43,6 +44,7 @@
     "@types/node": "^24.19.2",
     "eslint": "^10.12.0",
     "globals": "^17.13.0",
+    "playwright-core": "1.62.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.1",
     "vite": "^8.3.4",

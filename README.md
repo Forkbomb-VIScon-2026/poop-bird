@@ -831,7 +831,8 @@ src/
   face.ts       MediaPipe + webcam, detection loop
   game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
-  audio.ts      WebAudio synth sounds
+  audio.ts      Sample-based WebAudio playback
+  audio-cues.ts Fixed/random/state-dependent event playback definitions
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, your leaderboard runs

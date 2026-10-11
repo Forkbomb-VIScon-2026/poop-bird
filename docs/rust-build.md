@@ -16,6 +16,8 @@ npm run lint
 npm test
 npm run build
 npm run build:debug
+npx playwright-core install chromium
+npm run test:browser
 npm run dev:debug -- --host 127.0.0.1 --port 5174
 ```
 
@@ -30,6 +32,18 @@ only for that stage; do not use it to bypass local source rebuilds.
 The original TypeScript simulation remains active until migration-progress.md
 records complete parity. Building a WASM kernel is not a completed migration.
 Native/WASM differential tests do not replace real browser, webcam or audio QA.
+
+`test:browser` owns a localhost Vite server and checks keyboard takeoff,
+pause/resume/menu, batched WASM shadow comparison, immutable rendering and audio
+decoding. CHROMIUM_EXECUTABLE can select an existing Chromium binary; optional
+CHROMIUM_ARGS_JSON supplies launch arguments. It does not verify a real webcam,
+audible output, or other browsers.
+
+For live shadow checking, open the debug game with `?rust-audit=1`, or call
+`await poopBird.enableRustAudit()`. Inspect `poopBird.rustAudit` for comparisons
+and failures. This checks the Rust kernels against the running TypeScript engine;
+it does not make Rust the authoritative engine. This hook is excluded from
+production builds.
 
 ```sh
 npm run bench:simulation
