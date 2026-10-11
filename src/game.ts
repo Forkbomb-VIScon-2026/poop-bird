@@ -43,6 +43,7 @@
 // spiked snags it on the spines: he hauls on it until it parts, and with the
 // pull suddenly gone he topples backwards into his boat.
 
+import type { KernelObserver } from "./runtime/kernel-audit";
 import { config, ramp } from "./config";
 import { initialChargeState, inSweetSpot, stepCharge, type ChargeState } from "./charge";
 import {
@@ -755,6 +756,8 @@ const SHARK_SPIKED_TEXT = ["OUCH!", "NOT TODAY!", "SPIKY SNACK!", "BITE ME!", "T
 const CHOMP_MESSAGES = ["CHOMP!", "Snack time", "Should've puffed!", "Fish fingers", "Gulp."];
 
 export class Game {
+  /** Optional debug shadow validation; never a simulation dependency. */
+  kernelObserver: KernelObserver | undefined;
   width = 1000;
   phase: GamePhase = "playing";
   time = 0;
@@ -921,7 +924,10 @@ export class Game {
   /** The bird still sits on the perch (the run hasn't started). */
   private perched = false;
 
-  constructor(width: number) {
+  private readonly random: () => number;
+
+  constructor(width: number, random: () => number = () => Math.random()) {
+    this.random = random;
     this.resize(width);
     this.reset();
   }
@@ -1003,7 +1009,7 @@ export class Game {
     this.weddingPhotos = [];
     this.weddingsRuined = 0;
     this.bouquetsCaught = 0;
-    this.weddingPlanned = Math.random() < config.weddingChance;
+    this.weddingPlanned = this.random() < config.weddingChance;
     this.weddingsSeen = 0;
     this.pendingTabloids = [];
     this.lastPaparazzoAt = -Infinity;
@@ -1293,7 +1299,9 @@ export class Game {
   // --- bird & charge ---------------------------------------------------------
 
   private updateCharge(dt: number): void {
-    const { state, event } = stepCharge(this.charge, this.straining, dt, config);
+    const result = stepCharge(this.charge, this.straining, dt, config);
+    this.kernelObserver?.charge(this.charge, this.straining, dt, config, result);
+    const { state, event } = result;
     this.charge = state;
     if (!event) return;
     if (event.type === "release") this.release(event.charge, event.push, event.sweetSpot);
@@ -1314,9 +1322,9 @@ export class Game {
     for (let i = 0; i < n; i++) {
       this.particles.push({
         x: b.x - 10, y: b.y + 14,
-        vx: -40 - Math.random() * 90 * (0.5 + charge), vy: 20 + Math.random() * 80 - 40,
-        life: 0.4 + Math.random() * 0.5 * (0.5 + charge), maxLife: 0.9,
-        size: 4 + Math.random() * 8 * (0.4 + charge), color: sweet ? "#ffe066" : "#b5c99a",
+        vx: -40 - this.random() * 90 * (0.5 + charge), vy: 20 + this.random() * 80 - 40,
+        life: 0.4 + this.random() * 0.5 * (0.5 + charge), maxLife: 0.9,
+        size: 4 + this.random() * 8 * (0.4 + charge), color: sweet ? "#ffe066" : "#b5c99a",
         gravity: -30, world: true,
       });
     }
@@ -1333,27 +1341,27 @@ export class Game {
   private accident(): void {
     const b = this.bird;
     this.accidents++;
-    const text = ACCIDENT_MESSAGES[Math.floor(Math.random() * ACCIDENT_MESSAGES.length)];
+    const text = ACCIDENT_MESSAGES[Math.floor(this.random() * ACCIDENT_MESSAGES.length)];
     this.message = { text, life: 2.2 };
     this.shake = 18;
     b.stretchV -= 12;
     // A big messy blob and a spray of mess.
     this.spawnPoop(b.x, b.y + BIRD_RADIUS, 16, 60, true);
     for (let i = 0; i < 50; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 80 + Math.random() * 380;
+      const a = this.random() * Math.PI * 2;
+      const s = 80 + this.random() * 380;
       this.particles.push({
         x: b.x, y: b.y,
         vx: Math.cos(a) * s, vy: Math.sin(a) * s - 100,
-        life: 0.6 + Math.random() * 0.8, maxLife: 1.4,
-        size: 3 + Math.random() * 7, color: Math.random() < 0.7 ? "#7a4a1e" : "#5c3310",
+        life: 0.6 + this.random() * 0.8, maxLife: 1.4,
+        size: 3 + this.random() * 7, color: this.random() < 0.7 ? "#7a4a1e" : "#5c3310",
         gravity: 900, world: true,
       });
     }
     for (let i = 0; i < 6; i++) {
       this.screenSplats.push({
-        x: Math.random() * this.width, y: Math.random() * VIEW_H,
-        r: 30 + Math.random() * 70, seed: Math.random() * 1000, life: 2.5 + Math.random(),
+        x: this.random() * this.width, y: this.random() * VIEW_H,
+        r: 30 + this.random() * 70, seed: this.random() * 1000, life: 2.5 + this.random(),
       });
     }
     this.events.push({ type: "accident", message: text });
@@ -1403,11 +1411,11 @@ export class Game {
     }
     if (this.phase === "playing" && this.hitsObstacle()) this.crash();
     if (this.phase === "playing" && this.touchesWire()) this.zap();
-    if (this.zapped && Math.random() < dt * 25) {
+    if (this.zapped && this.random() < dt * 25) {
       this.particles.push({
-        x: b.x + (Math.random() - 0.5) * 20, y: b.y - 10,
-        vx: (Math.random() - 0.5) * 30, vy: -40 - Math.random() * 40,
-        life: 0.9, maxLife: 0.9, size: 4 + Math.random() * 6, color: "rgba(90,90,90,0.6)",
+        x: b.x + (this.random() - 0.5) * 20, y: b.y - 10,
+        vx: (this.random() - 0.5) * 30, vy: -40 - this.random() * 40,
+        life: 0.9, maxLife: 0.9, size: 4 + this.random() * 6, color: "rgba(90,90,90,0.6)",
         gravity: -40, world: true,
       });
     }
@@ -1435,12 +1443,12 @@ export class Game {
     this.message = null;
     const ocean = this.stage === "ocean";
     for (let i = 0; i < 24; i++) {
-      const a = Math.random() * Math.PI * 2;
+      const a = this.random() * Math.PI * 2;
       this.particles.push({
         x: this.bird.x, y: this.bird.y,
         vx: Math.cos(a) * 200, vy: Math.sin(a) * 200 - 80,
-        life: 0.8, maxLife: 0.8, size: 4 + Math.random() * 3,
-        color: ocean ? (Math.random() < 0.5 ? "#caf0f8" : "#fff") : Math.random() < 0.5 ? "#ffd166" : "#fff",
+        life: 0.8, maxLife: 0.8, size: 4 + this.random() * 3,
+        color: ocean ? (this.random() < 0.5 ? "#caf0f8" : "#fff") : this.random() < 0.5 ? "#ffd166" : "#fff",
         gravity: ocean ? -200 : 600, world: false,
       });
     }
@@ -1481,16 +1489,16 @@ export class Game {
     this.zapped = true;
     this.zapFlash = 0.7;
     this.shake = 16;
-    this.message = { text: pick(ZAP_MESSAGES), life: 2.2 };
+    this.message = { text: this.pick(ZAP_MESSAGES), life: 2.2 };
     const b = this.bird;
     for (let i = 0; i < 36; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 150 + Math.random() * 350;
+      const a = this.random() * Math.PI * 2;
+      const s = 150 + this.random() * 350;
       this.particles.push({
         x: b.x, y: b.y,
         vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.25 + Math.random() * 0.35, maxLife: 0.6, size: 2 + Math.random() * 3,
-        color: pick(["#fff", "#fff3b0", "#ffd60a", "#9bf6ff"]), gravity: 300, world: false,
+        life: 0.25 + this.random() * 0.35, maxLife: 0.6, size: 2 + this.random() * 3,
+        color: this.pick(["#fff", "#fff3b0", "#ffd60a", "#9bf6ff"]), gravity: 300, world: false,
       });
     }
   }
@@ -1498,7 +1506,9 @@ export class Game {
   // --- pufferfish ----------------------------------------------------------------
 
   private updateSpike(dt: number): void {
-    const { state, event } = stepSpike(this.spike, this.puffInput, dt, config);
+    const result = stepSpike(this.spike, this.puffInput, dt, config);
+    this.kernelObserver?.spike(this.spike, this.puffInput, dt, config, result);
+    const { state, event } = result;
     this.spike = state;
     if (!event) return;
     if (event.type === "spike") {
@@ -1513,20 +1523,20 @@ export class Game {
   private popAccident(): void {
     const b = this.bird;
     this.accidents++;
-    const text = POP_MESSAGES[Math.floor(Math.random() * POP_MESSAGES.length)];
+    const text = POP_MESSAGES[Math.floor(this.random() * POP_MESSAGES.length)];
     this.message = { text, life: 2.2 };
     this.shake = 16;
     b.stretchV -= 14;
     b.vy = Math.min(b.vy, -60);
     // The air comes out the back in a stream of bubbles.
     for (let i = 0; i < 44; i++) {
-      const a = Math.PI + (Math.random() - 0.5) * 1.6;
-      const s = 120 + Math.random() * 320;
+      const a = Math.PI + (this.random() - 0.5) * 1.6;
+      const s = 120 + this.random() * 320;
       this.particles.push({
         x: b.x - 10, y: b.y,
         vx: Math.cos(a) * s, vy: Math.sin(a) * s - 30,
-        life: 0.5 + Math.random() * 0.7, maxLife: 1.2,
-        size: 2 + Math.random() * 6, color: Math.random() < 0.6 ? "#e0fbfc" : "#a8dadc",
+        life: 0.5 + this.random() * 0.7, maxLife: 1.2,
+        size: 2 + this.random() * 6, color: this.random() < 0.6 ? "#e0fbfc" : "#a8dadc",
         gravity: -260, world: true,
       });
     }
@@ -1576,9 +1586,9 @@ export class Game {
           b.stretchV -= 5;
           for (let i = 0; i < 6; i++) {
             this.particles.push({
-              x: b.x + (Math.random() - 0.5) * r, y: SURFACE_Y,
-              vx: (Math.random() - 0.5) * 120, vy: -60 - Math.random() * 80,
-              life: 0.4, maxLife: 0.4, size: 2 + Math.random() * 3, color: "#e0fbfc", gravity: 500, world: true,
+              x: b.x + (this.random() - 0.5) * r, y: SURFACE_Y,
+              vx: (this.random() - 0.5) * 120, vy: -60 - this.random() * 80,
+              life: 0.4, maxLife: 0.4, size: 2 + this.random() * 3, color: "#e0fbfc", gravity: 500, world: true,
             });
           }
         }
@@ -1658,11 +1668,11 @@ export class Game {
         }) &&
         (this.gateSpawned || this.nextObstacleAt - this.distance > 220);
       if (clear) {
-        this.jellySpawnAcc = (Math.random() - 0.5) * 0.6;
-        const baseY = SURFACE_Y + 70 + Math.random() * (GROUND_Y - SURFACE_Y - 140);
+        this.jellySpawnAcc = (this.random() - 0.5) * 0.6;
+        const baseY = SURFACE_Y + 70 + this.random() * (GROUND_Y - SURFACE_Y - 140);
         this.jellies.push({
-          x: sx, baseY, y: baseY, r: 18 + Math.random() * 6,
-          phase: Math.random() * Math.PI * 2, hue: pick(JELLY_HUES),
+          x: sx, baseY, y: baseY, r: 18 + this.random() * 6,
+          phase: this.random() * Math.PI * 2, hue: this.pick(JELLY_HUES),
         });
       }
     }
@@ -1678,11 +1688,11 @@ export class Game {
     const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
     this.floaters.push({ x: j.x, y: j.y - 30, text: label, color: "#ffe14d", size: 26, life: 1.1, maxLife: 1.1 });
     for (let i = 0; i < 18; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 60 + Math.random() * 180;
+      const a = this.random() * Math.PI * 2;
+      const s = 60 + this.random() * 180;
       this.particles.push({
         x: j.x, y: j.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.4 + Math.random() * 0.4, maxLife: 0.8, size: 2 + Math.random() * 4,
+        life: 0.4 + this.random() * 0.4, maxLife: 0.8, size: 2 + this.random() * 4,
         color: `hsla(${j.hue},90%,80%,1)`, gravity: -60, world: true,
       });
     }
@@ -1748,7 +1758,7 @@ export class Game {
     const y = Math.max(SURFACE_Y + 60, Math.min(GROUND_Y - 60, this.bird.y));
     this.shark = {
       state: "stalking", t: 0, x: this.width + 140, y, vx: 0, vy: 0,
-      heading: Math.PI, jaw: 0, beat: 0, beats: 0, seed: Math.random() * 1000,
+      heading: Math.PI, jaw: 0, beat: 0, beats: 0, seed: this.random() * 1000,
     };
     this.nextObstacleAt = Math.max(this.nextObstacleAt, this.distance + SHARK_ROOM + config.oceanSpacingMin);
   }
@@ -1879,7 +1889,7 @@ export class Game {
         keepInWater();
         turnToward(Math.PI, 4);
         s.jaw = Math.max(0, s.jaw - dt * 8);
-        if (Math.random() < dt * 6) this.bubbleAt(this.sharkNose(s).x, s.y - 6, 2);
+        if (this.random() < dt * 6) this.bubbleAt(this.sharkNose(s).x, s.y - 6, 2);
         break;
       case "fleeing":
         // Turns tail and bolts off ahead, diving away.
@@ -1890,7 +1900,7 @@ export class Game {
         s.y += s.vy * dt;
         s.y = Math.min(GROUND_Y + 60, s.y);
         s.jaw = Math.max(0, s.jaw - dt * 6);
-        if (Math.random() < dt * 14) this.bubbleAt(s.x - Math.cos(s.heading) * 60, s.y, 1);
+        if (this.random() < dt * 14) this.bubbleAt(s.x - Math.cos(s.heading) * 60, s.y, 1);
         break;
       case "leaving":
         s.vx += (-260 - s.vx) * Math.min(1, dt * 2);
@@ -1914,9 +1924,9 @@ export class Game {
   private bubbleAt(x: number, y: number, n: number): void {
     for (let i = 0; i < n; i++) {
       this.particles.push({
-        x: x + (Math.random() - 0.5) * 10, y: y + (Math.random() - 0.5) * 10,
-        vx: (Math.random() - 0.5) * 40, vy: -30 - Math.random() * 40,
-        life: 0.6 + Math.random() * 0.5, maxLife: 1.1, size: 2 + Math.random() * 4,
+        x: x + (this.random() - 0.5) * 10, y: y + (this.random() - 0.5) * 10,
+        vx: (this.random() - 0.5) * 40, vy: -30 - this.random() * 40,
+        life: 0.6 + this.random() * 0.5, maxLife: 1.1, size: 2 + this.random() * 4,
         color: "#e0fbfc", gravity: -120, world: true,
       });
     }
@@ -1937,19 +1947,19 @@ export class Game {
     this.bonus += points;
     const b = this.bird;
     const n = this.sharkNose(s);
-    this.floaters.push({ x: n.x, y: n.y - 50, text: pick(SHARK_SPIKED_TEXT), color: "#ffd60a", size: 30, life: 1.2, maxLife: 1.2 });
+    this.floaters.push({ x: n.x, y: n.y - 50, text: this.pick(SHARK_SPIKED_TEXT), color: "#ffd60a", size: 30, life: 1.2, maxLife: 1.2 });
     const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
     this.floaters.push({ x: n.x, y: n.y - 20, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
     this.shake = Math.max(this.shake, 10);
     b.vy += 80 * Math.sign(b.y - s.y || 1);
     b.stretchV -= 8;
     for (let i = 0; i < 20; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 80 + Math.random() * 200;
+      const a = this.random() * Math.PI * 2;
+      const sp = 80 + this.random() * 200;
       this.particles.push({
         x: n.x, y: n.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-        life: 0.3 + Math.random() * 0.4, maxLife: 0.7, size: 2 + Math.random() * 4,
-        color: Math.random() < 0.5 ? "#ffd60a" : "#ffffff", gravity: 0, world: true,
+        life: 0.3 + this.random() * 0.4, maxLife: 0.7, size: 2 + this.random() * 4,
+        color: this.random() < 0.5 ? "#ffd60a" : "#ffffff", gravity: 0, world: true,
       });
     }
     this.events.push({ type: "sharkSpiked", points, combo: this.combo });
@@ -1961,7 +1971,7 @@ export class Game {
     this.eaten = true;
     this.combo = 0;
     this.crash("chomp");
-    this.message = { text: pick(CHOMP_MESSAGES), life: 2.2 };
+    this.message = { text: this.pick(CHOMP_MESSAGES), life: 2.2 };
     this.shake = 14;
   }
 
@@ -1990,7 +2000,7 @@ export class Game {
       state: "rowing", t: 0, x: this.width + ANGLER_TIP_DX + 60,
       hookX: 0, hookY: SURFACE_Y, hookVy: 0, target: SURFACE_Y,
       closest: Infinity, dodged: false, fromY: 0, reel: 0, cutX: 0, cutY: 0, stubY: 0,
-      hatX: 0, click: 0, seed: Math.random() * 1000,
+      hatX: 0, click: 0, seed: this.random() * 1000,
     };
     return ANGLER_ROOM;
   }
@@ -2132,9 +2142,9 @@ export class Game {
   private ripple(x: number, n: number): void {
     for (let i = 0; i < n; i++) {
       this.particles.push({
-        x: x + (Math.random() - 0.5) * 10, y: SURFACE_Y + 4,
-        vx: (Math.random() - 0.5) * 50, vy: 20 + Math.random() * 50,
-        life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 2 + Math.random() * 3,
+        x: x + (this.random() - 0.5) * 10, y: SURFACE_Y + 4,
+        vx: (this.random() - 0.5) * 50, vy: 20 + this.random() * 50,
+        life: 0.5 + this.random() * 0.4, maxLife: 0.9, size: 2 + this.random() * 3,
         color: "#e0fbfc", gravity: -160, world: true,
       });
     }
@@ -2187,7 +2197,7 @@ export class Game {
     this.spike = initialSpikeState();
     this.shake = 10;
     this.bird.vy = -200;
-    this.message = { text: pick(CAUGHT_MESSAGES), life: 2.6 };
+    this.message = { text: this.pick(CAUGHT_MESSAGES), life: 2.6 };
     const photoId = this.nextPhotoId++;
     this.trophy = photoId;
     this.events.push({ type: "anglerLanded", photoId });
@@ -2209,7 +2219,7 @@ export class Game {
     const points = Math.round(config.targetPoints * config.anglerSnapMultiplier * this.comboMultiplier);
     this.bonus += points;
     const b = this.bird;
-    this.floaters.push({ x: b.x, y: b.y - 60, text: pick(SNAPPED_TEXT), color: "#ffd60a", size: 28, life: 1.2, maxLife: 1.2 });
+    this.floaters.push({ x: b.x, y: b.y - 60, text: this.pick(SNAPPED_TEXT), color: "#ffd60a", size: 28, life: 1.2, maxLife: 1.2 });
     const label = this.combo > 1 ? `+${points}  x${this.comboMultiplier.toFixed(1)}` : `+${points}`;
     this.floaters.push({ x: b.x, y: b.y - 30, text: label, color: "#ffe14d", size: 24, life: 1.1, maxLife: 1.1 });
     this.shake = Math.max(this.shake, 6);
@@ -2240,13 +2250,13 @@ export class Game {
   /** Water thrown up where something hits the surface; `dir` -1 throws it lower and wider. */
   private splash(x: number, y: number, dir: 1 | -1, n = 40): void {
     for (let i = 0; i < n; i++) {
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * (dir === 1 ? 1.6 : 2.4);
-      const s = 150 + Math.random() * 380;
+      const a = -Math.PI / 2 + (this.random() - 0.5) * (dir === 1 ? 1.6 : 2.4);
+      const s = 150 + this.random() * 380;
       this.particles.push({
-        x: x + (Math.random() - 0.5) * 30, y,
+        x: x + (this.random() - 0.5) * 30, y,
         vx: Math.cos(a) * s, vy: Math.sin(a) * s * (dir === 1 ? 1 : 0.6),
-        life: 0.5 + Math.random() * 0.5, maxLife: 1, size: 3 + Math.random() * 6,
-        color: Math.random() < 0.5 ? "#caf0f8" : "#ffffff", gravity: 900, world: true,
+        life: 0.5 + this.random() * 0.5, maxLife: 1, size: 3 + this.random() * 6,
+        color: this.random() < 0.5 ? "#caf0f8" : "#ffffff", gravity: 900, world: true,
       });
     }
   }
@@ -2254,12 +2264,12 @@ export class Game {
   /** A trail of bubbles behind the bird or fish while it moves under water. */
   private bubbleTrail(dt: number, rate: number): void {
     const b = this.bird;
-    if (Math.random() > dt * rate) return;
+    if (this.random() > dt * rate) return;
     this.particles.push({
-      x: b.x + (Math.random() - 0.5) * 20, y: b.y + (Math.random() - 0.5) * 20,
-      vx: (Math.random() - 0.5) * 40, vy: -40 - Math.random() * 60,
-      life: 0.6 + Math.random() * 0.6, maxLife: 1.2, size: 2 + Math.random() * 4,
-      color: Math.random() < 0.6 ? "#e0fbfc" : "#a8dadc", gravity: -120, world: true,
+      x: b.x + (this.random() - 0.5) * 20, y: b.y + (this.random() - 0.5) * 20,
+      vx: (this.random() - 0.5) * 40, vy: -40 - this.random() * 60,
+      life: 0.6 + this.random() * 0.6, maxLife: 1.2, size: 2 + this.random() * 4,
+      color: this.random() < 0.6 ? "#e0fbfc" : "#a8dadc", gravity: -120, world: true,
     });
   }
 
@@ -2405,11 +2415,11 @@ export class Game {
     this.sharkTheme = null;
     if (to === "city") {
       this.cityStage++;
-      this.weddingPlanned = Math.random() < config.weddingChance;
+      this.weddingPlanned = this.random() < config.weddingChance;
     } else {
       // One set piece per ocean stage: a shark or a fisherman, never both.
-      this.sharkPlanned = Math.random() < config.sharkChance;
-      this.anglerPlanned = !this.sharkPlanned && Math.random() < config.anglerChance;
+      this.sharkPlanned = this.random() < config.sharkChance;
+      this.anglerPlanned = !this.sharkPlanned && this.random() < config.anglerChance;
     }
     this.message = null;
     this.lastGapCenter = 260;
@@ -2429,13 +2439,13 @@ export class Game {
       // The bird gulps water and turns into a deflated fish: feathers float off in a burst of bubbles.
       this.fish.puff = 0;
       for (let i = 0; i < 30; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const sp = 40 + Math.random() * 160;
+        const a = this.random() * Math.PI * 2;
+        const sp = 40 + this.random() * 160;
         const feather = i < 10;
         this.particles.push({
           x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40,
-          life: 0.6 + Math.random() * 0.7, maxLife: 1.3, size: feather ? 3 + Math.random() * 3 : 2 + Math.random() * 5,
-          color: feather ? "#ffd166" : Math.random() < 0.6 ? "#e0fbfc" : "#ffffff",
+          life: 0.6 + this.random() * 0.7, maxLife: 1.3, size: feather ? 3 + this.random() * 3 : 2 + this.random() * 5,
+          color: feather ? "#ffd166" : this.random() < 0.6 ? "#e0fbfc" : "#ffffff",
           gravity: feather ? -60 : -220, world: true,
         });
       }
@@ -2517,7 +2527,7 @@ export class Game {
       // So does a balloon, which drifts along with the wind.
       // A pending front page always gets the next slot.
       const special = this.stageObstacles > 0 && this.pendingTabloids.length === 0;
-      const roll = Math.random();
+      const roll = this.random();
       const powerLineChance = this.powerLinesAllowed ? config.powerLineChance : 0;
       const powerLine = special && roll < powerLineChance;
       const balloon = special && !powerLine && roll < powerLineChance + config.balloonChance;
@@ -2544,9 +2554,9 @@ export class Game {
   private pickGapCenter(gap: number, top: number, margin: number, maxJump: number, bottomMargin = margin, highChance?: number): number {
     const minCenter = top + margin + gap / 2;
     const maxCenter = GROUND_Y - bottomMargin - gap / 2;
-    let u = Math.random();
+    let u = this.random();
     if (highChance !== undefined) {
-      u = Math.random() < highChance ? u * TALL_FRACTION : TALL_FRACTION + u * (1 - TALL_FRACTION);
+      u = this.random() < highChance ? u * TALL_FRACTION : TALL_FRACTION + u * (1 - TALL_FRACTION);
     }
     let center = minCenter + u * Math.max(0, maxCenter - minCenter);
     center = Math.max(this.lastGapCenter - maxJump, Math.min(this.lastGapCenter + maxJump, center));
@@ -2565,12 +2575,12 @@ export class Game {
     const tallChance = ramp(config.tallBuildingChance, config.tallBuildingChanceMax, this.stageLevel());
     const center = this.pickGapCenter(gap, 0, 50, 140 + 140 * d, tabloid ? BILLBOARD_H + BILLBOARD_MIN_LEGS : 50, tallChance);
 
-    const bottom: BottomKind = tabloid ? "billboard" : pick(["building", "building", "building", "tower"]);
-    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "tower" ? 78 : 96 + Math.random() * 30;
+    const bottom: BottomKind = tabloid ? "billboard" : this.pick(["building", "building", "building", "tower"]);
+    const w = bottom === "billboard" ? BILLBOARD_W : bottom === "tower" ? 78 : 96 + this.random() * 30;
     this.obstacles.push({
       x: this.width + 40, w,
       gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom, color: pick(BUILDING_COLORS), seed: Math.random() * 1000,
+      bottom, color: this.pick(BUILDING_COLORS), seed: this.random() * 1000,
       passed: false, splats: [], tabloid, anchor: false, drop: null,
     });
   }
@@ -2590,13 +2600,13 @@ export class Game {
     // fisherman is out: he rows against the scroll, so it would catch up with
     // his boat and his line.
     const last = this.stageObstacles >= Math.round(config.oceanObstacles) - 1;
-    const anchor = forceDrop || (!last && !this.angler && Math.random() < config.oceanAnchorChance);
-    const open = anchor && Math.random() < config.oceanAnchorOpenChance;
+    const anchor = forceDrop || (!last && !this.angler && this.random() < config.oceanAnchorChance);
+    const open = anchor && this.random() < config.oceanAnchorOpenChance;
     // A dropping anchor needs coral, a rock or the sea floor to land on, and the screen
     // wide enough to see it coming (the whole warning, fall and lead before the fish).
     const dropRoom = this.speed > 0 && (this.width + 40 - this.bird.x) / this.speed > ANCHOR_DROP_MIN_WARN + config.oceanAnchorDropFall + config.oceanAnchorDropLead;
-    const drop = anchor && (forceDrop || (dropRoom && Math.random() < config.oceanAnchorDropChance));
-    const wreck = !open && !drop && Math.random() < config.oceanWreckChance;
+    const drop = anchor && (forceDrop || (dropRoom && this.random() < config.oceanAnchorDropChance));
+    const wreck = !open && !drop && this.random() < config.oceanWreckChance;
     // The boat, the shortest chain and the anchor itself all sit above the gap.
     let top = anchor ? ANCHOR_TOP_MIN : SURFACE_Y;
     let margin = anchor ? 10 : 40;
@@ -2608,14 +2618,14 @@ export class Game {
       bottomMargin = WRECK_HULL_H + WRECK_MAST_MIN;
     }
     const center = this.pickGapCenter(gap, top, margin, config.oceanGapJump, bottomMargin);
-    const bottom: BottomKind = open ? "none" : wreck ? "wreck" : pick(["coral", "coral", "rock"]);
-    const w = bottom === "wreck" ? 210 + Math.random() * 50 : bottom === "rock" ? 84 + Math.random() * 20 : 70 + Math.random() * 24;
+    const bottom: BottomKind = open ? "none" : wreck ? "wreck" : this.pick(["coral", "coral", "rock"]);
+    const w = bottom === "wreck" ? 210 + this.random() * 50 : bottom === "rock" ? 84 + this.random() * 20 : 70 + this.random() * 24;
     const colors = bottom === "wreck" ? WRECK_COLORS : bottom === "rock" ? ROCK_COLORS : CORAL_COLORS;
     const gapTop = center - gap / 2;
     const gapBottom = open ? GROUND_Y : center + gap / 2;
     this.obstacles.push({
       x: this.width + 40, w, gapTop, gapBottom,
-      bottom, color: pick(colors), seed: Math.random() * 1000,
+      bottom, color: this.pick(colors), seed: this.random() * 1000,
       passed: false, splats: [], tabloid: null, anchor,
       // Open water: it sinks a little way into the sand.
       drop: drop ? { state: "hanging", t: 0, y: gapTop, to: open ? GROUND_Y + ANCHOR_SAND_DEPTH : gapBottom, chain: ANCHOR_RIP_Y } : null,
@@ -2677,11 +2687,11 @@ export class Game {
         const wasUp = d.y < d.to;
         d.y = o.gapTop + Math.min(anchorDrop, s);
         d.chain = Math.min(d.y - ANCHOR_H, ANCHOR_RIP_Y + s);
-        if (wasUp && Math.random() < dt * 30) {
+        if (wasUp && this.random() < dt * 30) {
           this.particles.push({
-            x: cx + (Math.random() - 0.5) * ANCHOR_W, y: d.y - ANCHOR_H * Math.random(),
-            vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 40,
-            life: 0.5 + Math.random() * 0.5, maxLife: 1, size: 2 + Math.random() * 3,
+            x: cx + (this.random() - 0.5) * ANCHOR_W, y: d.y - ANCHOR_H * this.random(),
+            vx: (this.random() - 0.5) * 30, vy: -20 - this.random() * 40,
+            life: 0.5 + this.random() * 0.5, maxLife: 1, size: 2 + this.random() * 3,
             color: "#e0fbfc", gravity: -160, world: true,
           });
         }
@@ -2697,12 +2707,12 @@ export class Game {
   /** The chain rips just below the hull: bits of rust and a burst of bubbles at the break. */
   private anchorSnapped(cx: number): void {
     for (let i = 0; i < 14; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 60 + Math.random() * 160;
+      const a = this.random() * Math.PI * 2;
+      const s = 60 + this.random() * 160;
       this.particles.push({
         x: cx, y: ANCHOR_RIP_Y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.3 + Math.random() * 0.4, maxLife: 0.7, size: 2 + Math.random() * 3,
-        color: pick(["#56616d", "#aa5a28", "#e0fbfc"]), gravity: 120, world: true,
+        life: 0.3 + this.random() * 0.4, maxLife: 0.7, size: 2 + this.random() * 3,
+        color: this.pick(["#56616d", "#aa5a28", "#e0fbfc"]), gravity: 120, world: true,
       });
     }
     this.shake = Math.max(this.shake, 4);
@@ -2714,12 +2724,12 @@ export class Game {
     const y = Math.min(GROUND_Y, o.drop?.to ?? GROUND_Y);
     const sand = o.bottom === "none";
     for (let i = 0; i < 22; i++) {
-      const s = Math.random() < 0.5 ? -1 : 1;
+      const s = this.random() < 0.5 ? -1 : 1;
       this.particles.push({
-        x: cx + s * Math.random() * 30, y: y - 4,
-        vx: s * (40 + Math.random() * 110), vy: -30 - Math.random() * 90,
-        life: 0.5 + Math.random() * 0.6, maxLife: 1.1, size: 3 + Math.random() * 5,
-        color: sand ? pick(["#e9d8a6", "#d4c08a", "#c9b27c"]) : pick(["#e9d8a6", o.color, "#cdb4db"]),
+        x: cx + s * this.random() * 30, y: y - 4,
+        vx: s * (40 + this.random() * 110), vy: -30 - this.random() * 90,
+        life: 0.5 + this.random() * 0.6, maxLife: 1.1, size: 3 + this.random() * 5,
+        color: sand ? this.pick(["#e9d8a6", "#d4c08a", "#c9b27c"]) : this.pick(["#e9d8a6", o.color, "#cdb4db"]),
         gravity: 140, world: true,
       });
     }
@@ -2751,9 +2761,9 @@ export class Game {
   private spawnPowerLine(): number {
     const first = Math.round(config.powerLineFirstCity);
     const d = this.stageLevel(first);
-    const poles = 3 + Math.floor(Math.random() * 3);
-    const span = config.powerLineSpan * (0.9 + Math.random() * 0.2);
-    const r = Math.random();
+    const poles = 3 + Math.floor(this.random() * 3);
+    const span = config.powerLineSpan * (0.9 + this.random() * 0.2);
+    const r = this.random();
     // The wires stack up (and the top one climbs higher) city by city: one wire, then one or two, then two or three.
     const later = this.cityStage - first;
     const count = later <= 0 ? 1 : later === 1 ? (r < 0.4 ? 1 : 2) : r < 0.5 ? 2 : 3;
@@ -2765,25 +2775,25 @@ export class Game {
       ? Math.min(ramp(config.powerLineWireGap, config.powerLineWireGapMin, d), (lowestMax - highestTop) / (count - 1))
       : 0;
     const lowestMin = Math.max(250, highestTop + (count - 1) * gap);
-    const lowest = lowestMin + Math.random() * (lowestMax - lowestMin);
+    const lowest = lowestMin + this.random() * (lowestMax - lowestMin);
     const wires = Array.from({ length: count }, (_, i) => ({
       y: lowest - (count - 1 - i) * gap,
-      sags: Array.from({ length: poles - 1 }, () => config.powerLineSag * (0.7 + Math.random() * 0.6)),
+      sags: Array.from({ length: poles - 1 }, () => config.powerLineSag * (0.7 + this.random() * 0.6)),
     }));
     const line: PowerLine = {
-      x: this.width + 60, span, poles, topY: wires[0].y - 16, wires, pigeons: [], seed: Math.random() * 1000,
+      x: this.width + 60, span, poles, topY: wires[0].y - 16, wires, pigeons: [], seed: this.random() * 1000,
     };
     // Pigeons, spread out along the spans.
     for (let s = 0; s < poles - 1; s++) {
-      const n = Math.floor(config.pigeonsPerSpan + Math.random());
+      const n = Math.floor(config.pigeonsPerSpan + this.random());
       const taken: number[] = [];
       for (let k = 0; k < n; k++) {
-        const t = 0.15 + Math.random() * 0.7;
+        const t = 0.15 + this.random() * 0.7;
         if (taken.some((u) => Math.abs(u - t) < 0.12)) continue;
         taken.push(t);
         line.pigeons.push({
-          wire: Math.floor(Math.random() * count), span: s, t,
-          facing: Math.random() < 0.5 ? 1 : -1, seed: Math.random() * 1000, startle: 0, flyer: null, wreck: null,
+          wire: Math.floor(this.random() * count), span: s, t,
+          facing: this.random() < 0.5 ? 1 : -1, seed: this.random() * 1000, startle: 0, flyer: null, wreck: null,
         });
       }
     }
@@ -2815,11 +2825,11 @@ export class Game {
       w.y += w.vy * dt;
       w.rot += w.spin * dt;
       // Trails smoke and sparks on the way down.
-      if (Math.random() < dt * 40) {
-        const spark = Math.random() < 0.5;
+      if (this.random() < dt * 40) {
+        const spark = this.random() < 0.5;
         this.particles.push({
-          x: w.x + (Math.random() - 0.5) * 10, y: w.y - 14, vx: (Math.random() - 0.5) * 60, vy: spark ? -80 : -30,
-          life: 0.5, maxLife: 0.5, size: spark ? 1.5 : 3 + Math.random() * 3, color: spark ? "#fff3b0" : "#6c757d",
+          x: w.x + (this.random() - 0.5) * 10, y: w.y - 14, vx: (this.random() - 0.5) * 60, vy: spark ? -80 : -30,
+          life: 0.5, maxLife: 0.5, size: spark ? 1.5 : 3 + this.random() * 3, color: spark ? "#fff3b0" : "#6c757d",
           gravity: spark ? 400 : -60, world: true,
         });
       }
@@ -2832,12 +2842,12 @@ export class Game {
     w.x -= speed * dt;
     w.landed += dt;
     // The exposed wires keep shorting out.
-    if (Math.random() < dt * 4) {
+    if (this.random() < dt * 4) {
       for (let i = 0; i < 4; i++) {
-        const a = -Math.PI * (0.2 + Math.random() * 0.6);
+        const a = -Math.PI * (0.2 + this.random() * 0.6);
         this.particles.push({
           x: w.x + 2, y: w.y - 14, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
-          life: 0.3, maxLife: 0.3, size: 1.2 + Math.random(), color: Math.random() < 0.5 ? "#fff3b0" : "#9bf6ff",
+          life: 0.3, maxLife: 0.3, size: 1.2 + this.random(), color: this.random() < 0.5 ? "#fff3b0" : "#9bf6ff",
           gravity: 600, world: true,
         });
       }
@@ -2848,13 +2858,13 @@ export class Game {
   private crashDrone(w: DroneWreck): void {
     this.shake = Math.max(this.shake, 6);
     for (let i = 0; i < 22; i++) {
-      const a = -Math.PI * Math.random();
-      const s = 80 + Math.random() * 220;
+      const a = -Math.PI * this.random();
+      const s = 80 + this.random() * 220;
       const part = i % 3 === 0;
       this.particles.push({
         x: w.x, y: w.y - 8, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.4 + Math.random() * 0.5, maxLife: 0.9, size: part ? 2 + Math.random() * 2 : 1.2 + Math.random() * 1.3,
-        color: part ? (Math.random() < 0.5 ? "#2d6a4f" : "#adb5bd") : Math.random() < 0.6 ? "#fff3b0" : "#9bf6ff",
+        life: 0.4 + this.random() * 0.5, maxLife: 0.9, size: part ? 2 + this.random() * 2 : 1.2 + this.random() * 1.3,
+        color: part ? (this.random() < 0.5 ? "#2d6a4f" : "#adb5bd") : this.random() < 0.6 ? "#fff3b0" : "#9bf6ff",
         gravity: 800, world: true,
       });
     }
@@ -2872,12 +2882,12 @@ export class Game {
         const dy = p.y - (pos.y - PIGEON_R);
         const reach = p.r + PIGEON_R;
         if (dx * dx + dy * dy >= reach * reach) continue;
-        if (Math.random() < config.droneChance) {
-          const spin = (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4);
-          pg.wreck = { x: pos.x, y: pos.y, vx: 20 + Math.random() * 40, vy: -120, rot: 0, spin, landed: -1 };
+        if (this.random() < config.droneChance) {
+          const spin = (this.random() < 0.5 ? -1 : 1) * (4 + this.random() * 4);
+          pg.wreck = { x: pos.x, y: pos.y, vx: 20 + this.random() * 40, vy: -120, rot: 0, spin, landed: -1 };
           this.events.push({ type: "droneDown" });
         } else {
-          pg.flyer = { x: pos.x, y: pos.y, vx: 40 + Math.random() * 80, vy: -140 };
+          pg.flyer = { x: pos.x, y: pos.y, vx: 40 + this.random() * 80, vy: -140 };
         }
         for (const other of l.pigeons) if (other !== pg && other.span === pg.span && !other.flyer && !other.wreck) other.startle = 0.35;
         this.combo++;
@@ -2900,15 +2910,15 @@ export class Game {
 
   /** Spawns a balloon just off-screen. Returns the extra room it needs (it's wide and drifts forward). */
   private spawnBalloon(): number {
-    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
-    const baseY = 100 + Math.random() * 140;
+    const n = 2 + (this.random() < 0.5 ? 1 : 0);
+    const baseY = 100 + this.random() * 140;
     this.balloons.push({
-      x: this.width + BALLOON_RX + 30, y: baseY, baseY, phase: Math.random() * Math.PI * 2,
-      colors: pick(BALLOON_COLORS),
-      passengers: Array.from({ length: n }, () => ({ color: pick(PERSON_COLORS), seed: Math.random() * 1000 })),
-      seed: Math.random() * 1000,
+      x: this.width + BALLOON_RX + 30, y: baseY, baseY, phase: this.random() * Math.PI * 2,
+      colors: this.pick(BALLOON_COLORS),
+      passengers: Array.from({ length: n }, () => ({ color: this.pick(PERSON_COLORS), seed: this.random() * 1000 })),
+      seed: this.random() * 1000,
       popped: false, passed: false, drop: 0, dropV: 0, landed: false, rag: null,
-      burn: 0, nextBurn: 0.4 + Math.random(),
+      burn: 0, nextBurn: 0.4 + this.random(),
     });
     return 180;
   }
@@ -2924,7 +2934,7 @@ export class Game {
         b.nextBurn -= dt;
         if (b.nextBurn <= 0) {
           b.burn = 0.6;
-          b.nextBurn = 2.2 + Math.random() * 2;
+          b.nextBurn = 2.2 + this.random() * 2;
           if (b.x > 0 && b.x < this.width && this.phase === "playing") this.events.push({ type: "burner" });
         }
       } else if (!b.landed) {
@@ -2987,22 +2997,22 @@ export class Game {
     this.floaters.push({ x: b.x, y: b.y + 22, text: label, color: "#ffe14d", size: 26, life: 1.2, maxLife: 1.2 });
     // Shreds of envelope.
     for (let i = 0; i < 44; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const d = Math.sqrt(Math.random());
-      const s = 120 + Math.random() * 280;
+      const a = this.random() * Math.PI * 2;
+      const d = Math.sqrt(this.random());
+      const s = 120 + this.random() * 280;
       this.particles.push({
         x: b.x + Math.cos(a) * BALLOON_RX * d, y: b.y + Math.sin(a) * BALLOON_RY * d,
         vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
-        life: 0.6 + Math.random() * 0.6, maxLife: 1.2, size: 3 + Math.random() * 5,
+        life: 0.6 + this.random() * 0.6, maxLife: 1.2, size: 3 + this.random() * 5,
         color: b.colors[i % 2], gravity: 500, world: true,
       });
     }
     // The hot air escapes upward.
     for (let i = 0; i < 16; i++) {
       this.particles.push({
-        x: b.x + (Math.random() - 0.5) * BALLOON_RX, y: b.y + (Math.random() - 0.5) * BALLOON_RY,
-        vx: (Math.random() - 0.5) * 60, vy: -80 - Math.random() * 120,
-        life: 0.7 + Math.random() * 0.5, maxLife: 1.2, size: 8 + Math.random() * 10,
+        x: b.x + (this.random() - 0.5) * BALLOON_RX, y: b.y + (this.random() - 0.5) * BALLOON_RY,
+        vx: (this.random() - 0.5) * 60, vy: -80 - this.random() * 120,
+        life: 0.7 + this.random() * 0.5, maxLife: 1.2, size: 8 + this.random() * 10,
         color: "rgba(255,190,110,0.35)", gravity: -80, world: true,
       });
     }
@@ -3016,7 +3026,7 @@ export class Game {
         x, y: basket.y + 10, w: 26, h: 46, kind: "parachutist",
         speed: this.speed * config.balloonChuteWind + off * 45,
         color: p.color, seed: p.seed, splats: [], hitFlash: 0, facing: off < 0 ? -1 : 1, pap: null, kid: null,
-        chute: { open: false, t: 0, openAt: 0.3 + i * 0.18 + Math.random() * 0.1, vy: -170 - Math.random() * 60, canopy: pick(CHUTE_COLORS) },
+        chute: { open: false, t: 0, openAt: 0.3 + i * 0.18 + this.random() * 0.1, vy: -170 - this.random() * 60, canopy: this.pick(CHUTE_COLORS) },
       });
       this.floaters.push({ x: x + off * 20, y: basket.y - 30 - i * 14, text: "AAAH!", color: "#fff", size: 16, life: 0.9, maxLife: 0.9 });
     });
@@ -3036,13 +3046,13 @@ export class Game {
     const r = basketRect(b);
     this.shake = Math.max(this.shake, 6);
     for (let i = 0; i < 18; i++) {
-      const a = -Math.PI * Math.random();
-      const s = 60 + Math.random() * 160;
+      const a = -Math.PI * this.random();
+      const s = 60 + this.random() * 160;
       this.particles.push({
-        x: r.x + Math.random() * r.w, y: r.y + r.h,
+        x: r.x + this.random() * r.w, y: r.y + r.h,
         vx: Math.cos(a) * s, vy: Math.sin(a) * s * 0.6,
-        life: 0.4 + Math.random() * 0.4, maxLife: 0.8, size: 3 + Math.random() * 5,
-        color: Math.random() < 0.5 ? "rgba(200,190,170,0.7)" : "#a0703f", gravity: 400, world: true,
+        life: 0.4 + this.random() * 0.4, maxLife: 0.8, size: 3 + this.random() * 5,
+        color: this.random() < 0.5 ? "rgba(200,190,170,0.7)" : "#a0703f", gravity: 400, world: true,
       });
     }
     if (b.x > -40 && b.x < this.width + 40) this.events.push({ type: "basketLanded" });
@@ -3051,15 +3061,15 @@ export class Game {
   /** Flew into a basket: wicker everywhere, run over. */
   private basketCrash(): void {
     this.crash();
-    this.message = { text: pick(BASKET_MESSAGES), life: 2.2 };
+    this.message = { text: this.pick(BASKET_MESSAGES), life: 2.2 };
     const b = this.bird;
     for (let i = 0; i < 20; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 100 + Math.random() * 220;
+      const a = this.random() * Math.PI * 2;
+      const s = 100 + this.random() * 220;
       this.particles.push({
         x: b.x, y: b.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 80,
-        life: 0.6 + Math.random() * 0.4, maxLife: 1, size: 2 + Math.random() * 3,
-        color: Math.random() < 0.5 ? "#c68b59" : "#8b5a2b", gravity: 700, world: true,
+        life: 0.6 + this.random() * 0.4, maxLife: 1, size: 2 + this.random() * 3,
+        color: this.random() < 0.5 ? "#c68b59" : "#8b5a2b", gravity: 700, world: true,
       });
     }
   }
@@ -3112,14 +3122,14 @@ export class Game {
     t.y += c.vy * dt;
     if (t.y < GROUND_Y + 20) return;
     // Touchdown.
-    const dir = Math.random() < 0.5 ? 1 : -1;
+    const dir = this.random() < 0.5 ? 1 : -1;
     t.y = GROUND_Y + 20;
     t.kind = "pedestrian";
     t.chute = null;
     t.w = 24;
     t.h = 52;
     t.splats = t.splats.filter((s) => s.dy > -t.h);
-    t.speed = dir * (18 + Math.random() * 30);
+    t.speed = dir * (18 + this.random() * 30);
     t.facing = dir;
   }
 
@@ -3144,10 +3154,10 @@ export class Game {
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
     this.targetSpawnAcc += dt * config.targetSpawnRate * (this.demo ? DEMO_SPAWN_SCALE : 1);
     if (this.targetSpawnAcc >= 1) {
-      this.targetSpawnAcc -= 1 + (Math.random() - 0.5) * 0.6;
+      this.targetSpawnAcc -= 1 + (this.random() - 0.5) * 0.6;
       if (this.demo) this.spawnTarget();
-      else if (!this.calmCity && this.paparazzoDue() && Math.random() < config.paparazziChance) this.spawnPaparazzo();
-      else if (!this.calmCity && this.kidDue() && Math.random() < config.kidChance) this.spawnKid();
+      else if (!this.calmCity && this.paparazzoDue() && this.random() < config.paparazziChance) this.spawnPaparazzo();
+      else if (!this.calmCity && this.kidDue() && this.random() < config.kidChance) this.spawnKid();
       // Nobody wanders through the wedding; the road stays busy.
       else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
@@ -3159,11 +3169,11 @@ export class Game {
   private provoke(t: Target): void {
     if (t.kind !== "pedestrian" || t.wedding) return;
     if (!t.rage) {
-      if (Math.random() >= config.angryChance) return;
-      t.rage = { t: 0, walk: t.speed, curse: pick(CURSES) };
+      if (this.random() >= config.angryChance) return;
+      t.rage = { t: 0, walk: t.speed, curse: this.pick(CURSES) };
     } else {
       t.rage.t = 0;
-      t.rage.curse = pick(CURSES.filter((c) => c !== t.rage?.curse));
+      t.rage.curse = this.pick(CURSES.filter((c) => c !== t.rage?.curse));
     }
     t.speed = 0;
     this.events.push({ type: "curse" });
@@ -3204,7 +3214,7 @@ export class Game {
       x, y: GROUND_Y + 20, w: 56, h: 66, kind: "paparazzo",
       // The first one walks along with the bird, so there's time to figure him out.
       speed: tutorial ? config.paparazziTutorialWalk : 0,
-      color: "#6d6875", seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1,
+      color: "#6d6875", seed: this.random() * 1000, splats: [], hitFlash: 0, facing: -1,
       pap: { state: "watching", timer: 0, startX: x, tutorial, aim: -2.4, flash: 0, beep: 0 },
       kid: null, chute: null,
     });
@@ -3259,8 +3269,8 @@ export class Game {
     this.flash = 1;
     this.shake = Math.max(this.shake, 6);
     this.polaroid = { photoId, life: 2.2, maxLife: 2.2 };
-    this.message = { text: pick(SNAP_MESSAGES), life: 1.4 };
-    const tabloid: Tabloid = { photoId, headline: pick(HEADLINES) };
+    this.message = { text: this.pick(SNAP_MESSAGES), life: 1.4 };
+    const tabloid: Tabloid = { photoId, headline: this.pick(HEADLINES) };
     this.frontPages.push(tabloid);
     this.pendingTabloids.push(tabloid);
     this.events.push({ type: "photo", photoId });
@@ -3276,12 +3286,12 @@ export class Game {
     const camX = t.x;
     const camY = t.y - t.h * 0.72;
     for (let i = 0; i < 16; i++) {
-      const a = -Math.PI * Math.random();
-      const s = 80 + Math.random() * 200;
+      const a = -Math.PI * this.random();
+      const s = 80 + this.random() * 200;
       this.particles.push({
         x: camX, y: camY, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 1.5 + Math.random() * 2.5,
-        color: Math.random() < 0.5 ? "#caf0f8" : "#adb5bd", gravity: 800, world: true,
+        life: 0.5 + this.random() * 0.4, maxLife: 0.9, size: 1.5 + this.random() * 2.5,
+        color: this.random() < 0.5 ? "#caf0f8" : "#adb5bd", gravity: 800, world: true,
       });
     }
     this.floaters.push({ x: t.x, y: t.y - t.h - 44, text: "NO PHOTOS!", color: "#7ae582", size: 24, life: 1.3, maxLife: 1.3 });
@@ -3289,24 +3299,24 @@ export class Game {
   }
 
   private spawnTarget(only?: "car"): void {
-    const r = Math.random();
+    const r = this.random();
     let kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
     if (kind === "statue" && !this.statueFits(this.width + 80, 46)) kind = "pedestrian";
     // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
     const roadY = GROUND_Y + 68;
     let t: Target;
-    const seed = Math.random() * 1000;
+    const seed = this.random() * 1000;
     if (kind === "car") {
-      const dir = Math.random() < 0.6 ? 1 : -1;
+      const dir = this.random() < 0.6 ? 1 : -1;
       t = {
-        x: this.width + 120, y: roadY, w: 92, h: 40, kind, speed: dir * (40 + Math.random() * 90),
-        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
+        x: this.width + 120, y: roadY, w: 92, h: 40, kind, speed: dir * (40 + this.random() * 90),
+        color: this.pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
       };
     } else if (kind === "pedestrian") {
-      const dir = Math.random() < 0.5 ? 1 : -1;
+      const dir = this.random() < 0.5 ? 1 : -1;
       t = {
-        x: this.width + 60, y: GROUND_Y + 20, w: 24, h: 52, kind, speed: dir * (18 + Math.random() * 30),
-        color: pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
+        x: this.width + 60, y: GROUND_Y + 20, w: 24, h: 52, kind, speed: dir * (18 + this.random() * 30),
+        color: this.pick(PERSON_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
       };
     } else {
       t = {
@@ -3363,7 +3373,7 @@ export class Game {
     const later = Math.max(0, this.cityStage - Math.round(config.kidFirstCity));
     this.targets.push({
       x: this.width + 40, y: GROUND_Y + 20, w: 34, h: 62, kind: "kid", speed: -config.kidWalkSpeed,
-      color: pick(PERSON_COLORS), seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, chute: null,
+      color: this.pick(PERSON_COLORS), seed: this.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, chute: null,
       kid: {
         state: "walking", t: 0, pull: 0, windup: 1,
         shots: Math.min(Math.max(1, Math.round(config.kidShotsMax)), 1 + later),
@@ -3537,10 +3547,10 @@ export class Game {
     for (const r of rects) {
       if (!circleRect(p.x, p.y, PEBBLE_R, r)) continue;
       for (let i = 0; i < 8; i++) {
-        const a = Math.random() * Math.PI * 2;
+        const a = this.random() * Math.PI * 2;
         this.particles.push({
           x: p.x, y: p.y, vx: Math.cos(a) * 160 - p.vx * 0.2, vy: Math.sin(a) * 160,
-          life: 0.25, maxLife: 0.25, size: 1.5 + Math.random() * 1.5, color: Math.random() < 0.5 ? "#fff3b0" : "#adb5bd",
+          life: 0.25, maxLife: 0.25, size: 1.5 + this.random() * 1.5, color: this.random() < 0.5 ? "#fff3b0" : "#adb5bd",
           gravity: 500, world: false,
         });
       }
@@ -3554,7 +3564,7 @@ export class Game {
         const pos = pigeonPos(l, pg);
         const reach = PEBBLE_R + PIGEON_R;
         if ((pos.x - p.x) ** 2 + (pos.y - PIGEON_R - p.y) ** 2 >= reach * reach) continue;
-        pg.flyer = { x: pos.x, y: pos.y, vx: 60 + Math.random() * 60, vy: -160 };
+        pg.flyer = { x: pos.x, y: pos.y, vx: 60 + this.random() * 60, vy: -160 };
         this.floaters.push({ x: pos.x, y: pos.y - 40, text: "COO!", color: "#fff", size: 18, life: 0.8, maxLife: 0.8 });
         this.events.push({ type: "ricochet" });
         return true;
@@ -3577,12 +3587,12 @@ export class Game {
     this.floaters.push({ x, y: y - 2, text: `+${points}`, color: "#ffe14d", size: 22, life: 1.1, maxLife: 1.1 });
     // A mid-air burst of poop and gravel.
     for (let i = 0; i < 26; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 80 + Math.random() * 260;
+      const a = this.random() * Math.PI * 2;
+      const s = 80 + this.random() * 260;
       this.particles.push({
         x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
-        life: 0.5 + Math.random() * 0.4, maxLife: 0.9, size: 2 + Math.random() * 4,
-        color: pick(["#6b3e14", "#8b5a2b", "#ffe14d", "#adb5bd"]), gravity: 800, world: true,
+        life: 0.5 + this.random() * 0.4, maxLife: 0.9, size: 2 + this.random() * 4,
+        color: this.pick(["#6b3e14", "#8b5a2b", "#ffe14d", "#adb5bd"]), gravity: 800, world: true,
       });
     }
     this.events.push({ type: "pebbleShot", points, combo: this.combo });
@@ -3600,18 +3610,18 @@ export class Game {
       this.floaters.push({ x: b.x, y: b.y + 40, text: "combo lost", color: "#ffd6d6", size: 16, life: 0.8, maxLife: 0.8 });
     }
     this.combo = 0;
-    this.message = { text: pick(BONK_MESSAGES), life: 1.6 };
+    this.message = { text: this.pick(BONK_MESSAGES), life: 1.6 };
     // Loose feathers and an impact burst.
     for (let i = 0; i < 12; i++) {
       this.particles.push({
-        x: b.x + (Math.random() - 0.5) * 20, y: b.y + (Math.random() - 0.5) * 20,
-        vx: (Math.random() - 0.5) * 160 + p.vx * 0.15, vy: -60 - Math.random() * 120,
-        life: 1 + Math.random() * 0.6, maxLife: 1.6, size: 3 + Math.random() * 3,
-        color: Math.random() < 0.6 ? "#ffd166" : "#fff", gravity: 160, world: true,
+        x: b.x + (this.random() - 0.5) * 20, y: b.y + (this.random() - 0.5) * 20,
+        vx: (this.random() - 0.5) * 160 + p.vx * 0.15, vy: -60 - this.random() * 120,
+        life: 1 + this.random() * 0.6, maxLife: 1.6, size: 3 + this.random() * 3,
+        color: this.random() < 0.6 ? "#ffd166" : "#fff", gravity: 160, world: true,
       });
     }
     for (let i = 0; i < 10; i++) {
-      const a = Math.random() * Math.PI * 2;
+      const a = this.random() * Math.PI * 2;
       this.particles.push({
         x: p.x, y: p.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220,
         life: 0.2, maxLife: 0.2, size: 2.5, color: "#fff", gravity: 0, world: false,
@@ -3660,21 +3670,21 @@ export class Game {
     const churchX = this.width + 330;
     const church: Obstacle = {
       x: churchX, w: CHURCH_W, gapTop: center - gap / 2, gapBottom: center + gap / 2,
-      bottom: "church", color: "#f4ecdc", seed: Math.random() * 1000,
+      bottom: "church", color: "#f4ecdc", seed: this.random() * 1000,
       passed: false, splats: [], tabloid: null, anchor: false, drop: null,
     };
     this.obstacles.push(church);
 
     const coupleX = churchX - WEDDING_COUPLE_DX;
     const person = (kind: TargetKind, dx: number, w: number, h: number, color: string, facing: 1 | -1): Target => ({
-      x: coupleX + dx, y: GROUND_Y + 20, w, h, kind, speed: 0, color, seed: Math.random() * 1000,
+      x: coupleX + dx, y: GROUND_Y + 20, w, h, kind, speed: 0, color, seed: this.random() * 1000,
       splats: [], hitFlash: 0, facing, pap: null, kid: null,
     });
-    const colors = [...GUEST_COLORS].sort(() => Math.random() - 0.5);
+    const colors = [...GUEST_COLORS].sort(() => this.random() - 0.5);
     const wedding: Wedding = {
       phase: "arriving", t: 0, count: 0, outcome: null,
       tutorial: this.weddingsSeen++ === 0,
-      names: pick(COUPLES), early: false, thrown: false, announced: false, flash: 0,
+      names: this.pick(COUPLES), early: false, thrown: false, announced: false, flash: 0,
       groom: person("groom", -15, 28, 70, "#2b2d42", 1),
       bride: person("bride", 15, 32, 70, "#ffffff", -1),
       photographer: person("photographer", -165, 36, 60, "#495057", 1),
@@ -3688,7 +3698,7 @@ export class Game {
     // The getaway car, parked in front of the church.
     const car: Target = {
       x: churchX + CHURCH_W / 2, y: GROUND_Y + 68, w: 92, h: 40, kind: "car", speed: 0, color: "#fdfcf7",
-      seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null,
+      seed: this.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null,
     };
     const party = [wedding.photographer, ...wedding.guests, wedding.groom, wedding.bride, car];
     for (const t of party) t.wedding = wedding;
@@ -3774,7 +3784,7 @@ export class Game {
       if (w.phase === "kiss" && !w.outcome) return { mult: config.weddingKissMultiplier, ruin: true };
       if (w.phase === "arriving" || w.phase === "countdown") {
         w.early = true;
-        this.floaters.push({ x: t.x, y: t.y - t.h - 50, text: pick(EARLY_MESSAGES), color: "#ffd6e0", size: 20, life: 1.1, maxLife: 1.1 });
+        this.floaters.push({ x: t.x, y: t.y - t.h - 50, text: this.pick(EARLY_MESSAGES), color: "#ffd6e0", size: 20, life: 1.1, maxLife: 1.1 });
       }
       return { mult: config.weddingCoupleMultiplier, ruin: false };
     }
@@ -3793,16 +3803,16 @@ export class Game {
     this.setWeddingPhase(w, "after");
     this.weddingsRuined++;
     this.shake = Math.max(this.shake, 14);
-    this.message = { text: pick(RUIN_MESSAGES), life: 2.2 };
+    this.message = { text: this.pick(RUIN_MESSAGES), life: 2.2 };
     const x = weddingX(w);
     // The veil and the groom's top hat fly off.
     for (let i = 0; i < 18; i++) {
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2;
-      const s = 120 + Math.random() * 220;
+      const a = -Math.PI / 2 + (this.random() - 0.5) * 2;
+      const s = 120 + this.random() * 220;
       this.particles.push({
         x, y: w.bride.y - w.bride.h * 0.8, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.7 + Math.random() * 0.5, maxLife: 1.2, size: 2 + Math.random() * 4,
-        color: pick(["#ffffff", "#ffe5ec", "#ffb3c6", "#6b3e14"]), gravity: 500, world: true,
+        life: 0.7 + this.random() * 0.5, maxLife: 1.2, size: 2 + this.random() * 4,
+        color: this.pick(["#ffffff", "#ffe5ec", "#ffb3c6", "#6b3e14"]), gravity: 500, world: true,
       });
     }
     this.events.push({ type: "weddingRuined", points });
@@ -3817,18 +3827,18 @@ export class Game {
     const y = w.bride.y - w.bride.h;
     this.floaters.push({ x, y: y - 60, text: "♥ JUST MARRIED ♥", color: "#ffb3c6", size: 24, life: 1.6, maxLife: 1.6 });
     for (let i = 0; i < 70; i++) {
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
-      const s = 150 + Math.random() * 300;
+      const a = -Math.PI / 2 + (this.random() - 0.5) * 2.4;
+      const s = 150 + this.random() * 300;
       this.particles.push({
-        x: x + (Math.random() - 0.5) * 140, y: y + 20, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 1 + Math.random() * 0.8, maxLife: 1.8, size: 2 + Math.random() * 3,
-        color: pick(["#ff8fab", "#ffd166", "#a2d2ff", "#b9fbc0", "#ffffff", "#cdb4db"]), gravity: 260, world: true,
+        x: x + (this.random() - 0.5) * 140, y: y + 20, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 1 + this.random() * 0.8, maxLife: 1.8, size: 2 + this.random() * 3,
+        color: this.pick(["#ff8fab", "#ffd166", "#a2d2ff", "#b9fbc0", "#ffffff", "#cdb4db"]), gravity: 260, world: true,
       });
     }
     for (let i = 0; i < 6; i++) {
       this.doves.push({
-        x: x + (Math.random() - 0.5) * 80, y: y - 20 - Math.random() * 30,
-        vx: -30 + Math.random() * 110, vy: -110 - Math.random() * 90, seed: Math.random() * 1000,
+        x: x + (this.random() - 0.5) * 80, y: y - 20 - this.random() * 30,
+        vx: -30 + this.random() * 110, vy: -110 - this.random() * 90, seed: this.random() * 1000,
       });
     }
     this.events.push({ type: "weddingMarried" });
@@ -3881,11 +3891,11 @@ export class Game {
     q.x += q.vx * dt;
     q.y += q.vy * dt;
     q.rot += dt * (q.angry ? 14 : 4);
-    if (Math.random() < dt * 25) {
+    if (this.random() < dt * 25) {
       this.particles.push({
-        x: q.x, y: q.y, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40,
-        life: 0.5, maxLife: 0.5, size: 1.5 + Math.random() * 2,
-        color: q.angry ? "#ff8fab" : pick(["#fff3b0", "#ffffff", "#ffb3c6"]), gravity: 120, world: false,
+        x: q.x, y: q.y, vx: (this.random() - 0.5) * 40, vy: (this.random() - 0.5) * 40,
+        life: 0.5, maxLife: 0.5, size: 1.5 + this.random() * 2,
+        color: q.angry ? "#ff8fab" : this.pick(["#fff3b0", "#ffffff", "#ffb3c6"]), gravity: 120, world: false,
       });
     }
     if (q.y > GROUND_Y + 40 || q.x < -80 || q.x > this.width + 80 || q.y < -400) {
@@ -3902,12 +3912,12 @@ export class Game {
 
   private petalBurst(x: number, y: number, n: number): void {
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 60 + Math.random() * 220;
+      const a = this.random() * Math.PI * 2;
+      const s = 60 + this.random() * 220;
       this.particles.push({
         x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40,
-        life: 0.7 + Math.random() * 0.7, maxLife: 1.4, size: 2.5 + Math.random() * 3,
-        color: pick(["#ff8fab", "#ffb3c6", "#ffffff", "#fb6f92", "#b9fbc0"]), gravity: 220, world: true,
+        life: 0.7 + this.random() * 0.7, maxLife: 1.4, size: 2.5 + this.random() * 3,
+        color: this.pick(["#ff8fab", "#ffb3c6", "#ffffff", "#fb6f92", "#b9fbc0"]), gravity: 220, world: true,
       });
     }
   }
@@ -3931,7 +3941,7 @@ export class Game {
     b.vy = Math.max(b.vy, config.weddingBouquetKnock);
     b.stretchV -= 10;
     this.shake = Math.max(this.shake, 10);
-    this.message = { text: pick(BOUQUET_MESSAGES), life: 1.6 };
+    this.message = { text: this.pick(BOUQUET_MESSAGES), life: 1.6 };
     this.petalBurst(q.x, q.y, 30);
     this.events.push({ type: "bouquetHit" });
   }
@@ -3941,7 +3951,7 @@ export class Game {
   private spawnPoop(x: number, y: number, r: number, vy: number, big: boolean): void {
     // Poops inherit the bird's forward speed (world vx = scroll speed, i.e.
     // screen vx = 0) and slowly lose it to drag.
-    this.poops.push({ x, y, vx: 0, vy: vy + Math.max(0, this.bird.vy * 0.2), r, big, trail: 0, rot: Math.random() * 6 });
+    this.poops.push({ x, y, vx: 0, vy: vy + Math.max(0, this.bird.vy * 0.2), r, big, trail: 0, rot: this.random() * 6 });
   }
 
   private updatePoops(dt: number, speed: number): void {
@@ -3958,9 +3968,9 @@ export class Game {
       if (p.trail <= 0) {
         p.trail = 0.025;
         this.particles.push({
-          x: p.x + (Math.random() - 0.5) * p.r, y: p.y - p.r * 0.5,
-          vx: (Math.random() - 0.5) * 20, vy: -10,
-          life: 0.35, maxLife: 0.35, size: 1.5 + Math.random() * p.r * 0.35,
+          x: p.x + (this.random() - 0.5) * p.r, y: p.y - p.r * 0.5,
+          vx: (this.random() - 0.5) * 20, vy: -10,
+          life: 0.35, maxLife: 0.35, size: 1.5 + this.random() * p.r * 0.35,
           color: "#8b5a2b", gravity: 0, world: true,
         });
       }
@@ -3978,7 +3988,7 @@ export class Game {
     for (const t of this.targets) {
       const rect = targetRect(t);
       if (!circleRect(p.x, p.y, p.r, rect)) continue;
-      t.splats.push({ dx: p.x - t.x, dy: Math.max(-t.h, p.y - t.y), r: p.r * 1.3, seed: Math.random() * 1000 });
+      t.splats.push({ dx: p.x - t.x, dy: Math.max(-t.h, p.y - t.y), r: p.r * 1.3, seed: this.random() * 1000 });
       t.hitFlash = 0.3;
       this.combo++;
       this.bestCombo = Math.max(this.bestCombo, this.combo);
@@ -4012,7 +4022,7 @@ export class Game {
     for (const o of this.obstacles) {
       for (const r of obstacleRects(o)) {
         if (!circleRect(p.x, p.y, p.r, r)) continue;
-        o.splats.push({ dx: p.x - o.x, dy: p.y, r: p.r * 1.2, seed: Math.random() * 1000 });
+        o.splats.push({ dx: p.x - o.x, dy: p.y, r: p.r * 1.2, seed: this.random() * 1000 });
         this.splatParticles(p.x, p.y, p.r, false);
         this.events.push({ type: "splat", big: p.big });
         return true;
@@ -4032,7 +4042,7 @@ export class Game {
     // over a target always reaches the target first.
     const groundHit = GROUND_Y + 55;
     if (p.y + p.r >= groundHit) {
-      this.decals.push({ x: p.x, y: groundHit - 4 + Math.random() * 14, r: p.r * 1.6, seed: Math.random() * 1000 });
+      this.decals.push({ x: p.x, y: groundHit - 4 + this.random() * 14, r: p.r * 1.6, seed: this.random() * 1000 });
       if (this.decals.length > 60) this.decals.shift();
       this.splatParticles(p.x, groundHit, p.r, false);
       if (this.combo > 1 && this.phase === "playing") {
@@ -4048,12 +4058,12 @@ export class Game {
   private splatParticles(x: number, y: number, r: number, hit: boolean): void {
     const n = 8 + Math.round(r);
     for (let i = 0; i < n; i++) {
-      const a = -Math.PI * Math.random();
-      const s = 60 + Math.random() * 160;
+      const a = -Math.PI * this.random();
+      const s = 60 + this.random() * 160;
       this.particles.push({
         x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-        life: 0.4 + Math.random() * 0.3, maxLife: 0.7, size: 2 + Math.random() * 3,
-        color: hit && Math.random() < 0.3 ? "#ffe14d" : "#6b3e14", gravity: 700, world: true,
+        life: 0.4 + this.random() * 0.3, maxLife: 0.7, size: 2 + this.random() * 3,
+        color: hit && this.random() < 0.3 ? "#ffe14d" : "#6b3e14", gravity: 700, world: true,
       });
     }
   }
@@ -4094,6 +4104,10 @@ export class Game {
       if (this.message.life <= 0) this.message = null;
     }
   }
+  private pick<T>(items: readonly T[]): T {
+    return items[Math.floor(this.random() * items.length)];
+  }
+
 }
 
 // --- geometry helpers ----------------------------------------------------------
@@ -4333,8 +4347,4 @@ export function circleRect(cx: number, cy: number, r: number, rect: Rect): boole
   const dx = cx - nx;
   const dy = cy - ny;
   return dx * dx + dy * dy < r * r;
-}
-
-function pick<T>(items: readonly T[]): T {
-  return items[Math.floor(Math.random() * items.length)];
 }
