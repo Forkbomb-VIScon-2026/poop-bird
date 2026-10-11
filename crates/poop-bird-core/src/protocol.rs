@@ -1,6 +1,6 @@
 //! Batched kernel validation protocol. This is not the future world/frame ABI.
-use crate::{charge, collision, swim};
-pub const VERSION: u32 = 1;
+use crate::{bird, charge, collision, swim};
+pub const VERSION: u32 = 2;
 pub const INPUT_STRIDE: usize = 24;
 pub const OUTPUT_STRIDE: usize = 8;
 
@@ -10,6 +10,7 @@ pub enum Error {
     NonFinite,
     UnknownOperation,
     InvalidBoolean,
+    InvalidLife,
 }
 
 /// Validate the entire request before changing the caller's reusable output.
@@ -21,13 +22,15 @@ pub fn evaluate(input: &[f64], output: &mut Vec<f64>) -> Result<(), Error> {
         if row.iter().any(|n| !n.is_finite()) {
             return Err(Error::NonFinite);
         }
-        if ![0.0, 1.0, 2.0, 3.0, 4.0].contains(&row[0]) {
+        if ![0.0, 1.0, 2.0, 3.0, 4.0, 5.0].contains(&row[0]) {
             return Err(Error::UnknownOperation);
         }
         let boolean_indices: &[usize] = if row[0] == 0.0 {
             &[4, 5]
         } else if row[0] == 1.0 {
             &[1, 4]
+        } else if row[0] == 5.0 {
+            &[9]
         } else {
             &[]
         };
@@ -36,6 +39,9 @@ pub fn evaluate(input: &[f64], output: &mut Vec<f64>) -> Result<(), Error> {
             .any(|&i| row[i] != 0.0 && row[i] != 1.0)
         {
             return Err(Error::InvalidBoolean);
+        }
+        if row[0] == 5.0 && ![0.0, 1.0, 2.0].contains(&row[10]) {
+            return Err(Error::InvalidLife);
         }
     }
     output.clear();
@@ -137,6 +143,47 @@ pub fn evaluate(input: &[f64], output: &mut Vec<f64>) -> Result<(), Error> {
                         h: r[7],
                     },
                 ))
+            }
+            5 => {
+                let mut s = bird::State {
+                    y: r[1],
+                    velocity: r[2],
+                    rotation: r[3],
+                    stretch: r[4],
+                    stretch_velocity: r[5],
+                    relief: r[6],
+                    flap: r[7],
+                };
+                s.advance(
+                    bird::Input {
+                        charge: r[8],
+                        stunned: r[9] != 0.0,
+                        life: match r[10] as u32 {
+                            0 => bird::Life::Playing,
+                            1 => bird::Life::Dying,
+                            _ => bird::Life::Over,
+                        },
+                        stage_time: r[11],
+                    },
+                    r[12],
+                    &bird::Params {
+                        gravity: r[13],
+                        start_grace: r[14],
+                        charge_gravity_scale: r[15],
+                        max_fall_speed: r[16],
+                        charge_max_fall_speed: r[17],
+                        radius: r[18],
+                    },
+                );
+                out[..7].copy_from_slice(&[
+                    s.y,
+                    s.velocity,
+                    s.rotation,
+                    s.stretch,
+                    s.stretch_velocity,
+                    s.relief,
+                    s.flap,
+                ]);
             }
             _ => unreachable!("operation validated before evaluation"),
         }

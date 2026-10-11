@@ -4,11 +4,12 @@ import { readFile } from "node:fs/promises";
 import init, { evaluate_batch, protocol_version } from "../../public/game-wasm/poop_bird_wasm.js";
 
 await init({ module_or_path: await readFile(new URL("../../public/game-wasm/poop_bird_wasm_bg.wasm", import.meta.url)) });
-assert.equal(protocol_version(), 1);
+assert.equal(protocol_version(), 2);
 const input = [];
 const expected = [];
-const csv = await readFile(new URL("../../tests/fixtures/kernels-v1.csv", import.meta.url), "utf8");
-for (const line of csv.trim().split("\n").filter(l => !l.startsWith("#"))) {
+const csv = (await Promise.all(["kernels-v1.csv", "bird-v2.csv"].map(name =>
+  readFile(new URL(`../../tests/fixtures/${name}`, import.meta.url), "utf8")))).join("\n");
+for (const line of csv.trim().split("\n").filter(l => l.trim() && !l.startsWith("#"))) {
   const row = line.split(",").map(Number);
   assert.equal(row.length, 32);
   input.push(...row.slice(0, 24));

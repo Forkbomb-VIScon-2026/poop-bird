@@ -48,7 +48,9 @@ production builds.
 ```sh
 npm run bench:simulation
 node scripts/run-ts.mjs scripts/migration/reference.ts
+node scripts/run-ts.mjs scripts/migration/bird-reference.ts
 ```
 
-The benchmark is synthetic Node simulation only. The second command deliberately
-regenerates frozen reference fixtures; do not run it to hide a failing comparison.
+The benchmark is synthetic Node simulation only. The reference commands deliberately
+regenerate frozen fixtures; do not run them to hide a failing comparison. Protocol 2
+adds bird motion to the original kernel records; the world/frame ABI is still pending.

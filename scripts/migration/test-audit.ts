@@ -33,6 +33,6 @@ try {
     ocean.events.length = 0;
   }
 } finally { Object.assign(config, original); }
-assert.equal(audit.stats.cases, 24000);
+assert.equal(audit.stats.cases, 36000);
 assert.equal(audit.stats.batches, 2000);
 console.log("Live simulation / batched WASM shadow comparison:", audit.stats);

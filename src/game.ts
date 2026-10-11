@@ -1403,6 +1403,7 @@ export class Game {
 
   private updateBird(dt: number): void {
     const b = this.bird;
+    this.kernelObserver?.bird(b, this.charge.charge, this.stunned, this.phase, this.stageTime, dt, config);
     const charging = this.charge.charge > 0 && !this.stunned;
     const grace = config.startGrace > 0 ? Math.min(1, this.stageTime / config.startGrace) : 1;
     const dying = this.phase !== "playing";
@@ -1429,6 +1430,7 @@ export class Game {
       b.rot = wound + (targetRot - wound) * Math.min(1, dt * 10);
     }
 
+    this.kernelObserver?.birdResult(b);
     // Over the harbour: the game takes over and dives the bird in (right away if it touches the water).
     const s = this.shore;
     const touches = this.overWater(b.x) && b.y + BIRD_RADIUS >= WATER_Y;

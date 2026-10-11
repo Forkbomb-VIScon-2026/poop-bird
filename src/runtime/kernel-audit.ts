@@ -2,6 +2,8 @@
 import type { ChargeParams, ChargeState, ChargeStep } from "../charge";
 import type { SpikeParams, SpikeState, SpikeStep } from "../swim";
 import { popProgress, popWarning } from "../swim";
+import { BIRD_RADIUS, type Game } from "../game";
+import type { config } from "../config";
 import type * as Wasm from "../../public/game-wasm/poop_bird_wasm";
 
 declare const __APP_COMMIT__: string;
@@ -10,9 +12,13 @@ type Module = typeof Wasm;
 export interface KernelObserver {
   charge(before: ChargeState, straining: boolean, dt: number, params: ChargeParams, result: ChargeStep): void;
   spike(before: SpikeState, puff: number, dt: number, params: SpikeParams, result: SpikeStep): void;
+  bird(before: Readonly<Game["bird"]>, charge: number, stunned: boolean,
+    phase: Game["phase"], stageTime: number, dt: number, params: typeof config): void;
+  birdResult(after: Readonly<Game["bird"]>): void;
 }
 const CHARGE_KEYS = ["chargeTime", "overstrainTime", "sweetSpotWindow", "sweetSpotMultiplier", "stunTime", "pushMin", "pushMax", "pushCurve"] as const;
 const SPIKE_KEYS = ["oceanSpikeThreshold", "oceanSpikeRelease", "oceanSpikeMaxHold", "oceanPopWarnTime", "stunTime"] as const;
+const BIRD_KEYS = ["y", "vy", "rot", "stretch", "stretchV", "relief", "flap"] as const;
 
 export class KernelAudit implements KernelObserver {
   private input = new Float64Array(24 * 16);
@@ -21,6 +27,7 @@ export class KernelAudit implements KernelObserver {
   private batches = 0;
   private cases = 0;
   private maxError = 0;
+  private birdOutput = -1;
   private readonly evaluate: Module["evaluate_batch"];
 
   constructor(evaluate: Module["evaluate_batch"]) { this.evaluate = evaluate; }
@@ -56,6 +63,21 @@ export class KernelAudit implements KernelObserver {
       popProgress(s, p), +popWarning(s, p), 0], o);
   }
 
+  bird(before: Readonly<Game["bird"]>, charge: number, stunned: boolean,
+    phase: Game["phase"], stageTime: number, dt: number, p: typeof config): void {
+    const [i, o] = this.slot();
+    this.birdOutput = o;
+    this.input.set([5, ...BIRD_KEYS.map(key => before[key]), charge, +stunned,
+      phase === "playing" ? 0 : phase === "dying" ? 1 : 2, stageTime, dt,
+      p.gravity, p.startGrace, p.chargeGravityScale, p.maxFallSpeed, p.chargeMaxFallSpeed, BIRD_RADIUS], i);
+  }
+
+  birdResult(after: Readonly<Game["bird"]>): void {
+    if (this.birdOutput < 0) throw new Error("Bird output without input");
+    this.expected.set([...BIRD_KEYS.map(key => after[key]), 0], this.birdOutput);
+    this.birdOutput = -1;
+  }
+
   flush(): void {
     if (this.count === 0) return;
     const actual = this.evaluate(this.input.subarray(0, this.count * 24));
@@ -79,6 +101,6 @@ export async function loadKernelAudit(): Promise<KernelAudit> {
   const url = new URL(`${import.meta.env.BASE_URL}game-wasm/poop_bird_wasm.js?v=${__APP_COMMIT__}`, location.href).href;
   const module: Module = await import(/* @vite-ignore */ url);
   await module.default();
-  if (module.protocol_version() !== 1) throw new Error("Unsupported Rust kernel protocol");
+  if (module.protocol_version() !== 2) throw new Error("Unsupported Rust kernel protocol");
   return new KernelAudit(module.evaluate_batch);
 }

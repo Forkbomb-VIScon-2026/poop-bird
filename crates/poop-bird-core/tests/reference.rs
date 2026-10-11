@@ -2,12 +2,18 @@ use poop_bird_core::protocol::{self, Error, INPUT_STRIDE, OUTPUT_STRIDE};
 
 #[test]
 fn matches_frozen_typescript_reference() {
+    compare_fixture(include_str!("../../../tests/fixtures/kernels-v1.csv"));
+}
+
+#[test]
+fn matches_frozen_bird_motion_reference() {
+    compare_fixture(include_str!("../../../tests/fixtures/bird-v2.csv"));
+}
+
+fn compare_fixture(csv: &str) {
     let mut input = Vec::new();
     let mut expected = Vec::new();
-    for line in include_str!("../../../tests/fixtures/kernels-v1.csv")
-        .lines()
-        .filter(|l| !l.starts_with('#'))
-    {
+    for line in csv.lines().filter(|l| !l.starts_with('#')) {
         let row: Vec<f64> = line.split(',').map(|n| n.parse().unwrap()).collect();
         assert_eq!(row.len(), INPUT_STRIDE + OUTPUT_STRIDE);
         input.extend_from_slice(&row[..INPUT_STRIDE]);
@@ -47,6 +53,20 @@ fn rejects_malformed_batches_without_partial_output() {
         Err(Error::InvalidBoolean)
     );
     row[5] = 0.0;
+    row[0] = 5.0;
+    row[10] = 0.5;
+    assert_eq!(
+        protocol::evaluate(&row, &mut output),
+        Err(Error::InvalidLife)
+    );
+    row[10] = 0.0;
+    row[9] = 0.5;
+    assert_eq!(
+        protocol::evaluate(&row, &mut output),
+        Err(Error::InvalidBoolean)
+    );
+    row[9] = 0.0;
+    row[0] = 0.0;
     row[7] = f64::NAN;
     assert_eq!(protocol::evaluate(&row, &mut output), Err(Error::NonFinite));
     assert_eq!(output, [123.0]);

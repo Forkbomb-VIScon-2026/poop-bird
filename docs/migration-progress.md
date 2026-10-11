@@ -29,7 +29,7 @@ the optional photo graphics, settings, shark sample and tutorial/test fixes.
 | # | Work | Status |
 |---|---|---|
 | 0 | Audit, branch, baseline fixtures and progress record | Complete |
-| 1 | Rust/WASM toolchain, crates, build/CI/Docker integration | Complete locally; Docker/remote CI unverified |
+| 1 | Rust/WASM toolchain, crates, build/CI/Docker integration | Complete; local checks and remote check/docker jobs pass |
 | 2 | Charge, swimming, collision and RNG kernels with differential tests | Complete |
 | 3 | Commands, immutable render frames, batched bridge and audio registry | Partial: commands/frames/audio/shadow complete; world/frame ABI pending |
 | 4 | Basic city, effects, scoring, demo, perch and lessons | Pending |
@@ -103,6 +103,18 @@ No placeholder or disconnected module counts as a completed milestone.
 
 ## Next implementation work
 
+Bird motion is now a separate, allocation-free Rust state component: gravity,
+grace, charging fall cap, top clamp, spring/timers and rotation. Protocol 2 adds
+batched flight comparisons. 1,024 frozen motion cases include negative half-turn
+rounding, stun/dying/over states and varied live tuning; those outputs also match
+the unmodified upstream checkout. Total frozen kernel cases: 3,091. Live demo
+and ocean checks now compare 36,000 cases in 2,000 batches with zero maximum
+error. Floor/obstacle contacts, effects and complete world ownership remain pending.
+
+Remote CI run 38104383784 passed both `check` and `docker` at merge commit
+`642ef7b`, including Chromium smoke and both container builds. This verifies
+the build integration remotely; Docker is still unavailable locally.
+
 Upstream merge verification: 211 TypeScript tests, lint/typechecks, Rust checks,
 2,067 WASM fixtures, 24,000 live comparisons and both builds pass. Chromium
 loads all 57 photo assets, persists the graphics setting, renders/captures
@@ -117,7 +129,8 @@ encounters, before connecting authoritative frame output and retiring legacy cod
 
 
 Latest local checks: ESLint and both TypeScript checks passed; 211 TypeScript
-unit tests in 14 files, 4 native Rust tests, 2,067 frozen WASM cases and 24,000
-live batched comparisons passed; production and debug builds passed. The browser
-smoke test passed after the public-module URL fix. Docker and remote CI have not
-been run locally. No performance gain or complete migration is claimed.
+unit tests in 14 files, 5 native Rust tests, 3,091 frozen WASM cases and 36,000
+live batched comparisons passed; production and debug builds passed. Chromium
+smoke passed in classic/RTX styles with 57 photo assets and 49 sound IDs decoded.
+Remote CI passed check and Docker jobs at `642ef7b`; the latest bird component
+is also verified locally. No performance gain or complete migration is claimed.
