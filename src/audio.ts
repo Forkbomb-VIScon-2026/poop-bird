@@ -3,7 +3,7 @@ import { SOUND_NAMES, type SoundName } from "./audio-assets";
 
 export type PoopSize = "weak" | "middle" | "large";
 
-/** Background music: one looping track per stage (public/assets/audio/music_<track>.opus). */
+/** Background music: one looping track per stage (public/assets/audio/music_<track>.opus, .m4a for old Safari). */
 export type MusicTrack = "city" | "ocean";
 const MUSIC_TRACKS: readonly MusicTrack[] = ["city", "ocean"];
 /** Time constant of music fades (s); a stage change crossfades over about three of these. */
@@ -37,7 +37,24 @@ export class Sound {
   private readonly music = new Map<MusicTrack, MusicPlayer>();
   muted = false;
   /** The player's music switch (settings); the mute button silences music and effects alike. */
-  musicOn = true;
+  private musicOn = true;
+
+  /** Whether this page plays stage music: the game does, the dataset recorder doesn't. */
+  private readonly withMusic: boolean;
+
+  constructor(withMusic = false) {
+    this.withMusic = withMusic;
+  }
+
+  /** Call from the switch's own input event when it turns music on, so iOS lets it play. */
+  setMusicOn(on: boolean): void {
+    this.musicOn = on;
+    this.primeMusic();
+  }
+
+  get musicEnabled(): boolean {
+    return this.musicOn;
+  }
 
   /** Prefer Opus, then MP3/WAV, with placeholder fallback. */
   private async load(name: SoundName): Promise<void> {
@@ -82,21 +99,7 @@ export class Sound {
         for (const name of SOUND_NAMES) {
           void this.load(name);
         }
-        // iOS lets a media element play only once it has started inside a user gesture,
-        // so start each track silently now, and stop it again unless setMusic() wants it by then.
-        for (const name of MUSIC_TRACKS) {
-          const player = this.createMusic(this.ctx, this.master, name);
-          if (player) {
-            player.el.play().then(
-              () => {
-                if (player.target > 0) return;
-                player.el.pause();
-                player.el.currentTime = 0;
-              },
-              () => {},
-            );
-          }
-        }
+        this.primeMusic();
       }
 
       if (this.ctx.state === "suspended") void this.ctx.resume();
@@ -505,7 +508,7 @@ export class Sound {
    */
   setMusic(track: MusicTrack | null, volume: number): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master) return;
+    if (!ctx || !this.master || !this.withMusic) return;
     for (const name of MUSIC_TRACKS) {
       const target = name === track && this.musicOn ? Math.max(0, volume) : 0;
       let player = this.music.get(name);
@@ -536,9 +539,36 @@ export class Sound {
     }
   }
 
+  /**
+   * iOS lets a media element play only once it has started inside a user
+   * gesture: start each track silently now (unlock() and setMusicOn() run in
+   * one), and stop it again unless setMusic() wants it by then. Nothing loads
+   * while music is off.
+   */
+  private primeMusic(): void {
+    const { ctx, master } = this;
+    if (!ctx || !master || !this.withMusic || !this.musicOn) return;
+    for (const name of MUSIC_TRACKS) {
+      if (this.music.has(name)) continue;
+      const player = this.createMusic(ctx, master, name);
+      if (!player) continue;
+      player.el.play().then(
+        () => {
+          if (player.target > 0) return;
+          player.el.pause();
+          player.el.currentTime = 0;
+        },
+        () => {},
+      );
+    }
+  }
+
   private createMusic(ctx: AudioContext, master: GainNode, name: MusicTrack): MusicPlayer | null {
     try {
-      const el = new Audio(`${import.meta.env.BASE_URL}assets/audio/music_${name}.opus`);
+      const el = new Audio();
+      // Safari before 18.4 can't play Ogg/Opus: AAC for it.
+      const extension = el.canPlayType('audio/ogg; codecs="opus"') ? "opus" : "m4a";
+      el.src = `${import.meta.env.BASE_URL}assets/audio/music_${name}.${extension}`;
       el.loop = true;
       el.preload = "auto";
       const gain = ctx.createGain();

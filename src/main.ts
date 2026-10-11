@@ -143,7 +143,7 @@ let mode: Mode = "keyboard";
 const renderer = new Renderer(canvas);
 renderer.graphics = loadGraphics();
 const game = new Game(renderer.resize());
-const sound = new Sound();
+const sound = new Sound(true);
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
 const debug = DEBUG
@@ -196,7 +196,7 @@ let activeLesson: { tutorial: Tutorial; lock: number } | null = null;
 const seenWithoutFace = new Set<Tutorial>();
 
 sound.setMuted(storageGet("poopybird.muted.v1") === "1");
-sound.musicOn = loadMusic();
+sound.setMusicOn(loadMusic());
 
 /** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
 function manualHeld(): boolean {
@@ -2188,7 +2188,7 @@ const musicSwitch = $<HTMLInputElement>("opt-music");
 function openSettings(fromMenu: boolean): void {
   if (state === "playing") togglePause();
   rtxSwitch.checked = renderer.graphics === "rtx";
-  musicSwitch.checked = sound.musicOn;
+  musicSwitch.checked = sound.musicEnabled;
   show($("settings-nocam"), fromMenu);
   updateFacesSetting();
   show(settingsPanel, true);
@@ -2202,8 +2202,8 @@ rtxSwitch.addEventListener("change", () => {
   saveGraphics(renderer.graphics);
 });
 musicSwitch.addEventListener("change", () => {
-  sound.musicOn = musicSwitch.checked;
-  saveMusic(sound.musicOn);
+  sound.setMusicOn(musicSwitch.checked);
+  saveMusic(musicSwitch.checked);
 });
 on("btn-forget-faces", forgetFaces);
 on("btn-face", () => {
