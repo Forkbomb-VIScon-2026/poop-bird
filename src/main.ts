@@ -1081,7 +1081,9 @@ function tutorialSeen(t: Tutorial): boolean {
   return faceId.tutorials.has(t) || !!faceId.known?.tutorials.includes(t);
 }
 
-function markTutorialSeen(t: Tutorial): void {
+/** `lock`: the face lock the lesson started under; if someone else has taken over since, it isn't theirs. */
+function markTutorialSeen(t: Tutorial, lock: number): void {
+  if (lock !== faceId.lock) return;
   if (!playsAsFace()) {
     seenWithoutFace.add(t);
     updateFacesSetting();
@@ -1109,6 +1111,7 @@ function onSubmerged(): void {
  */
 async function runSwimLesson(): Promise<void> {
   const token = flow;
+  const lock = faceId.lock;
   const owner = claimCoach();
   game.calmWater = true;
   const face = mode === "face";
@@ -1151,7 +1154,7 @@ async function runSwimLesson(): Promise<void> {
   if ((await until(() => false, 1200)) === null) return abandon();
 
   // Seen from here on, so a player who crashes soon after doesn't get the lesson again.
-  markTutorialSeen("ocean");
+  markTutorialSeen("ocean", lock);
   say({ title: "Spikes! 🐡", hint: "Puff past the red line to spike out. Hold it too long and you pop", tips: true });
   if ((await until(() => false, 4000)) === null) return abandon();
   game.calmWater = false;
@@ -1348,6 +1351,7 @@ function takeOff(): void {
  */
 async function runCityLesson(): Promise<void> {
   const token = flow;
+  const lock = faceId.lock;
   const owner = claimCoach();
   game.calmCity = true;
   const face = mode === "face";
@@ -1387,7 +1391,7 @@ async function runCityLesson(): Promise<void> {
   }
 
   // Seen from here on, so a player who crashes soon after doesn't get the whole lesson again.
-  markTutorialSeen("city");
+  markTutorialSeen("city", lock);
   // The street stops bouncing once the bird is clear of it (or after a while), so the handoff isn't a crash.
   // The last line stays up until then; the buildings that follow are for the player to discover.
   const clear = (): boolean => game.bird.y + BIRD_RADIUS < GROUND_Y - 120;
