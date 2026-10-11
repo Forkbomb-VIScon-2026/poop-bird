@@ -63,7 +63,7 @@ starts the face dataset collector (local credentials `local` /
 | Open your mouth (webcam) | The bird opens its beak with you (just for fun; MediaPipe's `jawOpen`, tuned under "Beak" in the debug panel; classic graphics only) |
 | Pufferfish face: puff cheeks, purse lips (webcam) | Ocean: inflate (more puff = rise, less = sink) |
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
-| **P** / ⏸ button | Pause, and resume |
+| **P** / **Esc** / ⏸ button | Pause, and resume |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
 | **Enter** | Press the yellow button on any screen (Play, Play again…). Every button takes exactly one key, the one on the keycap badge on its corner |
 | **K** | Menu settings (the gear): play with the keyboard |
