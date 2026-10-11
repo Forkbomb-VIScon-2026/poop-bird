@@ -19,6 +19,12 @@ import {
   rtxSky,
   rtxStreet,
   rtxWalker,
+  rtxAnchor,
+  rtxLamp,
+  rtxNestFront,
+  rtxRowboat,
+  rtxWreck,
+  rtxShark,
 } from "./rtx";
 import { initialSpikeState } from "./swim";
 import {
@@ -628,6 +634,7 @@ export class Renderer {
    * in the nest.
    */
   private drawPerch(x: number): void {
+    if (RTX.on && rtxLamp(this.ctx, x, PERCH_Y + NEST_DEPTH + 6, GROUND_Y + 16)) return;
     const ctx = this.ctx;
     // The nest's bowl rests on the cap's flat top.
     const cap = PERCH_Y + NEST_DEPTH - 2;
@@ -742,6 +749,7 @@ export class Renderer {
 
   /** The front of the nest: a woven bowl over the bird's belly, with twigs sticking out. */
   private drawNestFront(x: number): void {
+    if (RTX.on && rtxNestFront(this.ctx, x, PERCH_Y + NEST_RIM, PERCH_Y + NEST_DEPTH, NEST_RX)) return;
     const ctx = this.ctx;
     const y0 = PERCH_Y + NEST_RIM;
     const bottom = PERCH_Y + NEST_DEPTH;
@@ -2507,6 +2515,8 @@ export class Renderer {
     ctx.stroke();
     ctx.lineCap = "butt";
 
+    if (RTX.on && rtxWreck(ctx, o.x, deck, o.w, facing)) return;
+
     // Hull: a flat, rotten deck line, the stern post on one end and the bow rising a little on the other.
     const sand = GROUND_Y + 4;
     const hull = () => {
@@ -2680,6 +2690,7 @@ export class Renderer {
     for (let y = ripped ? drop.chain : keel - 6; y < top + 2; y += 10) links.push({ x: cx, y, a: 0 });
     drawChain(ctx, links, iron);
 
+    if (!(RTX.on && rtxAnchor(ctx, cx, crown + 4, ANCHOR_H + 8))) {
     // Anchor: ring, shank, stock with ball ends, curved arms with flukes.
     ctx.beginPath();
     ctx.arc(cx, top + 7, 6.5, 0, Math.PI * 2);
@@ -2740,6 +2751,8 @@ export class Renderer {
     ctx.stroke();
     ctx.lineCap = "butt";
 
+    }
+
     // The torn-off chain piles up on the anchor once it has landed: a jumble of links between the arms.
     if (ripped) {
       const piled = Math.min(9, Math.floor((anchorChainLength(o) - (top - drop.chain)) / 10));
@@ -2754,6 +2767,7 @@ export class Renderer {
       drawChain(ctx, heap, iron);
     }
 
+    if (!(RTX.on && rtxRowboat(ctx, boatX, keel + 6, BOAT_W + 30))) {
     // Mast with a pennant, and the cabin: above the water.
     const color = BOAT_COLORS[Math.floor(rnd(o.seed + 1) * BOAT_COLORS.length)];
     const mastX = boatX - 28;
@@ -2817,6 +2831,8 @@ export class Renderer {
     ctx.ellipse(boatX, keel - 2, 6, 3, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    }
+
     // About to drop it: a "!" by the anchor, swelling with each clank, and chevrons marching down below it.
     if (warning) {
       outlinedText(ctx, "!", cx + 52, top + 26 + Math.sin(time * 30) * 2, 30 + 8 * Math.max(0, 1 - drop.t / 0.12), "#ff595e");
@@ -2862,6 +2878,35 @@ export class Renderer {
     ctx.lineCap = "round";
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 3;
+
+    // RTX: the photo shark, its lower jaw swinging open, with the drawn cues on top.
+    if (RTX.on && rtxShark(ctx, s.jaw)) {
+      if (s.state === "chomped") {
+        // The fish's tail sticks out of its mouth, still wiggling.
+        const wag = Math.sin(game.time * 14) * 4;
+        ctx.fillStyle = "#b7a64a";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(72, 8);
+        ctx.lineTo(90, -4 + wag);
+        ctx.lineTo(88, 18 + wag);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else if (s.state === "fleeing") {
+        // Spines stuck in its snout.
+        ctx.strokeStyle = "#8a6d1f";
+        ctx.lineWidth = 2;
+        for (const [sx, sy, a] of [[72, -2, -0.5], [76, 6, 0.1], [70, 12, 0.6]] as const) {
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + Math.cos(a) * 12, sy + Math.sin(a) * 12);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+      return;
+    }
 
     // Tail and dorsal fin first: the body's outline covers their bases.
     ctx.fillStyle = dark;
@@ -4314,6 +4359,7 @@ function drawDroneWreck(ctx: CanvasRenderingContext2D, w: DroneWreck, seed: numb
   ctx.rotate(-0.18);
   ctx.save();
   clipDroneHalf(ctx, -1);
+  if (!(RTX.on && drawRtxPhoto(ctx, "perched", 0, 0, 0, PIGEON_R / PIGEON_SCALE))) {
   ctx.fillStyle = "#5c6370";
   ctx.beginPath();
   ctx.moveTo(-8, -12);
@@ -4333,6 +4379,7 @@ function drawDroneWreck(ctx: CanvasRenderingContext2D, w: DroneWreck, seed: numb
   ctx.ellipse(-5, -14, 8, 4.5, 0.15, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  }
   drawDroneInnards(ctx, -1, seed);
   ctx.restore();
   drawSplat(ctx, -6, -15, 5, seed, 1);
@@ -4344,11 +4391,13 @@ function drawDroneWreck(ctx: CanvasRenderingContext2D, w: DroneWreck, seed: numb
   ctx.rotate(0.45);
   ctx.save();
   clipDroneHalf(ctx, 1);
+  if (!(RTX.on && drawRtxPhoto(ctx, "perched", 0, 0, 0, PIGEON_R / PIGEON_SCALE))) {
   ctx.fillStyle = "#9aa3ad";
   ctx.beginPath();
   ctx.ellipse(0, -12, 12, 8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  }
   drawDroneInnards(ctx, 1, seed);
   ctx.restore();
   ctx.fillStyle = "#6a994e";
@@ -6498,6 +6547,7 @@ function drawHook(ctx: CanvasRenderingContext2D, x: number, y: number, worm: boo
  * over the fisherman's legs. Below `water` (boat y) the sea tints it.
  */
 function drawBoatHull(ctx: CanvasRenderingContext2D, seed: number, water = 0): void {
+  if (RTX.on && rtxRowboat(ctx, -4, 27, 136)) return;
   const hull = () => {
     ctx.beginPath();
     ctx.moveTo(-66, -11);
@@ -6608,6 +6658,12 @@ function drawFisherman(
     ctx.arc(hx + 3, hy + 3, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  }
+
+  // RTX: the photo fisherman in oilskins (his rod above stays drawn).
+  if (RTX.on && drawRtxPhoto(ctx, "fisherman", 16, 22, 0, 62)) {
+    ctx.restore();
+    return;
   }
 
   // Oilskin coat
@@ -6803,6 +6859,10 @@ function drawFloatingHat(ctx: CanvasRenderingContext2D, x: number, y: number, ti
   ctx.translate(x, spin === undefined ? y + Math.sin(time * 3 + 1) * 1.5 : y);
   ctx.scale(1.4, 1.4);
   ctx.rotate(spin ?? Math.PI + Math.sin(time * 2) * 0.15);
+  if (RTX.on && drawRtxPhoto(ctx, "souwester", 0, 0, Math.PI, 26)) {
+    ctx.restore();
+    return;
+  }
   ctx.fillStyle = "#f4a300";
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 2;
