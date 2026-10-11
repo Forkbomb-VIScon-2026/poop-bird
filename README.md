@@ -136,46 +136,35 @@ more ("Have we met? Checking… 🤔"); a face it knows goes straight on to the
 perch ("👋 Welcome back!").
 
 Every run then starts on the **perch**: the bird sits in its nest on top of a
-street lamp, with the player's webcam beside it and a big arrow from the
-webcam to the bird saying "that's you!". An upright strain gauge beside the
-webcam fills as the face strains, and over its 💩 line the bird charges.
+street lamp, and the coach beside it says "Strain & let go to start" (Hold
+Space). The first poop, however small, takes off with a full push and starts
+the run; there's no countdown and no practice (the calibration screen already
+taught the strain). The webcam stays small in its corner, as in the run.
 
 **The coach.** Every tutorial step is one banner, the coach (`#coach`): a
-sketch of the face to make, one short line, sometimes a hint under it, and
-during the flight lesson a row of dots for where you are. Each step moves on
-once the player has done it (the line turns green for a moment), not on a
-timer. On the perch it sits beside the bird; in the city and the ocean, over
-the game near the top. The ocean tips use it too.
+sketch of the face to make, one short line, sometimes a hint under it. Each
+step moves on once the player has done it (the line turns green for a moment),
+not on a timer. On the perch it sits beside the bird; in the city and the
+ocean, over the game near the top. The ocean tips use it too.
 
 - **Flight lesson** (new players: the tutorial hasn't been seen on this
-  browser, or "I'm new here" is ticked), four steps:
-  1. "Squeeze your face" (Hold Space) until the bird starts filling up,
-  2. "Now relax": the poop hops the bird up, and the coach says "Pooping
-     pushes you up!",
-  3. "Squeeze longer to fly": a full bird takes off,
-  4. in a **calm city** (`Game.calmCity`: no obstacles, paparazzi or kids,
-     and the street bounces the bird back up instead of ending the run):
-     "Squeeze & relax to stay up" until three poops (or 20 s), then "Nice
-     flying!". The lesson counts as seen, and the calm ends (and the coach
-     goes) once the bird is clear of the street (or after 8 s); the first
-     obstacle comes `firstObstacleDelay` later, unannounced.
+  browser, or "I'm new here" is ticked): right after takeoff, in a **calm
+  city** (`Game.calmCity`: no obstacles, paparazzi or kids, and the street
+  bounces the bird back up instead of ending the run): "Squeeze & relax to
+  stay up" until three poops (or 20 s), then "Nice flying!". The lesson counts
+  as seen (`city` in `TUTORIALS`), and the calm ends (and the coach goes) once
+  the bird is clear of the street (or after 8 s); the first obstacle comes
+  `firstObstacleDelay` later, unannounced.
   The lesson only teaches flying: the buildings, what to poop on, and what
   the ocean's jellyfish and sharks do are left for the player to discover.
   An accident (held too long) shows "Too long! Relax as soon as it's full".
-  The perch part and the city part are remembered separately (`perch`,
-  `city` in `TUTORIALS`).
-- **Takeoff takes a full poop.** "Squeeze till the bird is full": smaller
-  poops just hop in the nest ("Squeeze longer to take off"), so a stray strain
-  never starts the run. Once the bird is full, the line changes to "Relax to
-  fly! 🚀", and letting go then starts the run. There's no countdown.
 - **Recalibrate** is a small button on the perch (or **C**, also on the game
   over card): it runs the calibration screen again, both phases. It turns
-  yellow and pulses with a question when the gauge doesn't follow the face:
-  it never reaches the 💩 line when the player is asked to strain (7 s; 10 s
-  once practised), or it stays over it when they're asked to relax (3 s) or
-  for 6 s anyway.
+  yellow and pulses with a question when straining doesn't register: the face
+  never crosses the strain threshold in 8 s ("Not taking off?"), or stays over
+  it for 6 s ("Stuck even when you relax?").
 
-Practice poops score nothing, and the lamp and its nest scroll away with the street.
+The lamp and its nest scroll away with the street.
 
 - Gravity pulls the bird down all the time. Fall speed is capped, and the bird
   falls slower while charging, because it tenses up.
