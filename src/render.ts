@@ -234,7 +234,9 @@ export class Renderer {
     for (const b of game.balloons) this.drawBalloon(b, game.time);
     // In the air, in front of the buildings.
     for (const t of game.targets) if (t.chute) this.drawTarget(t, game.time);
-    for (const t of game.targets) if (t.kind === "car") this.drawTarget(t, game.time);
+    // Cars: the far lane first, the near lane in front of it.
+    for (const t of game.targets) if (t.kind === "car" && t.facing === -1) this.drawTarget(t, game.time);
+    for (const t of game.targets) if (t.kind === "car" && t.facing === 1) this.drawTarget(t, game.time);
     // Over the buildings, so a paparazzo's timer is never hidden.
     for (const t of game.targets) if (t.pap) this.drawPaparazzoTimer(t, game);
     for (const d of game.doves) drawDove(ctx, d, game.time);
@@ -3562,7 +3564,7 @@ function drawCar(ctx: CanvasRenderingContext2D, t: Target, time: number): void {
   if (RTX.on) {
     ctx.save();
     ctx.scale(t.facing, 1);
-    const ok = rtxCar(ctx, t.seed, t.w, !!t.wedding);
+    const ok = rtxCar(ctx, t);
     if (ok && t.wedding) drawGetawayDecor(ctx, t, time);
     ctx.restore();
     if (ok) return;

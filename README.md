@@ -159,6 +159,9 @@ Practice poops score nothing, and the lamp and its nest scroll away with the str
 - **Targets:** cars (×1), pedestrians (×1.5) and statues (×2) give
   `targetPoints × multiplier`. Consecutive hits build a combo, and a poop that
   hits the road resets it.
+  The road has two lanes, one per direction (traffic keeps right: cars heading
+  right drive in the near lane). Cars never overlap: one that catches up slows
+  down and follows at a safe distance, or waits behind a stopped car.
   Some splatted pedestrians (`angryChance`) stop, turn on the bird and curse:
   red in the face, shaking a fist, a `#@$%!` bubble and a `curse` sound, for
   `angryDuration` seconds before walking on. Hitting one again restarts it.
