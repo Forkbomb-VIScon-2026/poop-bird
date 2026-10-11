@@ -242,44 +242,39 @@
       <section id="screen-gameover" class="screen hidden">
         <div class="card wide">
           <h2 id="go-title">Splat!</h2>
-          <div class="go-grid">
-            <div class="go-stats">
+          <div class="go-head">
+            <div class="go-score-block">
               <div class="go-score"><span id="go-score">0</span><small>points</small></div>
               <div id="go-newbest" class="go-newbest hidden">🏆 New best!</div>
-              <table class="go-table">
-                <tr><td>Best</td><td id="go-best">0</td></tr>
-                <tr><td>Targets hit</td><td id="go-targets">0</td></tr>
-                <tr><td>Best combo</td><td id="go-combo">0</td></tr>
-                <tr><td>Distance</td><td id="go-distance">0 m</td></tr>
-                <tr><td>Accidents</td><td id="go-accidents">0</td></tr>
-                <tr><td>Cameras smashed</td><td id="go-smashed">0</td></tr>
-                <tr><td>Front pages</td><td id="go-scandals">0</td></tr>
-                <tr><td>Brats foiled</td><td id="go-kids">0</td></tr>
-                <tr><td>Weddings ruined</td><td id="go-weddings">0</td></tr>
-                <tr><td>Balloons popped</td><td id="go-balloons">0</td></tr>
-                <tr><td>Lines snapped</td><td id="go-lines">0</td></tr>
-                <tr><td>Sharks spiked</td><td id="go-sharks">0</td></tr>
-              </table>
             </div>
-            <div id="go-trophy" class="go-snapshot hidden">
-              <div class="go-snapshot-title">Catch of the day</div>
-              <canvas id="go-trophy-canvas" class="go-trophy" width="500" height="470"></canvas>
-            </div>
-            <div id="go-frontpage" class="go-snapshot hidden">
-              <div class="go-snapshot-title">Tomorrow's front page</div>
-              <canvas id="go-frontpage-canvas" class="go-frontpage" width="400" height="480"></canvas>
-            </div>
-            <div id="go-wedding" class="go-snapshot hidden">
-              <div class="go-snapshot-title">The official wedding photo</div>
-              <canvas id="go-wedding-canvas" class="go-wedding" width="500" height="470"></canvas>
-            </div>
-            <div id="go-snapshot" class="go-snapshot hidden">
-              <div class="go-snapshot-title">Your finest strain</div>
-              <img id="go-snapshot-img" alt="Your strain face at peak strain" />
-              <div class="go-strain" title="How strained your face looked, 0–100: the leaderboard ranks faces by this">Strainedness <b id="go-strain">0</b></div>
-              <button id="btn-download" class="btn small">⬇️ Download</button>
-              <div class="privacy small">Stays on this device unless you share it.</div>
-            </div>
+            <table class="go-table">
+              <tr><td>Best</td><td id="go-best">0</td></tr>
+              <tr><td>Targets hit</td><td id="go-targets">0</td></tr>
+              <tr><td>Best combo</td><td id="go-combo">0</td></tr>
+              <tr><td>Distance</td><td id="go-distance">0 m</td></tr>
+              <tr><td>Accidents</td><td id="go-accidents">0</td></tr>
+              <tr><td>Cameras smashed</td><td id="go-smashed">0</td></tr>
+              <tr><td>Front pages</td><td id="go-scandals">0</td></tr>
+              <tr><td>Brats foiled</td><td id="go-kids">0</td></tr>
+              <tr><td>Weddings ruined</td><td id="go-weddings">0</td></tr>
+              <tr><td>Balloons popped</td><td id="go-balloons">0</td></tr>
+              <tr><td>Lines snapped</td><td id="go-lines">0</td></tr>
+              <tr><td>Sharks spiked</td><td id="go-sharks">0</td></tr>
+            </table>
+          </div>
+          <!-- The run in pictures, on one level: the finest strain, then every print in order (main.ts addPrint). -->
+          <div id="go-photos" class="go-photos hidden">
+            <figure id="go-snapshot" class="go-print hidden" title="Your finest strain">
+              <div class="go-polaroid">
+                <img id="go-snapshot-img" alt="Your strain face at peak strain" />
+                <figcaption>Your finest strain</figcaption>
+                <div class="go-strain" title="How constipated your face looked, 0–100: the leaderboard ranks faces by this">Constipaticity <b id="go-strain">0</b></div>
+              </div>
+            </figure>
+          </div>
+          <div id="go-snapshot-actions" class="go-snapshot-actions hidden">
+            <button id="btn-download" class="btn small">⬇️ Download my face</button>
+            <span class="privacy small">It stays on this device unless you share it.</span>
           </div>
           <!-- Opt-in: nothing is sent unless the player presses Submit, and the face only with the box ticked. -->
           <form id="go-lb-form" class="go-lb-form hidden">

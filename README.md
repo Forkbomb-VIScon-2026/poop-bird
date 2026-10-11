@@ -99,6 +99,11 @@ wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
   (Android; iOS has no vibration API).
 - Short landscape screens get compact cards: the webcam sits next to the
   calibration card, and the game-over card puts its buttons first.
+- The game-over card shows the run in pictures, all in one row: your finest
+  strain as a polaroid (face mode), then every front page, wedding photo and
+  the fisherman's trophy photo in the order they were taken. When they don't
+  fit, they overlap like a pile of prints (hover one to lift it), and past
+  that the row scrolls sideways.
 - If face tracking runs below `slowDetectionRate` detections per second, the
   perch suggests playing with touch or the keyboard instead.
 
@@ -214,7 +219,7 @@ Practice poops score nothing, and the lamp and its nest scroll away with the str
     guests and the bird photobombing from the corner, blissfully relieved if
     it just ruined everything. In face mode the bird has the player's face,
     grabbed at "KISS!" (when they should be straining hardest). The game-over
-    screen shows the run's last ruined wedding (or the last wedding).
+    screen shows every wedding of the run.
   Tunables are in the debug panel's "Wedding" group.
 - **Hot-air balloons:** some city obstacles are a balloon drifting along with
   the wind (`balloonChance`). Fly through the envelope (or poop on it) and it
@@ -364,8 +369,8 @@ The game-over screen and the start screen's 🏆 (**L**) show the online
 leaderboard: two boards of the runs players chose to submit.
 
 - **🏆 Top scores**, by score.
-- **😣 Most strained faces**, by how strained the run's finest-strain face
-  looks, 0–100. Only runs submitted with their face are on it.
+- **😣 Most constipated faces**, by the constipaticity of the run's finest-strain face
+  (0–100). Only runs submitted with their face are on it.
 
 Only runs played with the face count. After a keyboard or touch run the
 game-over screen says so instead of offering to submit, and the collector
@@ -379,7 +384,7 @@ player at the same machine doesn't inherit the choice. A run submitted from
 a browser has a ✕ there to take it off again (the delete key is kept in
 `localStorage`).
 
-**Strainedness** (`strain.ts` `strainedness`) is the weighted mean of the raw
+**Constipaticity** (`strain.ts` `strainedness`) is the weighted mean of the raw
 `browDown`, `eyeSquint` and ½ × `eyeBlink` blendshapes. These move on a strain
 face for nearly everyone in the face dataset, and the mouth doesn't. It
 ignores the calibration: the calibrated strain tops out at 1 for anyone who
