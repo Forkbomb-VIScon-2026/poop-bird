@@ -25,10 +25,15 @@
     "copy-wasm": "node scripts/copy-wasm.mjs",
     "fetch-model": "node scripts/fetch-model.mjs",
     "postinstall": "node scripts/copy-wasm.mjs",
-    "prebuild": "node scripts/copy-wasm.mjs",
-    "predev": "node scripts/copy-wasm.mjs",
-    "predev:debug": "node scripts/copy-wasm.mjs",
-    "prebuild:debug": "node scripts/copy-wasm.mjs"
+    "prebuild": "node scripts/copy-wasm.mjs && npm run build:wasm",
+    "predev": "node scripts/copy-wasm.mjs && npm run build:wasm",
+    "predev:debug": "node scripts/copy-wasm.mjs && npm run build:wasm",
+    "prebuild:debug": "node scripts/copy-wasm.mjs && npm run build:wasm",
+    "build:wasm": "node scripts/build-game-wasm.mjs",
+    "test:rust": "cargo test --workspace --locked",
+    "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "test:wasm": "node scripts/migration/test-wasm.mjs",
+    "bench:simulation": "node scripts/run-ts.mjs scripts/migration/baseline.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.0"

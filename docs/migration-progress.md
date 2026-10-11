@@ -27,8 +27,8 @@ Baseline: `4208bf7f765c6968283ea264aa49f2a9ab3dccde` on `main`.
 | # | Work | Status |
 |---|---|---|
 | 0 | Audit, branch, baseline fixtures and progress record | Complete |
-| 1 | Rust/WASM toolchain, crates, build/CI/Docker integration | Pending |
-| 2 | Charge, swimming, collision and RNG kernels with differential tests | Pending |
+| 1 | Rust/WASM toolchain, crates, build/CI/Docker integration | Complete locally; Docker/remote CI unverified |
+| 2 | Charge, swimming, collision and RNG kernels with differential tests | Complete |
 | 3 | Commands, immutable render frames, batched bridge and audio registry | Pending |
 | 4 | Basic city, effects, scoring, demo, perch and lessons | Pending |
 | 5 | Power lines, kids, weddings, balloons and photo events | Pending |
@@ -67,4 +67,15 @@ No placeholder or disconnected module counts as a completed milestone.
   intentionally with `node scripts/run-ts.mjs scripts/migration/reference.ts`.
 - Reproducible synthetic simulation benchmark:
   `node scripts/run-ts.mjs scripts/migration/baseline.ts`.
+- `6335c30`: audit and frozen references. `084e86f`: Rust kernels and thin
+  batch validation adapter; no live world simulation has been replaced yet.
+- Installed pinned stable Rust 1.90.0, rustfmt/Clippy/WASM target and matching
+  wasm-bindgen CLI 0.2.104. Both crates forbid unsafe code.
+- Rust format/Clippy (`-D warnings`) and 4 native tests pass. The actual
+  browser-target WASM passes all 2,067 reference cases in Node, rejects invalid
+  records, and returns safe copies across a larger subsequent allocation.
+- ESLint, original 206 tests, production/debug builds passed after WASM build
+  integration. CI and Docker files were updated but Docker is unavailable here.
+- Explicit seeded RNG injection is being added to the TypeScript reference;
+  legacy production randomness remains unchanged until engine parity is ready.
 
