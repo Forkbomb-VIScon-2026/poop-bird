@@ -2349,6 +2349,8 @@ window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   switch (key) {
     case "p":
+    case "escape":
+      // Esc is a hidden alias for P: buttons that show Esc (e.g. the perch's Menu) take it first.
       togglePause();
       break;
     case "m":
