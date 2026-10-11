@@ -66,7 +66,7 @@ starts the face dataset collector (local credentials `local` /
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
 | **Enter** / **Space** | Press the yellow button on any screen (Play, Resume, Play again…). Buttons show their keys in a tooltip on hover, and the main one wears a keycap badge |
 | **R** | Play again from game over |
-| **K** | Menu: play with the keyboard |
+| **K** | Menu settings (the gear): play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
 | **Esc** | Calibration, game over and the leaderboard: back to the menu |
 | **C** | Re-run calibration |

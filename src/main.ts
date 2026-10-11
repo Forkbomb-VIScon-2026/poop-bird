@@ -2189,17 +2189,19 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
 
-// Settings (the gear, top right): the graphics style. Opening it mid-run pauses the game.
+// Settings (the gear, top right): the graphics style, and from the menu, playing without the
+// camera. Opening it mid-run pauses the game.
 const settingsPanel = $("screen-settings");
 const rtxSwitch = $<HTMLInputElement>("opt-rtx");
-function openSettings(): void {
+function openSettings(fromMenu: boolean): void {
   if (state === "playing") togglePause();
   rtxSwitch.checked = renderer.graphics === "rtx";
+  show($("settings-nocam"), fromMenu);
   show(settingsPanel, true);
   armButtonKeys(300);
 }
-on("btn-settings", openSettings);
-on("btn-hud-settings", openSettings);
+on("btn-settings", () => openSettings(true));
+on("btn-hud-settings", () => openSettings(false));
 on("btn-settings-done", () => show(settingsPanel, false));
 rtxSwitch.addEventListener("change", () => {
   renderer.graphics = rtxSwitch.checked ? "rtx" : "classic";
@@ -2210,6 +2212,7 @@ on("btn-face", () => {
   void startFaceMode();
 });
 on("btn-keyboard", () => {
+  show(settingsPanel, false);
   goLandscape();
   startKeyboardMode();
 });
