@@ -64,6 +64,8 @@ const CALM_BOUNCE = 320;
 export const BIRD_RADIUS = 22;
 /** × the target spawn rate in attract mode, so there's always someone to hit. */
 const DEMO_SPAWN_SCALE = 3;
+/** Share of attract-mode targets that are cars (vs 0.5 in a run), so the faster spawning doesn't jam the road. */
+const DEMO_CAR_SHARE = 0.2;
 /** Top fraction of the gap-centre range that makes a tall building (see pickGapCenter). */
 const TALL_FRACTION = 0.4;
 /** Fastest climb (px/s) in attract mode, so the bird stays in the middle of the screen. */
@@ -3290,7 +3292,8 @@ export class Game {
 
   private spawnTarget(only?: "car"): void {
     const r = Math.random();
-    let kind: TargetKind = only ?? (r < 0.5 ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
+    const carShare = this.demo ? DEMO_CAR_SHARE : 0.5;
+    let kind: TargetKind = only ?? (r < carShare ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
     if (kind === "statue" && !this.statueFits(this.width + 80, 46)) kind = "pedestrian";
     // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
     const roadY = GROUND_Y + 68;
