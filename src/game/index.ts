@@ -1,0 +1,30 @@
+// The game simulation's public API (see game.ts).
+
+export { ANGLER_HAT_DX, ANGLER_TIP_DX, ANGLER_TOPPLE_TIME, ANGLER_TUG_TIME, HOOK_R } from "./angler";
+export type { Angler, AnglerState } from "./angler";
+export { BALLOON_ROPES, BALLOON_RX, BALLOON_RY, BASKET_H, BASKET_W, basketRect } from "./balloons";
+export type { Balloon, Chute } from "./balloons";
+export type { Decal, Floater, Particle, ScreenSplat } from "./effects";
+export type { GameEvent } from "./events";
+export { Game } from "./game";
+export type { Jelly } from "./jellies";
+export { kidArmed, PEBBLE_R, slingshotPos } from "./kids";
+export type { Kid, KidState, Pebble } from "./kids";
+export { BILLBOARD_H, BILLBOARD_LEGS_INSET, BILLBOARD_W, obstacleRects, obstacleSpan } from "./obstacles";
+export type { BottomKind, Obstacle } from "./obstacles";
+export { ANCHOR_H, ANCHOR_RATTLE_EVERY, ANCHOR_RIP_Y, ANCHOR_W, anchorChainLength, anchorCrown, anchorRipped, BOAT_DRAFT, BOAT_FREEBOARD, BOAT_W, WRECK_HULL_H, WRECK_MAST_MAX, WRECK_MAST_MIN, WRECK_MAST_W, wreckGeometry } from "./ocean-obstacles";
+export type { AnchorDrop, AnchorDropState } from "./ocean-obstacles";
+export type { Paparazzo, PaparazzoState, Tabloid } from "./paparazzi";
+export type { Poop } from "./poops";
+export { PIGEON_R, pigeonPos, poleRect, poleX, wireAt } from "./power-lines";
+export type { DroneWreck, Pigeon, PowerLine } from "./power-lines";
+export { SHARK_NOSE } from "./shark";
+export type { Shark, SharkState } from "./shark";
+export type { Shore, StageTransition } from "./stage";
+export { targetRect } from "./street";
+export type { Rage, Target, TargetKind } from "./street";
+export { CAR_MODELS, carLength } from "./traffic";
+export { BOUQUET_R, bouquetHand, CHURCH_SPIRE_H, CHURCH_TOWER_W, CHURCH_W, churchGeometry, WEDDING_WINDUP, weddingX } from "./wedding";
+export type { Bouquet, Dove, Wedding, WeddingOutcome, WeddingPhase, WeddingPhoto } from "./wedding";
+export { BIRD_RADIUS, circleRect, GROUND_Y, OCEAN_DEPTH, OCEAN_MID_Y, PERCH_Y, SURFACE_Y, VIEW_H, WATER_Y } from "./world";
+export type { GamePhase, Rect, Splat, Stage } from "./world";

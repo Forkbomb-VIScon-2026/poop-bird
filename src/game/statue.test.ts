@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { config } from "./config";
-import { Game, obstacleSpan, poleX } from "./game";
+import { config } from "../config";
+import { Game, obstacleSpan, poleX } from ".";
 
 const saved = { statueChance: config.statueChance, targetSpawnRate: config.targetSpawnRate };
 afterEach(() => Object.assign(config, saved));

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { config, defaultConfig } from "./config";
-import { Game } from "./game";
+import { config, defaultConfig } from "../config";
+import { Game } from ".";
 
 /** A city game whose bird hovers mid-screen and can't die, with power lines and kids as likely as they get. */
 function immortalCity(cityStage: number): { game: Game; step: (seconds: number, each: () => void) => void } {
