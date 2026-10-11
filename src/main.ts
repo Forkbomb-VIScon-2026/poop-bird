@@ -7,23 +7,10 @@ import { Sound, type PoopSize } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
-import { FaceRecognizer, alignedFaceCrop } from "./faceid";
 import { BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
-import {
-  GROW_WITHIN,
-  faceDistance,
-  nextFaceId,
-  parseFaces,
-  recognize,
-  serializeFaces,
-  upsertFace,
-  withDescriptors,
-  type Descriptor,
-  type KnownFace,
-} from "./known-faces";
 import { BOARD_KEEP, strainPercent, type RunStats } from "./leaderboard";
 import { showBoards, submitRun } from "./leaderboard-view";
 import {
@@ -38,11 +25,9 @@ import {
   PUFF_CALIBRATION_KEY,
   loadBest,
   loadGraphics,
-  loadKnownFacesJson,
   loadSeenTutorials,
   saveBest,
   saveGraphics,
-  saveKnownFacesJson,
   saveSeenTutorials,
   storageGet,
   storageRemove,
@@ -244,11 +229,6 @@ tracker.onFrame((frame) => {
   lastFaceTime = frame.time;
   lastFace = frame;
   if (frame.features) lastFaceSeen = frame.time;
-  // Here, while the video still shows the frame these landmarks are from.
-  if (wantFaceCrop && frame.landmarks && frame.box) {
-    faceCrop = alignedFaceCrop(video, frame.landmarks, frame.box, config.faceIdMinFacePx);
-    if (faceCrop) wantFaceCrop = false;
-  }
   calibFrames?.push(frame.time);
   if (calibSamples && frame.features) calibSamples.push({ t: frame.time, f: frame.features });
   strain = stepStrain(strain, frame.features, calibration, dt, config);
@@ -273,210 +253,10 @@ tracker.onFrame((frame) => {
 function onNewFace(): void {
   strain = initialStrainState();
   puffSignal = initialPuffState();
-  newFaceLock();
   if (state === "calibrating") void runCalibration();
-  // The default calibration was fitted to the previous face's relaxed read. With face
-  // recognition any calibration may be the previous face's: the perch reads the new
-  // one, and recognition gives them theirs back if they're known.
-  else if (state === "ready" && (calibrationIsDefault || faceIdWorks())) void runDefaultCalibration();
+  // The default calibration was fitted to the previous face's relaxed read.
+  else if (state === "ready" && calibrationIsDefault) void runDefaultCalibration();
   if (activePuffCalibration !== null) abortPuffCalibration = true;
-}
-
-// --- Face recognition: who's playing ----------------------------------------------------
-// Calibrations belong to a face. When the tracker locks onto one, faceid.ts
-// describes it and known-faces.ts looks it up among the faces this tab has
-// calibrated (sessionStorage only). A known face gets its calibrations back:
-// no relaxed-face read on the perch, no puff calibration at the dive. A new
-// face calibrates like a first-time player and is remembered with its first
-// calibration. Without face recognition (no WebGL, or it failed to load) a
-// saved full calibration is used whoever plays, as before.
-
-const recognizer = new FaceRecognizer();
-/** The faces this tab has calibrated. */
-let knownFaces: KnownFace[] = parseFaces(loadKnownFacesJson());
-/** The locked face. */
-const faceId = {
-  /** Bumped whenever the tracker locks onto a face that may be someone else. */
-  lock: 0,
-  /**
-   * idle: not recognized, and recognition isn't running; known: `known` is them;
-   * new: nobody this tab knows (`descriptors` are enrolled with their first calibration);
-   * off: no face recognition here.
-   */
-  status: "idle" as "idle" | "running" | "known" | "new" | "off",
-  known: null as KnownFace | null,
-  descriptors: [] as Descriptor[],
-  /** The match's descriptor distance (debug). */
-  distance: Infinity,
-  /** Calibrations made for this face since the lock, remembered with it (rememberFace). */
-  strain: null as { cal: Calibration; isDefault: boolean } | null,
-  puff: null as Calibration | null,
-};
-/**
- * Set by recognizeFace: the tracker callback aligns the next good view of the
- * locked face into `faceCrop` (there, the video frame matches the landmarks).
- */
-let wantFaceCrop = false;
-let faceCrop: HTMLCanvasElement | null = null;
-
-/** Whether face recognition can tell players apart here (it's loading, or loaded). */
-function faceIdWorks(): boolean {
-  return recognizer.status !== "failed";
-}
-
-/** Forgets who the locked face is (nothing about it is remembered until it's recognized again). */
-function resetFaceId(): void {
-  faceId.lock++;
-  faceId.status = "idle";
-  faceId.known = null;
-  faceId.descriptors = [];
-  faceId.distance = Infinity;
-  faceId.strain = null;
-  faceId.puff = null;
-  wantFaceCrop = false;
-  faceCrop = null;
-}
-
-/** The tracker locked onto a face that may be someone else: recognize it. */
-function newFaceLock(): void {
-  resetFaceId();
-  void recognizeFace();
-}
-
-/**
- * Takes faceIdSamples descriptors of the locked face and looks them up among
- * the known faces. Gives up quietly (status back to idle) if the face changes
- * or face mode ends before that.
- */
-async function recognizeFace(): Promise<void> {
-  if (faceId.status !== "idle" || mode !== "face") return;
-  const lock = faceId.lock;
-  faceId.status = "running";
-  const ok = await recognizer.load();
-  if (faceId.lock !== lock) return;
-  if (!ok) {
-    faceId.status = "off";
-    return;
-  }
-  const stale = (): boolean => {
-    if (faceId.lock === lock && mode === "face" && tracker.ready) return false;
-    if (faceId.lock === lock) {
-      faceId.status = "idle";
-      wantFaceCrop = false;
-    }
-    return true;
-  };
-  const samples: Descriptor[] = [];
-  while (samples.length < Math.max(1, Math.round(config.faceIdSamples))) {
-    if (samples.length) await wait(config.faceIdSpacing * 1000);
-    if (stale()) return;
-    faceCrop = null;
-    wantFaceCrop = true;
-    while (!faceCrop) {
-      await wait(50);
-      if (stale()) return;
-    }
-    const crop = faceCrop;
-    faceCrop = null;
-    const d = await recognizer.describe(crop);
-    if (stale()) return;
-    if (d) samples.push(d);
-  }
-
-  const match = recognize(samples, knownFaces, config.faceIdSameDistance);
-  console.info(`[faceid] ${match ? `known face #${match.face.id}` : "new face"}`, {
-    distances: Object.fromEntries(knownFaces.map((f) => [f.id, +faceDistance(samples, f).toFixed(3)])),
-    ms: Math.round(recognizer.lastMs),
-  });
-  if (match) {
-    faceId.status = "known";
-    faceId.distance = match.distance;
-    faceId.known = withDescriptors(match.face, samples, config.faceIdSameDistance * GROW_WITHIN);
-    adoptKnownFace(faceId.known);
-  } else {
-    faceId.status = "new";
-    faceId.descriptors = samples;
-    // Someone new took over mid-run: the puff calibration is someone else's, so the next dive samples theirs.
-    if (!faceId.puff && puffCalibration && activePuffCalibration === null) {
-      puffCalibration = null;
-      puffCalibrationTried = false;
-      puffSignal = initialPuffState();
-    }
-  }
-  rememberFace();
-}
-
-/**
- * The locked face is one this tab calibrated: their calibrations come back.
- * One made since the lock is newer and stays, except that a full strain
- * calibration beats a default one.
- */
-function adoptKnownFace(face: KnownFace): void {
-  let adopted = false;
-  if (face.strain && (!faceId.strain || (faceId.strain.isDefault && !face.strainIsDefault))) {
-    calibration = face.strain;
-    calibrationIsDefault = face.strainIsDefault;
-    rejectedCalibration = null;
-    strain = initialStrainState();
-    faceId.strain = null;
-    adopted = true;
-  }
-  if (face.puff && !faceId.puff) {
-    puffCalibration = face.puff;
-    puffSignal = initialPuffState();
-    adopted = true;
-  }
-  if (adopted) showToast("👋 Welcome back! You're still calibrated", 2500);
-}
-
-/** Saves the calibrations made for the locked face with it, enrolling a new face with its first one. */
-function rememberFace(): void {
-  if (faceId.status === "new" && (faceId.strain || faceId.puff)) {
-    const blank: KnownFace = { id: nextFaceId(knownFaces), descriptors: [], strain: null, strainIsDefault: false, puff: null, lastSeen: 0 };
-    faceId.known = withDescriptors(blank, faceId.descriptors);
-    faceId.status = "known";
-  }
-  if (faceId.status !== "known" || !faceId.known) return;
-  const f = faceId.known;
-  faceId.known = {
-    ...f,
-    strain: faceId.strain?.cal ?? f.strain,
-    strainIsDefault: faceId.strain ? faceId.strain.isDefault : f.strainIsDefault,
-    puff: faceId.puff ?? f.puff,
-    lastSeen: Date.now(),
-  };
-  knownFaces = upsertFace(knownFaces, faceId.known);
-  saveKnownFacesJson(serializeFaces(knownFaces));
-  updateFacesSetting();
-}
-
-/** A strain calibration was made for the locked face. */
-function rememberStrain(cal: Calibration, isDefault: boolean): void {
-  faceId.strain = { cal, isDefault };
-  rememberFace();
-}
-
-/** A puff calibration was made for the locked face. */
-function rememberPuff(cal: Calibration): void {
-  faceId.puff = cal;
-  rememberFace();
-}
-
-/** Settings → Forget faces: every known face goes, including the locked one's. */
-function forgetFaces(): void {
-  const n = knownFaces.length;
-  knownFaces = [];
-  saveKnownFacesJson(null);
-  resetFaceId();
-  updateFacesSetting();
-  console.info(`[faceid] forgot ${n} face${n === 1 ? "" : "s"}`);
-}
-
-/** The settings' face line: how many faces this tab remembers. */
-function updateFacesSetting(): void {
-  const n = knownFaces.length;
-  $("faces-count").textContent = n ? `${n} face${n === 1 ? "" : "s"} remembered in this tab.` : "No faces remembered.";
-  $<HTMLButtonElement>("btn-forget-faces").disabled = n === 0;
 }
 
 /**
@@ -540,8 +320,6 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   const token = ++flow;
   sound.unlock();
   mode = "face";
-  // A camera that wasn't on yet locks onto a face that may be anyone.
-  const freshCamera = !tracker.ready;
   if (!tracker.ready) {
     state = "loading";
     showScreen("loading");
@@ -570,13 +348,9 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
     }
   }
   tracker.start();
-  if (freshCamera) newFaceLock();
-  else void recognizeFace();
   show(cam, true);
   if (forceCalibrate) await runCalibration();
-  // Without face recognition a saved full calibration is used, whoever plays. With it, the
-  // face decides: the perch reads the face, and recognition gives a known face its own back.
-  else if (calibration && !calibrationIsDefault && !faceIdWorks()) startReady();
+  else if (calibration && !calibrationIsDefault) startReady();
   else await runDefaultCalibration();
 }
 
@@ -637,7 +411,6 @@ async function runCalibration(): Promise<void> {
     calibrationIsDefault = false;
     rejectedCalibration = null;
     saveCalibration(CALIBRATION_KEY, cal);
-    rememberStrain(cal, false);
   } else {
     rejectedCalibration = quality.totalChange > 0 ? cal : null;
   }
@@ -654,10 +427,8 @@ async function runCalibration(): Promise<void> {
 /**
  * The start without calibration: the bird's perch opens right away and the
  * default calibration is fitted to a short read of the player's relaxed face.
- * It's never saved for the browser, so the next player gets their own read;
- * face recognition remembers it for this face, for this tab. Tuning from the
- * perch replaces it. A face recognized as known (now, or during the read)
- * gets its own calibrations back instead.
+ * It's never saved, so the next player on this browser gets their own read.
+ * Tuning from the perch replaces it.
  */
 async function runDefaultCalibration(): Promise<void> {
   // A new player: the next dive samples their puff again.
@@ -665,29 +436,21 @@ async function runDefaultCalibration(): Promise<void> {
   calibration = null;
   calibrationIsDefault = true;
   rejectedCalibration = null;
-  faceId.strain = null;
   strain = initialStrainState();
   startReady();
   const token = flow;
-  if (faceId.known) adoptKnownFace(faceId.known);
-  if (!calibration) enterPerchStep("reading");
+  enterPerchStep("reading");
   // A read whose own samples would trip the meter (fidgeting, blinking,
   // jittery tracking) is read again. The last try is kept regardless, since
   // the player can always calibrate.
-  for (let attempt = 1; !calibration; attempt++) {
-    // A calibration turning up meanwhile came from recognition: no need to read on.
-    const neutral = await readRelaxedFace(token, () => calibration !== null);
-    if (token !== flow) return;
-    if (!neutral) {
-      if (calibration) break;
-      return;
-    }
+  for (let attempt = 1; ; attempt++) {
+    const neutral = await readRelaxedFace(token);
+    if (token !== flow || !neutral) return;
     const cal = defaultCalibration(neutralFaceStats(neutral), config.defaultStrainScale);
     const falseRate = neutralFalseRate(cal, neutral, config);
     console.info("[default calibration]", { cal, falseRate, attempt, neutral });
     if (falseRate <= MAX_NEUTRAL_FALSE_RATE || attempt >= MAX_RELAXED_READS) {
       calibration = cal;
-      rememberStrain(cal, true);
       break;
     }
     perchHint("Hold still…", 10_000);
@@ -705,15 +468,15 @@ const MIN_RELAXED_SAMPLES = 8;
 /**
  * Samples the relaxed face for at least `defaultNeutralSeconds` and
  * MIN_RELAXED_SAMPLES face frames. Starts over if too few frames had a face
- * (no one in view yet). null = abandoned, or `done` turned true.
+ * (no one in view yet). null = abandoned.
  */
-async function readRelaxedFace(token: number, done?: () => boolean): Promise<FeatureVector[] | null> {
+async function readRelaxedFace(token: number): Promise<FeatureVector[] | null> {
   const total = config.defaultNeutralSeconds * 1000;
   let start = performance.now();
   let mine = startSampling();
   for (; ;) {
     await wait(50);
-    if (token !== flow || calibSamples !== mine.samples || !calibFrames || done?.()) {
+    if (token !== flow || calibSamples !== mine.samples || !calibFrames) {
       stopSampling(mine.samples);
       return null;
     }
@@ -871,11 +634,10 @@ function loadCalibration(key: string, required: readonly FeatureName[]): Calibra
   }
 }
 
-/** Debug: delete both saved calibrations and the known faces, and reload, to test the first-time flow. */
+/** Debug: delete both saved calibrations and reload, to test the first-time flow. */
 function forgetCalibration(): void {
   storageRemove(CALIBRATION_KEY);
   storageRemove(PUFF_CALIBRATION_KEY);
-  saveKnownFacesJson(null);
   location.reload();
 }
 
@@ -884,8 +646,6 @@ function forgetCalibration(): void {
 function clearPuffCalibration(): void {
   puffCalibration = null;
   puffCalibrationTried = false;
-  // A known face's remembered one may still come back (adoptKnownFace).
-  faceId.puff = null;
   puffSignal = initialPuffState();
   storageRemove(PUFF_CALIBRATION_KEY);
 }
@@ -1006,7 +766,6 @@ async function runSwimLesson(): Promise<void> {
       puffCalibrationTried = true;
       puffSignal = initialPuffState();
       saveCalibration(PUFF_CALIBRATION_KEY, cal);
-      rememberPuff(cal);
       showToast(`Puff calibrated! 🐡 Watching your ${topFeatureLabels(cal).join(", ")}`, 3500);
       break;
     }
@@ -2406,6 +2165,25 @@ window.addEventListener("keyup", (e) => {
   if (e.code === "Space") keyHeld = false;
 });
 
+/** The game button `target` presses, if it's an enabled one. */
+function gameButton(target: EventTarget | null): HTMLButtonElement | null {
+  const btn = target instanceof Element ? target.closest<HTMLButtonElement>("button.btn, button.hud-btn") : null;
+  return btn && !btn.disabled ? btn : null;
+}
+
+function buttonClick(): void {
+  sound.unlock();
+  sound.buttonClick();
+}
+
+// Every button clicks when pressed: on pointer down (snappier than on click), or from the keyboard (a click with detail 0).
+document.addEventListener("pointerdown", (e) => {
+  if (e.button === 0 && gameButton(e.target)) buttonClick();
+}, true);
+document.addEventListener("click", (e) => {
+  if (e.detail === 0 && gameButton(e.target)) buttonClick();
+}, true);
+
 canvas.addEventListener("pointerdown", (e) => {
   if (state !== "playing" && state !== "ready") return;
   e.preventDefault();
@@ -2437,7 +2215,6 @@ const rtxSwitch = $<HTMLInputElement>("opt-rtx");
 function openSettings(): void {
   if (state === "playing") togglePause();
   rtxSwitch.checked = renderer.graphics === "rtx";
-  updateFacesSetting();
   show(settingsPanel, true);
   armButtonKeys(300);
 }
@@ -2448,7 +2225,6 @@ rtxSwitch.addEventListener("change", () => {
   renderer.graphics = rtxSwitch.checked ? "rtx" : "classic";
   saveGraphics(renderer.graphics);
 });
-on("btn-forget-faces", forgetFaces);
 on("btn-face", () => {
   goLandscape();
   void startFaceMode();
@@ -2553,8 +2329,6 @@ if (DEBUG) {
       game, config, tracker, renderer,
       get calibration() { return calibration; },
       get puffCalibration() { return puffCalibration; },
-      /** Face recognition: who the locked face is, and the faces this tab knows. */
-      get faceId() { return { ...faceId, recognizer: recognizer.status, describeMs: recognizer.lastMs, knownFaces }; },
       get lastPuffAttempt() { return lastPuffAttempt; },
       openDatasetRecorder,
     },

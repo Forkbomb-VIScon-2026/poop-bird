@@ -1912,19 +1912,6 @@ body.debug-open #cam {
   opacity: 0.75;
 }
 
-/* A setting with a button instead of a switch: only the button is clickable. */
-div.setting {
-  cursor: default;
-}
-
-.setting > .btn {
-  flex: none;
-}
-
-.settings-group + .settings-group {
-  margin-top: 0;
-}
-
 /* The gear icon (an SVG, so it looks the same everywhere, unlike the emoji). */
 .gear-icon {
   display: block;
