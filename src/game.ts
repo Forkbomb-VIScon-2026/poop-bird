@@ -511,6 +511,10 @@ export interface Target {
   chute?: Chute | null;
   /** Set while a splatted pedestrian stands there cursing at the bird. */
   rage?: Rage | null;
+  /** Only on cars: which model (see CAR_MODELS). */
+  model?: number;
+  /** Only on cars: the speed it drives at on an open road (px/s, ≥ 0; 0 = parked). */
+  cruise?: number;
 }
 
 /** A pedestrian's fit of rage after being splatted. */
@@ -710,6 +714,25 @@ const BOUQUET_MESSAGES = ["BRIDEZILLA!", "Right in the face!", "Hell hath no fur
 
 /** Pastel outfits for the wedding guests. */
 const GUEST_COLORS = ["#ff8fab", "#a2d2ff", "#cdb4db", "#ffc8dd", "#bde0fe", "#b9fbc0", "#fde68a"];
+
+/** Road lanes (a car's foot y): traffic keeps right, so cars heading right drive in the near lane. */
+const NEAR_LANE_Y = GROUND_Y + 74;
+const FAR_LANE_Y = GROUND_Y + 46;
+/** The car models (RTX photos); the last one is the city bus. */
+export const CAR_MODELS = 7;
+const BUS_MODEL = CAR_MODELS - 1;
+/** Bumper-to-bumper gap (px) a car keeps to the one ahead when stopped. */
+const CAR_GAP = 26;
+/** On top of that, a moving car keeps this many seconds of its speed to the one ahead. */
+const CAR_HEADWAY = 0.8;
+/** How fast cars speed up and brake (px/s²). */
+const CAR_ACCEL = 80;
+const CAR_BRAKE = 280;
+
+/** How long a car looks (px): RTX photos are drawn wider than the car's hitbox, the bus most of all. */
+export function carLength(t: Target): number {
+  return t.w * (t.model === BUS_MODEL ? 2.3 : 1.5);
+}
 
 const CAR_COLORS = ["#e84a5f", "#2a9df4", "#ffb400", "#5cc96b", "#9b5de5", "#f9844a"];
 const PERSON_COLORS = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#6c5ce7", "#fd79a8", "#00b894"];
@@ -3124,6 +3147,7 @@ export class Game {
   // --- targets -----------------------------------------------------------------
 
   private updateTargets(dt: number, speed: number): void {
+    this.driveCars(dt);
     for (const t of this.targets) {
       t.x += (t.speed - speed) * dt;
       // Nobody walks or drives off the quay: they stop at its edge.
@@ -3138,6 +3162,7 @@ export class Game {
       if (t.chute) this.updateParachutist(t, dt, speed);
       if (t.rage) this.updateRage(t, dt);
     }
+    this.keepCarsApart();
     this.targets = this.targets.filter((t) => t.x > -200 && t.x < this.width + 600);
     if (this.phase !== "playing" || this.stage !== "city" || this.shore?.kind === "dive") return;
     this.targetSpawnAcc += dt * config.targetSpawnRate * (this.demo ? DEMO_SPAWN_SCALE : 1);
@@ -3149,6 +3174,54 @@ export class Game {
       // Nobody wanders through the wedding; the road stays busy.
       else this.spawnTarget(this.weddingAhead ? "car" : undefined);
     }
+  }
+
+  // --- traffic -----------------------------------------------------------------
+
+  /** The cars in the lane heading `dir`, front car first. */
+  private lane(dir: 1 | -1): Target[] {
+    return this.targets.filter((t) => t.kind === "car" && t.facing === dir).sort((a, b) => (b.x - a.x) * dir);
+  }
+
+  /** Bumper-to-bumper gap from car `t` to the car ahead of it in its lane. */
+  private static carGap(ahead: Target, t: Target): number {
+    return (ahead.x - t.x) * t.facing - (carLength(ahead) + carLength(t)) / 2;
+  }
+
+  /** Each car drives at its cruising speed, slowing down to keep a safe distance to the one ahead. */
+  private driveCars(dt: number): void {
+    for (const dir of [1, -1] as const) {
+      const cars = this.lane(dir);
+      for (let i = 0; i < cars.length; i++) {
+        const t = cars[i];
+        const cruise = t.cruise ?? 0;
+        const want = i === 0 ? cruise : Math.min(cruise, Math.max(0, (Game.carGap(cars[i - 1], t) - CAR_GAP) / CAR_HEADWAY));
+        const v = t.speed * dir;
+        const next = want < v ? Math.max(want, v - CAR_BRAKE * dt) : Math.min(want, v + CAR_ACCEL * dt);
+        t.speed = next * dir;
+      }
+    }
+  }
+
+  /** Cars never drive into each other: one that got too close stops behind the car ahead. */
+  private keepCarsApart(): void {
+    for (const dir of [1, -1] as const) {
+      const cars = this.lane(dir);
+      for (let i = 1; i < cars.length; i++) {
+        const ahead = cars[i - 1];
+        const t = cars[i];
+        const over = CAR_GAP / 2 - Game.carGap(ahead, t);
+        if (over <= 0) continue;
+        t.x -= over * dir;
+        t.speed = Math.min(t.speed * dir, Math.max(0, ahead.speed * dir)) * dir;
+      }
+    }
+  }
+
+  /** The first x from `x` on where a car `len` long fits in the lane heading `dir`, with room to brake. */
+  private laneRoom(dir: 1 | -1, x: number, len: number): number {
+    for (const c of this.lane(dir)) x = Math.max(x, c.x + (carLength(c) + len) / 2 + CAR_GAP + 60);
+    return x;
   }
 
   // --- angry pedestrians ------------------------------------------------------
@@ -3291,15 +3364,23 @@ export class Game {
     const carShare = this.demo ? DEMO_CAR_SHARE : 0.5;
     let kind: TargetKind = only ?? (r < carShare ? "car" : r < 1 - config.statueChance ? "pedestrian" : "statue");
     if (kind === "statue" && !this.statueFits(this.width + 80, 46)) kind = "pedestrian";
-    // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars).
-    const roadY = GROUND_Y + 68;
+    // Layout: sidewalk GROUND_Y..+20 (pedestrians, statue), road +20..+80 (cars, in two lanes).
     let t: Target;
     const seed = Math.random() * 1000;
     if (kind === "car") {
-      const dir = Math.random() < 0.6 ? 1 : -1;
+      const model = Math.floor(Math.random() * CAR_MODELS);
+      const len = 92 * (model === BUS_MODEL ? 2.3 : 1.5);
+      const x = this.width + 40 + len / 2;
+      // Take the other lane if this one is busy at the corner. With both busy no car comes,
+      // unless one has to: then it joins the shorter queue, further off-screen.
+      const prefer: 1 | -1 = Math.random() < 0.6 ? 1 : -1;
+      const room = { [prefer]: this.laneRoom(prefer, x, len), [-prefer]: this.laneRoom(-prefer as 1 | -1, x, len) };
+      const dir: 1 | -1 = room[prefer] <= room[-prefer] ? prefer : (-prefer as 1 | -1);
+      if (room[dir] > x && !only) return;
+      const cruise = 40 + Math.random() * 90;
       t = {
-        x: this.width + 120, y: roadY, w: 92, h: 40, kind, speed: dir * (40 + Math.random() * 90),
-        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir as 1 | -1, pap: null, kid: null, chute: null,
+        x: room[dir], y: dir === 1 ? NEAR_LANE_Y : FAR_LANE_Y, w: 92, h: 40, kind, speed: dir * cruise, cruise, model,
+        color: pick(CAR_COLORS), seed, splats: [], hitFlash: 0, facing: dir, pap: null, kid: null, chute: null,
       };
     } else if (kind === "pedestrian") {
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -3685,7 +3766,7 @@ export class Game {
     };
     // The getaway car, parked in front of the church.
     const car: Target = {
-      x: churchX + CHURCH_W / 2, y: GROUND_Y + 68, w: 92, h: 40, kind: "car", speed: 0, color: "#fdfcf7",
+      x: churchX + CHURCH_W / 2, y: FAR_LANE_Y, w: 92, h: 40, kind: "car", speed: 0, cruise: 0, model: 0, color: "#fdfcf7",
       seed: Math.random() * 1000, splats: [], hitFlash: 0, facing: -1, pap: null, kid: null,
     };
     const party = [wedding.photographer, ...wedding.guests, wedding.groom, wedding.bride, car];

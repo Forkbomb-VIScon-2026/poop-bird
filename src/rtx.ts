@@ -5,7 +5,7 @@
 // else as usual, so new things on the classic side keep working with RTX on.
 // The photos only load the first time RTX is turned on.
 
-import { BIRD_RADIUS, GROUND_Y, SURFACE_Y, poleX, type Game, type PowerLine } from "./game";
+import { BIRD_RADIUS, GROUND_Y, SURFACE_Y, carLength, poleX, type Game, type PowerLine, type Target } from "./game";
 
 import asphaltUrl from "./assets/asphalt.jpg";
 import balloonUrl from "./assets/balloon.png";
@@ -395,10 +395,9 @@ export function rtxBillboard(ctx: CanvasRenderingContext2D, x: number, top: numb
 
 const CARS: readonly SpriteName[] = ["car", "car1", "car2", "car3", "car4", "car5", "car6"];
 
-/** A car photo (facing right) picked by seed; the wedding's getaway car is always the sports car. */
-export function rtxCar(ctx: CanvasRenderingContext2D, seed: number, w: number, wedding: boolean): boolean {
-  const kind = wedding ? "car" : CARS[Math.floor(rnd(seed + 11) * CARS.length)];
-  return drawPhoto(ctx, kind, 0, 0, 0, w * (kind === "car6" ? 2.3 : 1.5));
+/** The car's photo (facing right), by its model; the bus is car6. */
+export function rtxCar(ctx: CanvasRenderingContext2D, t: Target): boolean {
+  return drawPhoto(ctx, CARS[(t.model ?? 0) % CARS.length], 0, 0, 0, carLength(t));
 }
 
 const WALKERS: readonly SpriteName[] = ["man", "woman", "walker1", "walker2", "walker3", "walker4", "walker5"];
