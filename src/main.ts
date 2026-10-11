@@ -2078,6 +2078,12 @@ function focusHandlesEnter(): boolean {
 
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
+  // Esc closes the settings too. Done takes Enter, and a screen's yellow button takes no other key (keyhints.ts).
+  if (e.key === "Escape" && !settingsPanel.classList.contains("hidden")) {
+    e.preventDefault();
+    if (!e.repeat && performance.now() >= buttonKeysArmedAt) pressFromKey($<HTMLButtonElement>("btn-settings-done"));
+    return;
+  }
   // Each button takes the one key on its badge: Enter for a screen's yellow button, else its own (keyhints.ts).
   if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const name = keyName(e);
@@ -2136,8 +2142,8 @@ window.addEventListener("keydown", (e) => {
       // Debug shortcut: a fisherman rows in (ocean only).
       if (debug?.visible && state === "playing") game.spawnAnglerNow();
       break;
-    case "s":
-      // Debug shortcut: a shark swims in (ocean only).
+    case "j":
+      // Debug shortcut: a shark swims in (ocean only). J for Jaws: S opens the settings.
       if (debug?.visible && state === "playing") game.spawnSharkNow();
       break;
     case "a":

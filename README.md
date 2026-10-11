@@ -65,6 +65,7 @@ starts the face dataset collector (local credentials `local` /
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / **Esc** / ⏸ button | Pause, and resume |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
+| **S** / ⚙ button | Settings (menu and in game; opening it mid-run pauses) |
 | **Enter** | Press the yellow button on any screen (Play, Play again…). Every button takes exactly one key, the one on the keycap badge on its corner |
 | **K** | Menu settings (the gear): play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
@@ -79,7 +80,7 @@ starts the face dataset collector (local credentials `local` /
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
-| **S** | With the debug panel open: a shark swims in (ocean only) |
+| **J** | With the debug panel open: a shark swims in (ocean only) |
 | **A** | With the debug panel open: a boat that drops its anchor comes in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 
