@@ -2,6 +2,7 @@ node_modules
 dist
 .git
 public/mediapipe/wasm
+public/faceid
 *.log
 # Face recordings never go into an image
 data

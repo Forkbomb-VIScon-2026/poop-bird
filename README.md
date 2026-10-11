@@ -485,8 +485,10 @@ webcam), and the wiring in `src/main.ts`.
    one that jittered at rest by more than a quarter of its typical change. If
    more than 25% of the read's own samples would score above `strainOff` (the
    player fidgeted or grimaced), it reads again, up to 3 times. The default
-   is never saved, so each face-mode start re-reads the relaxed face of
-   whoever is playing. The deltas are estimates; tune them with real faces.
+   is never saved for the browser, so each face-mode start re-reads the
+   relaxed face of whoever is playing, unless face recognition knows them
+   (see [Who's playing](#whos-playing-face-recognition)). The deltas are
+   estimates; tune them with real faces.
 3. **Weights.** A feature's weight is `max(0, |Δ| − minFeatureDelta) ×
    reliability`, where `Δ = strainMean − neutralMean` and reliability is
    `min(1, |Δ| / (σ_neutral + σ_strain) / 2)`. Features that didn't move get
@@ -534,9 +536,48 @@ webcam), and the wiring in `src/main.ts`.
    with a `currentTime` check), so only when there's a new video frame. Physics
    runs on a fixed 120 Hz timestep in the render loop.
 
-A full calibration is saved in `localStorage` and greets the player with
-"Welcome back!" next time. Press **C** (or click "Recalibrate") when a new
-player sits down.
+A full calibration is also saved in `localStorage`. Press **C** (or click
+"Recalibrate") to calibrate again.
+
+### Who's playing (face recognition)
+
+Calibrations belong to a face, so whether a level starts with a calibration
+step depends on who is in front of the camera. Whenever the tracker locks onto
+a face (face mode starts, or the lock moves to a new face), `src/faceid.ts`
+takes `faceIdSamples` (3) descriptors of it and `src/known-faces.ts` compares
+them with the faces this tab has calibrated:
+
+- **A known face** gets its calibrations back: no relaxed-face read on the
+  perch (recognition cuts it short, or replaces the read's result if it was
+  quicker) and no puff calibration at the dive. It's greeted with "👋 Welcome
+  back!". A full calibration beats a default one; otherwise a calibration made
+  since the lock is the newer and stays.
+- **A new face** calibrates like a first-time player (the perch's relaxed
+  read, the swim lesson's puff calibration), and is remembered with its first
+  calibration. If a new face takes over mid-run, the previous player's puff
+  calibration is dropped, so the next dive calibrates them.
+
+A descriptor is 128 numbers from dlib's ResNet face model (public-domain
+weights, run by [`@vladmandic/face-api`](https://github.com/vladmandic/face-api)'s
+`faceRecognitionNet` on WebGL) of a 150 px crop aligned on the eyes from
+MediaPipe's landmarks. Only big (`faceIdMinFacePx`), roughly frontal views are
+described. A face is known if the median distance of the samples to its
+nearest stored descriptor is under `faceIdSameDistance` (0.45). dlib suggests
+0.6, but in testing two different people scored 0.54: a wrong match hands
+someone else's calibration over, while a missed one just costs a read. A match
+adds its samples to the face (up to 6 descriptors) only if they're well within
+the distance (`GROW_WITHIN`), so a borderline match can't widen a face until it
+matches someone else too. At most 20 faces are kept, the one seen longest ago
+going first.
+
+The faces live in memory and `sessionStorage` only (`poopybird.knownFaces.v1`),
+so they go when the tab closes. **Settings → Faces → Forget all** deletes them
+at once. The model (6 MB) is loaded only in face mode, from `public/faceid`
+(copied from `node_modules` on install). Without WebGL (tfjs's CPU backend
+blocks the page for a second per descriptor) or if loading fails, there's no
+recognition: a saved full calibration is used whoever plays, as before. In
+debug builds, `poopyBird.faceId` shows the lock's status, the match distance
+and the known faces, and the console logs each decision with the distances.
 
 ### Puff detection (ocean)
 
@@ -824,6 +865,11 @@ when a change is ready to merge. Older debug-recorder clips
 - The paparazzi's photos show your face in face mode, and the bird with the
   keyboard. So does the bird in the wedding photos. They stay in memory for
   the current run and are never stored.
+- Face recognition keeps a few face descriptors (128 numbers each, biometric
+  data) of each face that calibrated, so returning players skip calibration.
+  They stay in this tab's `sessionStorage`, are gone when the tab closes, are
+  never uploaded, and **Settings → Faces → Forget all** deletes them at once.
+  See [Who's playing](#whos-playing-face-recognition).
 - All storage access is wrapped in try/catch, so the game works without
   storage.
 - Playing sends nothing anywhere unless you submit a run to the
@@ -842,6 +888,8 @@ src/
   puff.ts       blendshapes / Space → puff (pure)  puff.test.ts
   swim.ts       buoyancy, drag, spike / pop (pure) swim.test.ts
   face.ts       MediaPipe + webcam, detection loop
+  faceid.ts     face recognition: descriptors of aligned face crops (face-api)
+  known-faces.ts  the faces this tab calibrated: matching, storage format (pure)  known-faces.test.ts
   game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
   audio.ts      WebAudio synth sounds
@@ -859,7 +907,7 @@ collector/
   http.ts       helpers shared by both
   Dockerfile
 scripts/
-  copy-wasm.mjs    node_modules → public/mediapipe/wasm
+  copy-wasm.mjs    node_modules → public/mediapipe/wasm, public/faceid
   fetch-model.mjs  downloads face_landmarker.task
   data.ts          data:pull / data:purge
   leaderboard.ts   leaderboard moderation: list and remove runs
