@@ -502,6 +502,45 @@ describe("sharks", () => {
   });
 });
 
+describe("a shark and a fisherman in one ocean stage", () => {
+  const saved = { jelly: config.oceanJellyRate, angler: config.anglerChance, shark: config.sharkChance };
+  afterEach(() => {
+    config.oceanJellyRate = saved.jelly;
+    config.anglerChance = saved.angler;
+    config.sharkChance = saved.shark;
+  });
+
+  it("brings the fisherman first, then the shark, then the far quay", () => {
+    config.oceanJellyRate = 0;
+    config.anglerChance = 1;
+    config.sharkChance = 1;
+    const game = atHarbour(80, 240, 0);
+    // Only the order is under test: nothing kills the fish.
+    (game as unknown as { crash: () => void }).crash = () => {};
+    for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
+    expect(game.stage).toBe("ocean");
+    game.puffInput = config.oceanHoverPuff;
+    const seen: string[] = [];
+    const note = (what: string): void => {
+      if (seen.at(-1) !== what) seen.push(what);
+    };
+    for (let i = 0; i < 60 * 240 && game.shore?.kind !== "exit"; i++) {
+      game.step(1 / 60);
+      Object.assign(game.bird, { y: 300, vy: 0 });
+      // Keep his hook up by the surface, clear of the fish.
+      if (game.angler) game.angler.hookY = game.angler.target = SURFACE_Y + 10;
+      if (game.angler && game.angler.state !== "leaving") note("fisherman");
+      if (game.sharkTheme !== null) {
+        expect(game.angler === null || game.angler.state === "leaving").toBe(true);
+        note("shark");
+      }
+    }
+    expect(game.shore?.kind).toBe("exit");
+    expect(game.shark).toBeNull();
+    expect(seen).toEqual(["fisherman", "shark"]);
+  });
+});
+
 describe("practice perch", () => {
   /** Strains for `strainS`, then relaxes for `relaxS`, on the perch. */
   function practise(game: Game, strainS: number, relaxS: number): void {

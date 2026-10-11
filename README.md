@@ -328,8 +328,9 @@ city by city (the debug panel's "Progression" group).
     his hat flying off into the water. A moment later he sits up again, bald
     and shaking his fist. Unspiked, the fish just slips past the line.
   Tunables are in the debug panel's "Fisherman" group.
-- **Sharks:** most ocean stages (`sharkChance`) have a shark instead of the
-  fisherman. Its music starts a couple of obstacles in (`sharkSlot`), well
+- **Sharks:** most ocean stages (`sharkChance`) have a shark. If the stage
+  has a fisherman too, he comes first and the shark's music waits until he's
+  done; the far quay waits for both, so such a stage runs a little longer. Its music starts a couple of obstacles in (`sharkSlot`), well
   before it shows up: `shark_theme.mp3` (the Jaws theme, from the second
   "do-doop"), timed so the shark shows up as the attack music kicks in
   (17.5 s into the track) and lunges on the swell `sharkThemeAttack` (16.6 s) in, and kept in

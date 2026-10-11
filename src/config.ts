@@ -232,7 +232,7 @@ export const CONFIG_SPEC = {
   anglerCloseMultiplier: { value: 1, min: 0, max: 10, step: 0.5, group: "Fisherman", label: "Close-one points", hint: "× points for dodging the hook by a whisker" },
 
   // --- Sharks --------------------------------------------------------------
-  sharkChance: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Sharks", label: "Chance", hint: "chance an ocean stage has a shark (the fisherman only comes when it doesn't)" },
+  sharkChance: { value: 0.75, min: 0, max: 1, step: 0.05, group: "Sharks", label: "Chance", hint: "chance an ocean stage has a shark (with a fisherman too, it comes after him)" },
   sharkSlot: { value: 2, min: 0, max: 20, step: 1, group: "Sharks", label: "Slot", hint: "ocean obstacles before its music starts" },
   sharkThemeOffset: { value: 0, min: 0, max: 60, step: 0.1, group: "Sharks", label: "Music start", hint: "s into shark_theme.mp3 where playback starts (the file already starts at the second \"do-doop\")" },
   sharkThemeAttack: { value: 16.6, min: 3, max: 60, step: 0.1, group: "Sharks", label: "Music → lunge", hint: "s after the music starts that the shark lunges (on the swell at 21 s into the original track); it shows up sharkStalkTime + sharkWindup earlier, as the attack music kicks in" },
