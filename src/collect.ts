@@ -27,8 +27,8 @@ declare const __APP_COMMIT__: string;
 
 /** Bump when the consent text in collect.html changes. */
 const CONSENT_VERSION = "2026-10-11";
-const PARTICIPANT_KEY = "poopbird.participant";
-const COLLECTION_CODE_KEY = "poopbird.collectionCode";
+const PARTICIPANT_KEY = "poopybird.participant";
+const COLLECTION_CODE_KEY = "poopybird.collectionCode";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const screens = ["consent", "profile", "camera", "record", "upload"] as const;
@@ -435,7 +435,7 @@ $("btn-save").addEventListener("click", () => {
   if (!pending) return;
   const a = document.createElement("a");
   a.href = URL.createObjectURL(pending.blob);
-  a.download = `poopbird-face-${pending.session.participant.code}-${pending.session.sessionId}.json.gz`;
+  a.download = `poopybird-face-${pending.session.participant.code}-${pending.session.sessionId}.json.gz`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });

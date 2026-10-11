@@ -1,7 +1,7 @@
 services:
-  poop-bird:
+  poopy-bird:
     build: .
-    image: poop-bird:latest
+    image: poopy-bird:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -9,18 +9,18 @@ services:
       - collector
 
   # Face dataset collector. Local credentials only; on the VM, deploy.yml
-  # generates real ones in ~/poopbird-collector.env.
+  # generates real ones in ~/poopybird-collector.env.
   collector:
     build:
       context: .
       dockerfile: collector/Dockerfile
-    image: poop-bird-collector:latest
+    image: poopy-bird-collector:latest
     restart: unless-stopped
     environment:
       COLLECTION_CODE: local
       DEV_TOKEN: local-dev-token
     volumes:
-      - poopbird-data:/data
+      - poopybird-data:/data
 
 volumes:
-  poopbird-data:
+  poopybird-data:

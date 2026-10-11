@@ -1,4 +1,4 @@
-# Poop Bird 💩🐦
+# Poopy Bird 💩🐦
 
 A browser game you control by **straining your face**. The bird keeps falling;
 the only way up is to poop. Make a constipated face at your webcam to charge,
@@ -18,7 +18,7 @@ Needs Node 24 and npm.
 npm install          # also copies the MediaPipe WASM into public/mediapipe/wasm
 npm run fetch-model  # downloads face_landmarker.task into public/mediapipe/ (once)
 npm run dev          # http://localhost:5173 (no debug tooling, same as production)
-npm run dev:debug    # same, with the debug panel (D), tuning sliders and window.poopBird
+npm run dev:debug    # same, with the debug panel (D), tuning sliders and window.poopyBird
 ```
 
 Webcam access needs a secure context. `localhost` counts, so the dev server is
@@ -391,7 +391,7 @@ peaked while the game counted the player as straining in the city, so a laugh
 or a blink doesn't count.
 
 **Server.** The collector serves it (`collector/leaderboard.ts`, format and
-ranking in `src/leaderboard.ts`) on the same `poopbird-data` volume as the
+ranking in `src/leaderboard.ts`) on the same `poopybird-data` volume as the
 face dataset, so it survives deploys:
 
 | Request | |
@@ -626,7 +626,7 @@ separated their puffs from their relaxed face), while pursed lips light up
    unclear lesson the banner says why and the calibration runs
    (`oceanPuffCalibrationAttempts`, 1 run). A failure never blocks the game:
    after the last run the fish follows the pucker range alone, with a toast.
-5. The calibration is saved like the main one (`poopbird.puffCalibration.v3`;
+5. The calibration is saved like the main one (`poopybird.puffCalibration.v3`;
    older single-hold ones are ignored), and the toast says which features it
    watches. **C** clears it, so the next dive calibrates again. After the
    face-loss grace, puff drops to 0 and the fish sinks.
@@ -639,7 +639,7 @@ If the puff doesn't register, open the debug panel (`npm run dev:debug`) in the 
 rows show the geometry values as numbers with the relaxed-face marker, and the
 stats line "puff source" names the features the calibration picked (or
 "pucker range" without one).
-`poopBird.lastPuffAttempt` in the console holds the last attempt, including
+`poopyBird.lastPuffAttempt` in the console holds the last attempt, including
 one that failed.
 
 ## Tuning
@@ -653,7 +653,7 @@ range).
 
 Start the app with `npm run dev:debug` (or build with `npm run build:debug`),
 then press **D** in game for the debug panel. Plain `dev`/`build` leave the
-panel, the saved tuning overrides and `window.poopBird` out, and the deployed
+panel, the saved tuning overrides and `window.poopyBird` out, and the deployed
 build is always the plain one:
 
 - FPS, detections per second, the delegate, and whether a face is visible
@@ -688,7 +688,7 @@ build is always the plain one:
   defaults" and "Copy config JSON" buttons. When you find good values, paste
   them back into `config.ts`.
 
-`window.poopBird` exposes `game`, `config`, `tracker`, `renderer`,
+`window.poopyBird` exposes `game`, `config`, `tracker`, `renderer`,
 `calibration` and `puffCalibration` in the console.
 
 ## Face dataset
@@ -756,10 +756,10 @@ its collection code is then `local`).
 
 **Storage.** `collector/server.ts` is a small Node server without
 dependencies, in its own container next to the game, with the recordings on
-the `poopbird-data` Docker volume (it survives deploys). Caddy routes `/api/*`
+the `poopybird-data` Docker volume (it survives deploys). Caddy routes `/api/*`
 to it. On the VM, `deploy.yml` generates its two secrets once into
-`~/poopbird-collector.env` (`ssh viscon@24-direct.viscon-hackathon.ch cat
-poopbird-collector.env`): `COLLECTION_CODE`, the upload password that goes
+`~/poopybird-collector.env` (`ssh viscon@24-direct.viscon-hackathon.ch cat
+poopybird-collector.env`): `COLLECTION_CODE`, the upload password that goes
 into collect links (uploads only), and `DEV_TOKEN` for the team (list,
 download, review, delete). Every upload is validated, quality-checked (face
 coverage, detection rate, whether the strain moved brows and eyes) and added
@@ -767,7 +767,7 @@ to the index. Participants can delete their session right after uploading; to
 delete everything under a participant code:
 
 ```sh
-ssh viscon@24-direct.viscon-hackathon.ch 'curl -s -X DELETE -H "Authorization: Bearer $(grep ^DEV_TOKEN= poopbird-collector.env | cut -d= -f2)" localhost:8080/api/recordings/<code>'
+ssh viscon@24-direct.viscon-hackathon.ch 'curl -s -X DELETE -H "Authorization: Bearer $(grep ^DEV_TOKEN= poopybird-collector.env | cut -d= -f2)" localhost:8080/api/recordings/<code>'
 ```
 
 **Using it.** Needs your SSH key on the VM (`ssh-copy-id`); `data:pull` reads
@@ -802,7 +802,7 @@ detection idea, add a variant to `scripts/eval/variants.ts`; the first entry
 is what the game does today. About 1 in 5 participants are held out (picked
 by a hash of their code); score them with `npm run eval -- --holdout` only
 when a change is ready to merge. Older debug-recorder clips
-(`poopbird-face-*.json`) still work: put them in `data/local/`.
+(`poopybird-face-*.json`) still work: put them in `data/local/`.
 
 ## Privacy
 

@@ -40,8 +40,8 @@ jobs:
 
       - name: Build images
         run: |
-          docker build --build-arg APP_COMMIT="$SHA" -t "poop-bird:$SHA" .
-          docker build -f collector/Dockerfile -t "poop-bird-collector:$SHA" .
+          docker build --build-arg APP_COMMIT="$SHA" -t "poopy-bird:$SHA" .
+          docker build -f collector/Dockerfile -t "poopy-bird-collector:$SHA" .
 
       - name: Set up SSH
         env:
@@ -62,28 +62,45 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          docker save "poop-bird:$SHA" "poop-bird-collector:$SHA" | gzip | ssh "viscon@$DEPLOY_HOST" 'gunzip | docker load'
+          docker save "poopy-bird:$SHA" "poopy-bird-collector:$SHA" | gzip | ssh "viscon@$DEPLOY_HOST" 'gunzip | docker load'
           ssh "viscon@$DEPLOY_HOST" bash -s -- "$SHA" <<'EOF'
             set -e
             SHA=$1
             # The game's Caddy reaches the collector as "collector" on this network.
-            docker network inspect poopbird >/dev/null 2>&1 || docker network create poopbird
+            docker network inspect poopybird >/dev/null 2>&1 || docker network create poopybird
             # Collector credentials, generated once and kept on the VM only:
             # COLLECTION_CODE goes into the collect link, DEV_TOKEN is for the team.
-            ENV_FILE=~/poopbird-collector.env
+            ENV_FILE=~/poopybird-collector.env
+            # The game was renamed from Poop Bird: keep the old credentials.
+            if [ ! -f "$ENV_FILE" ] && [ -f ~/poopbird-collector.env ]; then
+              cp -p ~/poopbird-collector.env "$ENV_FILE"
+            fi
             if [ ! -f "$ENV_FILE" ]; then
               hex() { head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
               ( umask 077; printf 'COLLECTION_CODE=%s\nDEV_TOKEN=%s\n' "$(hex 6)" "$(hex 24)" > "$ENV_FILE" )
             fi
-            # Recordings live in the poopbird-data volume, which survives deploys.
+            # Recordings live in the poopybird-data volume, which survives deploys.
             docker rm -f collector 2>/dev/null || true
-            docker run -d --name collector --restart unless-stopped --network poopbird \
-              --env-file "$ENV_FILE" -v poopbird-data:/data "poop-bird-collector:$SHA"
-            docker rm -f poop-bird 2>/dev/null || true
-            docker run -d --name poop-bird --restart unless-stopped --network poopbird \
-              -p 8080:8080 "poop-bird:$SHA"
-            # Drop older images, keep the ones now running
+            # Carry the recordings over from the volume of the old name, once.
+            if ! docker volume inspect poopybird-data >/dev/null 2>&1 \
+                && docker volume inspect poopbird-data >/dev/null 2>&1; then
+              docker volume create poopybird-data >/dev/null
+              docker run --rm --user root --entrypoint cp -v poopbird-data:/from -v poopybird-data:/to \
+                "poopy-bird-collector:$SHA" -a /from/. /to/ \
+                || { docker volume rm poopybird-data; exit 1; }
+            fi
+            docker run -d --name collector --restart unless-stopped --network poopybird \
+              --env-file "$ENV_FILE" -v poopybird-data:/data "poopy-bird-collector:$SHA"
+            docker rm -f poopy-bird poop-bird 2>/dev/null || true
+            docker run -d --name poopy-bird --restart unless-stopped --network poopybird \
+              -p 8080:8080 "poopy-bird:$SHA"
+            # Leftovers from before the rename (the old volume stays as a backup).
+            docker network rm poopbird >/dev/null 2>&1 || true
             for image in poop-bird poop-bird-collector; do
+              docker images "$image" --format '{{.Repository}}:{{.Tag}}' | xargs -r docker rmi >/dev/null || true
+            done
+            # Drop older images, keep the ones now running
+            for image in poopy-bird poopy-bird-collector; do
               docker images "$image" --format '{{.Repository}}:{{.Tag}}' \
                 | grep -vx "$image:$SHA" | xargs -r docker rmi >/dev/null || true
             done

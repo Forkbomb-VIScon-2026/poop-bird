@@ -2,8 +2,8 @@
 // leaderboard.ts. The public site sits behind the ETH login, so this goes over
 // SSH: it reads the dev token from the VM and tunnels to the VM's port 8080
 // (Caddy, in front of the login). It needs your SSH key on the VM
-// (ssh-copy-id). POOPBIRD_VM overrides the SSH target. For another collector
-// (e.g. a local `npm run collector`), set COLLECTOR_URL and POOPBIRD_DEV_TOKEN
+// (ssh-copy-id). POOPYBIRD_VM overrides the SSH target. For another collector
+// (e.g. a local `npm run collector`), set COLLECTOR_URL and POOPYBIRD_DEV_TOKEN
 // instead.
 //
 // Plain Node (types stripped), so no imports from src/.
@@ -11,7 +11,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
 
-export const VM = process.env.POOPBIRD_VM ?? "viscon@24-direct.viscon-hackathon.ch";
+export const VM = process.env.POOPYBIRD_VM ?? "viscon@24-direct.viscon-hackathon.ch";
 
 export interface Connection {
   base: string;
@@ -37,10 +37,10 @@ function freePort(): Promise<number> {
   });
 }
 
-/** The dev token from ~/poopbird-collector.env on the VM. */
+/** The dev token from ~/poopybird-collector.env on the VM. */
 function tokenFromVm(): string {
   try {
-    const out = execFileSync("ssh", ["-o", "BatchMode=yes", VM, "grep '^DEV_TOKEN=' poopbird-collector.env"], {
+    const out = execFileSync("ssh", ["-o", "BatchMode=yes", VM, "grep '^DEV_TOKEN=' poopybird-collector.env"], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const token = out.toString().trim().split("=")[1];
@@ -56,10 +56,10 @@ function tokenFromVm(): string {
 
 export async function connect(): Promise<Connection> {
   if (process.env.COLLECTOR_URL) {
-    const token = process.env.POOPBIRD_DEV_TOKEN ?? fail("With COLLECTOR_URL, also set POOPBIRD_DEV_TOKEN.");
+    const token = process.env.POOPYBIRD_DEV_TOKEN ?? fail("With COLLECTOR_URL, also set POOPYBIRD_DEV_TOKEN.");
     return { base: process.env.COLLECTOR_URL.replace(/\/$/, ""), token, close: () => undefined };
   }
-  const token = process.env.POOPBIRD_DEV_TOKEN ?? tokenFromVm();
+  const token = process.env.POOPYBIRD_DEV_TOKEN ?? tokenFromVm();
   const port = await freePort();
   const tunnel = spawn("ssh", ["-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-L", `${port}:localhost:8080`, VM], {
     stdio: ["ignore", "ignore", "pipe"],

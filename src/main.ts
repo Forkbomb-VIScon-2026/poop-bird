@@ -133,7 +133,7 @@ let calibrationIsDefault = false;
 let puffCalibration: Calibration | null = loadCalibration(PUFF_CALIBRATION_KEY, PUFF_FEATURES);
 /** The puff calibration ran (and passed or failed) this session; later dives skip it. Reset by C. */
 let puffCalibrationTried = false;
-/** The last puff calibration attempt, passed or not (console: poopBird.lastPuffAttempt). */
+/** The last puff calibration attempt, passed or not (console: poopyBird.lastPuffAttempt). */
 let lastPuffAttempt: { cal: Calibration; quality: ReturnType<typeof assessPuffCalibration> } | null = null;
 /** Flow token of the puff calibration in progress, if any. */
 let activePuffCalibration: number | null = null;
@@ -186,7 +186,7 @@ let faceStrain = 0;
 /** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
 const seenTutorials = loadSeenTutorials();
 
-sound.setMuted(storageGet("poopbird.muted.v1") === "1");
+sound.setMuted(storageGet("poopybird.muted.v1") === "1");
 
 /** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
 function manualHeld(): boolean {
@@ -1488,7 +1488,7 @@ function dockCam(perched: boolean): void {
 }
 
 function toggleMute(): void {
-  storageSet("poopbird.muted.v1", sound.toggleMute() ? "1" : "0");
+  storageSet("poopybird.muted.v1", sound.toggleMute() ? "1" : "0");
   updateMuteButton();
   showToast(sound.muted ? "🔇 Muted" : "🔊 Sound on", 1200);
 }
@@ -1618,7 +1618,7 @@ function onGameOver(): void {
   // Sharing the face is a fresh choice every run (the next player at this machine may not want to).
   $<HTMLInputElement>("go-lb-face").checked = false;
   $<HTMLButtonElement>("btn-lb-submit").disabled = false;
-  $<HTMLInputElement>("go-name").value = storageGet("poopbird.name.v1") ?? "";
+  $<HTMLInputElement>("go-name").value = storageGet("poopybird.name.v1") ?? "";
   const status = $("go-lb-status");
   status.classList.remove("error");
   status.textContent = "Only runs played with your face count for the leaderboard. 😣";
@@ -1632,7 +1632,7 @@ async function submitToLeaderboard(): Promise<void> {
   const run = lastRun;
   if (!run) return;
   const name = ($<HTMLInputElement>("go-name").value.trim() || "Anonymous Pooper").slice(0, 16);
-  storageSet("poopbird.name.v1", name);
+  storageSet("poopybird.name.v1", name);
   const withFace = run.face !== null && $<HTMLInputElement>("go-lb-face").checked;
   const button = $<HTMLButtonElement>("btn-lb-submit");
   const status = $("go-lb-status");
@@ -2260,7 +2260,7 @@ on("btn-download", () => {
   if (!currentSnapshotUrl) return;
   const a = document.createElement("a");
   a.href = currentSnapshotUrl;
-  a.download = `poop-bird-finest-strain-${game.score}.jpg`;
+  a.download = `poopy-bird-finest-strain-${game.score}.jpg`;
   a.click();
 });
 $<HTMLFormElement>("go-lb-form").addEventListener("submit", (e) => {
@@ -2318,7 +2318,7 @@ requestAnimationFrame(frame);
 // Handy for tuning from the console.
 if (DEBUG) {
   Object.assign(window, {
-    poopBird: {
+    poopyBird: {
       game, config, tracker, renderer,
       get calibration() { return calibration; },
       get puffCalibration() { return puffCalibration; },
