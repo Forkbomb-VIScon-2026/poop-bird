@@ -3263,11 +3263,15 @@ export class Game {
 
   // --- traffic -----------------------------------------------------------------
 
-  /** The cars (and wrecks) in the lane heading `dir`, front first. A car swerving across is in both lanes. */
+  /**
+   * The cars (and wrecks) in the lane heading `dir`, front first. A car swerving
+   * across is in both lanes; one heading `dir` that's back in control belongs here
+   * wherever it is, so it steers home.
+   */
   private lane(dir: 1 | -1): Target[] {
     const y = laneY(dir);
     return this.targets
-      .filter((t) => t.kind === "car" && Math.abs(t.y - y) < LANE_BAND)
+      .filter((t) => t.kind === "car" && (Math.abs(t.y - y) < LANE_BAND || (t.facing === dir && !t.blind && !t.wreck)))
       .sort((a, b) => (b.x - a.x) * dir);
   }
 

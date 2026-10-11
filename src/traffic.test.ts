@@ -109,4 +109,22 @@ describe("traffic", () => {
       config.targetSpawnRate = saved;
     }
   });
+
+  it("a blinded driver who swerves and gets away with it steers back into its lane", () => {
+    const saved = config.targetSpawnRate;
+    try {
+      const { game, cars, run } = street([[300, 1, 60]]);
+      blind(game, cars[0], true);
+      run(1.5);
+      expect(cars[0].y).toBeLessThan(GROUND_Y + 60); // over in the oncoming lane
+      run(config.blindDuration);
+      expect(cars[0].blind).toBeFalsy();
+      expect(cars[0].wreck).toBeFalsy();
+      expect(cars[0].y).toBeCloseTo(GROUND_Y + 74, 0);
+      expect(cars[0].speed).toBeLessThanOrEqual(60.01);
+      expect(game.targets).toContain(cars[0]);
+    } finally {
+      config.targetSpawnRate = saved;
+    }
+  });
 });
