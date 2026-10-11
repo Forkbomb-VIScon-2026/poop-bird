@@ -20,7 +20,7 @@
 		@wasm path *.wasm
 		header @wasm Content-Type application/wasm
 
-		@static path /assets/* /mediapipe/*
+		@static path /assets/* /mediapipe/* /faceid/*
 		header @static Cache-Control "public, max-age=604800"
 	}
 }

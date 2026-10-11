@@ -21,11 +21,11 @@ const BASE = import.meta.env.BASE_URL;
 const WASM_PATH = `${BASE}mediapipe/wasm`;
 const MODEL_PATH = `${BASE}mediapipe/face_landmarker.task`;
 /** Side of the square canvas the crop around the locked face is scaled into. */
-const CROP_PX = 384;
+export const CROP_PX = 384;
 /** Most faces the full-frame search for the player looks at. */
 const ACQUIRE_MAX_FACES = 3;
 /** Margin (× the face box) when painting a face over so MediaPipe looks for another one. */
-const MASK_MARGIN = 1.3;
+export const MASK_MARGIN = 1.3;
 
 /** Face bounding box in normalized video coordinates (0..1, not mirrored). */
 export interface FaceBox {
@@ -139,23 +139,9 @@ export class FaceTracker {
   /** Loads the model (GPU, falling back to CPU). Safe to call repeatedly. */
   async loadModel(): Promise<void> {
     if (this.landmarker) return;
-    const fileset = await FilesetResolver.forVisionTasks(WASM_PATH);
-    const make = (delegate: "GPU" | "CPU") =>
-      FaceLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_PATH, delegate },
-        runningMode: "VIDEO",
-        numFaces: 1,
-        outputFaceBlendshapes: true,
-        outputFacialTransformationMatrixes: false,
-      });
-    try {
-      this.landmarker = await make("GPU");
-      this.delegate = "GPU";
-    } catch (err) {
-      console.warn("[face] GPU delegate failed, falling back to CPU", err);
-      this.landmarker = await make("CPU");
-      this.delegate = "CPU";
-    }
+    const made = await createFaceLandmarker();
+    this.landmarker = made.landmarker;
+    this.delegate = made.delegate;
   }
 
   /** Asks for the camera. Throws if permission is denied or no camera exists. */
@@ -281,7 +267,7 @@ export class FaceTracker {
       this.hadLock = true;
       frame = {
         newFace,
-        features: extractFeatures(hit.blendshapes, faceGeometry(hit.landmarks, W / H)),
+        features: faceFeatures(hit.blendshapes, hit.landmarks, W / H),
         blendshapes: hit.blendshapes,
         box,
         landmarks: hit.landmarks,
@@ -396,14 +382,46 @@ export class FaceTracker {
     const shapes = result.faceBlendshapes?.[0]?.categories;
     const landmarks = result.faceLandmarks?.[0];
     if (!shapes?.length || !landmarks?.length) return null;
-    const blendshapes: Record<string, number> = {};
-    for (const c of shapes) blendshapes[c.categoryName] = c.score;
-    return { blendshapes, landmarks: landmarks.map(toFrame) };
+    return { blendshapes: blendshapeRecord(shapes), landmarks: landmarks.map(toFrame) };
   }
 }
 
+/**
+ * A Face Landmarker in VIDEO mode with blendshapes, for one face (GPU,
+ * falling back to CPU). The two-player tracker makes one per player.
+ */
+export async function createFaceLandmarker(): Promise<{ landmarker: FaceLandmarker; delegate: "GPU" | "CPU" }> {
+  const fileset = await FilesetResolver.forVisionTasks(WASM_PATH);
+  const make = (delegate: "GPU" | "CPU") =>
+    FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MODEL_PATH, delegate },
+      runningMode: "VIDEO",
+      numFaces: 1,
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: false,
+    });
+  try {
+    return { landmarker: await make("GPU"), delegate: "GPU" };
+  } catch (err) {
+    console.warn("[face] GPU delegate failed, falling back to CPU", err);
+    return { landmarker: await make("CPU"), delegate: "CPU" };
+  }
+}
+
+/** Blendshape scores by name from one MediaPipe result face. */
+export function blendshapeRecord(categories: readonly { categoryName: string; score: number }[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const c of categories) out[c.categoryName] = c.score;
+  return out;
+}
+
+/** The strain/puff feature vector of one detected face (normalized full-frame landmarks). */
+export function faceFeatures(blendshapes: Record<string, number>, landmarks: readonly LandmarkPoint[], aspect: number): FeatureVector {
+  return extractFeatures(blendshapes, faceGeometry(landmarks, aspect));
+}
+
 /** Paints over a face (normalized box, plus a margin); `px`/`py` map normalized coordinates to the canvas. */
-function paintOver(g: CanvasRenderingContext2D, box: FaceBox, px: (x: number) => number, py: (y: number) => number): void {
+export function paintOver(g: CanvasRenderingContext2D, box: FaceBox, px: (x: number) => number, py: (y: number) => number): void {
   const w = box.w * MASK_MARGIN;
   const h = box.h * MASK_MARGIN;
   const x = box.x + box.w / 2 - w / 2;
@@ -421,7 +439,7 @@ function continues(prev: FaceBox, next: FaceBox, maxJump: number): boolean {
   return Math.hypot(dx, dy) <= maxJump * size && ratio > 0.67 && ratio < 1.5;
 }
 
-function boundingBox(landmarks: readonly LandmarkPoint[]): FaceBox {
+export function boundingBox(landmarks: readonly LandmarkPoint[]): FaceBox {
   let minX = 1, minY = 1, maxX = 0, maxY = 0;
   for (const p of landmarks) {
     if (p.x < minX) minX = p.x;
