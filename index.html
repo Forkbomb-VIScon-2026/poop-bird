@@ -184,6 +184,7 @@
            with a button. An example photo of the face sits next to the webcam (#cam, moved into
            #calib-cam-slot). The relaxed face is read on its own meanwhile, from the moment a face shows. -->
       <section id="screen-calibrate" class="screen hidden">
+        <button id="btn-calib-cancel" class="btn small corner-menu" data-keys="Escape">← Menu</button>
         <div class="card calib">
           <div id="calib-step" class="calib-step">Calibration 1/2</div>
           <h2 id="calib-prompt">Strain like you really need to go 💩</h2>
@@ -197,7 +198,6 @@
               <figcaption>You</figcaption>
             </figure>
           </div>
-          <p id="calib-hint" class="hint"></p>
           <div id="calib-run" class="calib-run hidden">
             <div id="calib-count" class="calib-count"></div>
             <div class="progress"><div id="calib-progress" class="progress-fill"></div></div>
@@ -207,17 +207,13 @@
             <button id="btn-calib-go" class="btn primary big" data-default>I'm ready</button>
             <button id="btn-calib-skip" class="btn hidden" data-keys="S">Play anyway</button>
           </div>
-          <div class="ghost-row">
-            <button id="btn-calib-keyboard" class="btn small ghost">Play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span> instead</button>
-            <button id="btn-calib-cancel" class="btn small ghost" data-keys="Escape">Back to menu</button>
-          </div>
         </div>
       </section>
 
       <!-- Ready: the bird sits on a street lamp. Its first poop takes off and starts the run. -->
       <section id="screen-ready" class="screen hidden passthrough">
         <!-- Top left, where the score shows once the run starts. -->
-        <button id="btn-perch-menu" class="btn small perch-menu" data-keys="Escape">← Menu</button>
+        <button id="btn-perch-menu" class="btn small corner-menu" data-keys="Escape">← Menu</button>
         <div id="perch" class="perch">
           <!-- The coach (#coach) goes here while the bird is on the perch. -->
           <div id="perch-coach-slot" class="perch-coach-slot"></div>
