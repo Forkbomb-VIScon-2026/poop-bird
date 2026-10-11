@@ -974,8 +974,15 @@ body.touch .key-badge {
   flex: 1;
 }
 
-.calib-count {
+/* The countdown's slot, mirrored on the right so the bar stays centred. */
+.calib-count,
+.calib-run::after {
   min-width: 1.2em;
+}
+
+.calib-run::after {
+  content: "";
+  font-size: 54px;
 }
 
 .calib.holding h2 {
