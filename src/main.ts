@@ -12,6 +12,7 @@ import { BIRD_RADIUS, GROUND_Y, Game, OCEAN_MID_Y, VIEW_H, wireAt } from "./game
 import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
 import { Renderer, drawFrontPage, drawTrophyPrint, drawWeddingPrint, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
+import { TAGLINES, pickTagline } from "./taglines";
 import {
   GROW_WITHIN,
   faceDistance,
@@ -1753,6 +1754,23 @@ function togglePause(): void {
   }
 }
 
+let tagline = -1;
+
+/** Shows a new tagline on the start screen. */
+function newTagline(): void {
+  tagline = pickTagline(tagline);
+  const { text, code } = TAGLINES[tagline];
+  const el = $("tagline");
+  if (code) {
+    const c = document.createElement("code");
+    c.textContent = text;
+    el.replaceChildren(c);
+  } else {
+    el.textContent = text;
+  }
+}
+newTagline();
+
 function goToMenu(): void {
   flow++;
   calibSamples = null;
@@ -1768,6 +1786,7 @@ function goToMenu(): void {
   show(hud, false);
   game.startDemo();
   $<HTMLInputElement>("opt-tips").checked = isNewPlayer();
+  newTagline();
   showScreen("start");
 }
 
