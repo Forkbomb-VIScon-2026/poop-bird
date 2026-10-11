@@ -391,6 +391,37 @@ export function assessCalibration(
 
 // --- Smoothing & hysteresis --------------------------------------------------
 
+// --- Strainedness (the leaderboard's face ranking) ---------------------------
+
+/**
+ * Weights of the face's absolute "strainedness": brows down, eyes squeezed,
+ * eyes shut. These move on a strain face for nearly everyone (the face
+ * dataset), and the mouth doesn't. A blink alone is half-weighted so a
+ * relaxed blink can't compete with a real strain face.
+ */
+export const STRAINEDNESS_WEIGHTS: Readonly<Partial<Record<FeatureName, number>>> = {
+  browDown: 1,
+  eyeSquint: 1,
+  eyeBlink: 0.5,
+};
+
+/**
+ * How strained the face looks, 0..1, on the same scale for every player: the
+ * weighted mean of the raw blendshape scores, with no calibration. The
+ * calibrated strain score can't rank players (it tops out at 1 for anyone
+ * straining past their own calibration, and a timid calibration would win).
+ * Relaxed faces score about 0.2–0.3, hard strains 0.6–0.75.
+ */
+export function strainedness(features: FeatureVector): number {
+  let sum = 0;
+  let weightSum = 0;
+  for (const [f, w] of Object.entries(STRAINEDNESS_WEIGHTS) as [FeatureName, number][]) {
+    sum += w * clamp(features[f], 0, 1);
+    weightSum += w;
+  }
+  return weightSum > 0 ? sum / weightSum : 0;
+}
+
 /**
  * Exponential moving average, corrected for frame time so smoothing feels the
  * same at 15 or 60 detections per second. `alpha` is defined per frame at

@@ -22,6 +22,18 @@ export function targetSwimVelocity(puff: number, p: BuoyancyParams): number {
   return -p.oceanMaxRise * ((x - hover) / (1 - hover));
 }
 
+/** The puff whose target velocity is `vy` (the inverse of targetSwimVelocity, clamped to what puff 0..1 can do). */
+export function puffForSwimVelocity(vy: number, p: BuoyancyParams): number {
+  const hover = clamp(p.oceanHoverPuff, 0.01, 0.99);
+  if (vy >= 0) return hover * (1 - clamp(vy / Math.max(1e-6, p.oceanMaxSink), 0, 1));
+  return hover + (1 - hover) * clamp(-vy / Math.max(1e-6, p.oceanMaxRise), 0, 1);
+}
+
+/** The puff that swims a fish at `y` to `targetY`, closing the distance in about `time` s (at most at full speed). */
+export function guidePuff(y: number, targetY: number, time: number, p: BuoyancyParams): number {
+  return puffForSwimVelocity((targetY - y) / Math.max(0.05, time), p);
+}
+
 /**
  * Eases `vy` toward `target` with an exponential response: after `dragTime`
  * seconds ~63% of the difference is gone, independent of the step size.

@@ -1,8 +1,19 @@
+
 import { SOUND_NAMES, type SoundName } from "./audio-assets";
 
 export type PoopSize = "weak" | "middle" | "large";
 
 type ActiveSound = { source: AudioBufferSourceNode; gain: GainNode };
+
+const CURSE_SOUNDS = SOUND_NAMES.filter((name) => name.startsWith("curse_"));
+
+function shuffle<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items;
+}
 
 /** All game audio is sample-based; no synthesized sound effects. */
 export class Sound {
@@ -13,29 +24,42 @@ export class Sound {
   private voice: AudioBufferSourceNode | null = null;
   private readonly buffers = new Map<SoundName, AudioBuffer>();
   private readonly active = new Map<SoundName, ActiveSound>();
-  private readonly lastPlayed = new Map<SoundName, number>();
   private powerLine: ActiveSound | null = null;
+  private cursing: ActiveSound | null = null;
+  private curseBag: SoundName[] = [];
+  private lastCurse: SoundName | null = null;
   muted = false;
 
   /** A real asset takes priority; otherwise use its named bell placeholder. */
   private async load(name: SoundName): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return;
+
     const base = `${import.meta.env.BASE_URL}assets/audio/`;
+
     const fetchAudio = async (path: string): Promise<AudioBuffer | null> => {
       try {
         const response = await fetch(base + path);
-        if (!response.ok || !response.headers.get("content-type")?.includes("audio")) return null;
+        if (!response.ok || !response.headers.get("content-type")?.includes("audio")) {
+          return null;
+        }
         return await ctx.decodeAudioData(await response.arrayBuffer());
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     };
-    // Prefer MP3, but accept WAV assets too (including the poop recordings).
-    const real = await fetchAudio(`${name}.mp3`) ?? await fetchAudio(`${name}.wav`);
+
+    const real =
+      await fetchAudio(`${name}.mp3`) ??
+      await fetchAudio(`${name}.wav`);
+
     if (real) {
       this.buffers.set(name, real);
       return;
     }
+
     console.warn(`[audio] missing ${name}.mp3/.wav; using tmp_${name}.mp3`);
+
     const fallback = await fetchAudio(`tmp_${name}.mp3`);
     if (fallback) this.buffers.set(name, fallback);
     else console.warn(`[audio] missing placeholder tmp_${name}.mp3`);
@@ -55,6 +79,7 @@ export class Sound {
           void this.load(name);
         }
       }
+
       if (this.ctx.state === "suspended") void this.ctx.resume();
     } catch (error) {
       console.warn("[audio] unavailable", error);
@@ -64,7 +89,11 @@ export class Sound {
   setMuted(muted: boolean): void {
     this.muted = muted;
     if (this.ctx && this.master) {
-      this.master.gain.setTargetAtTime(muted ? 0 : 0.6, this.ctx.currentTime, 0.02);
+      this.master.gain.setTargetAtTime(
+        muted ? 0 : 0.6,
+        this.ctx.currentTime,
+        0.02,
+      );
     }
   }
 
@@ -73,20 +102,31 @@ export class Sound {
     return this.muted;
   }
 
-  /** Playback of the cached, decoded buffer; concurrent one-shots are allowed. */
-  private play(name: SoundName, volume = 1, cooldown = 0): ActiveSound | null {
+  /**
+   * Play a cached sound.
+   *
+   * volume: multiplier (1 = normal, 0.5 = half)
+   * delay:  seconds before playback (non-blocking)
+   */
+  private play(
+    name: SoundName,
+    volume = 1,
+    delay = 0,
+  ): ActiveSound | null {
     const ctx = this.ctx;
     const buffer = this.buffers.get(name);
+
     if (!ctx || !this.fx || !buffer) return null;
-    const now = ctx.currentTime;
-    if (cooldown && now - (this.lastPlayed.get(name) ?? -Infinity) < cooldown) return null;
-    this.lastPlayed.set(name, now);
+
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
+
     source.buffer = buffer;
-    gain.gain.value = volume;
+    gain.gain.value = Math.max(0, volume);
+
     source.connect(gain).connect(this.fx);
-    source.start();
+    source.start(ctx.currentTime + Math.max(0, delay));
+
     return { source, gain };
   }
 
@@ -135,38 +175,76 @@ export class Sound {
     if (this.ctx && this.fx) this.fx.gain.setTargetAtTime(1, this.ctx.currentTime, 0.15);
   }
 
-  private sustain(name: SoundName, level: number): void {
+  private sustain(
+    name: SoundName,
+    level: number,
+    volume = 1,
+    delay = 0,
+  ): void {
     const ctx = this.ctx;
     if (!ctx) return;
+
+    const now = ctx.currentTime;
     const playing = this.active.get(name);
+
     if (level <= 0) {
       if (playing) {
-        playing.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.025);
-        playing.source.stop(ctx.currentTime + 0.15);
+        playing.gain.gain.cancelScheduledValues(now);
+        playing.gain.gain.setTargetAtTime(0, now, 0.025);
+        playing.source.stop(now + 0.15);
         this.active.delete(name);
       }
       return;
     }
+
     if (!playing) {
-      const started = this.play(name, 0);
+      const started = this.play(name, 0, delay);
       if (!started) return;
+
       this.active.set(name, started);
+
       started.source.onended = () => {
-        if (this.active.get(name) === started) this.active.delete(name);
+        if (this.active.get(name) === started) {
+          this.active.delete(name);
+        }
       };
     }
-    this.active.get(name)?.gain.gain.setTargetAtTime(
-      Math.min(1, Math.max(0.08, level)), ctx.currentTime, 0.04,
+
+    const sound = this.active.get(name);
+    if (!sound) return;
+
+    const target = Math.min(1, Math.max(0.08, level)) * volume;
+
+    sound.gain.gain.setTargetAtTime(
+      target,
+      now,
+      0.04,
     );
   }
 
-  setGroan(charge: number, _stressed: boolean): void { this.sustain("groan", charge); }
-  setBurble(level: number): void { this.sustain("burble", level); }
+
+  setGroan(charge: number, _stressed: boolean): void {
+    const volume = 1;
+    const delay = 0;
+    this.sustain("groan", charge, volume, delay);
+  }
+
+  setBurble(level: number): void {
+    const volume = 1;
+    const delay = 0;
+    this.sustain("burble", level, volume, delay);
+  }
+
   /** Continuous electrical hum; proximity is normalized to 0..1. */
   setPowerLineProximity(proximity: number): void {
+    const volume = 0.55;
+    const delay = 0;
+
     const ctx = this.ctx;
     if (!ctx) return;
+
     const level = Math.max(0, Math.min(1, proximity));
+
     if (level === 0) {
       if (this.powerLine) {
         const playing = this.powerLine;
@@ -176,57 +254,256 @@ export class Sound {
       }
       return;
     }
+
     if (!this.powerLine) {
-      const started = this.play("power_line", 0);
+      const started = this.play("power_line", 0, delay);
       if (!started) return;
+
       started.source.loop = true;
       this.powerLine = started;
       started.source.onended = () => {
         if (this.powerLine === started) this.powerLine = null;
       };
     }
-    // Quadratic falloff leaves the hum quiet until the bird is near a wire.
-    this.powerLine.gain.gain.setTargetAtTime(level * level * 0.55, ctx.currentTime, 0.075);
+
+    this.powerLine.gain.gain.setTargetAtTime(
+      level * level * volume,
+      ctx.currentTime,
+      0.075,
+    );
   }
-  splash(): void { this.play("splash"); }
-  spike(): void { this.play("spike"); }
-  jellyPop(_combo: number): void { this.play("jelly_pop"); }
-  deflate(): void { this.play("deflate"); }
+
+  splash(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("splash", volume, delay);
+  }
+
+  spike(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("spike", volume, delay);
+  }
+
+  jellyPop(_combo: number): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("jelly_pop", volume, delay);
+  }
+
+  deflate(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("deflate", volume, delay);
+  }
+
   /** Use the normalized charge (0..1) to choose the matching poop recording. */
   release(size: PoopSize, _charge: number, _sweet: boolean): void {
-    this.play(`poop_${size}`);
+    const volume = 1;
+    const delay = 0;
+    this.play(`poop_${size}`, volume, delay);
   }
-  accident(): void { this.play("accident"); }
-  zap(): void { this.play("zap"); }
-  balloonPop(): void { this.play("balloon_pop"); }
-  chuteOpen(): void { this.play("chute_open"); }
-  basketLanded(): void { this.play("basket_landed"); }
-  burner(): void { this.play("burner", 1, 0.3); }
-  splat(_big = false): void { this.play("splat"); }
-  hit(_combo: number): void { this.play("hit"); }
-  shutter(): void { this.play("shutter"); }
-  cameraBeep(_timer: number): void { this.play("camera_beep"); }
+
+  accident(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("accident", volume, delay);
+  }
+
+  zap(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("zap", volume, delay);
+  }
+
+  balloonPop(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("balloon_pop", volume, delay);
+  }
+
+  chuteOpen(): void {
+    const volume = 1;
+    const delay = 0;
+    const variant = Math.floor(Math.random() * 2) + 1;
+    this.play(`chute_open_${variant}` as SoundName, volume, delay);
+  }
+
+  basketLanded(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("basket_landed", volume, delay);
+  }
+
+  burner(): void {
+    const volume = 1;
+    const delay = 0.3;
+    this.play("burner", volume, delay);
+  }
+
+  splat(_big = false): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("splat", volume, delay);
+  }
+
+  hit(_combo: number): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("hit", volume, delay);
+  }
+
+  shutter(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("shutter", volume, delay);
+  }
+
+  cameraBeep(_timer: number = 0): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("camera_beep", volume, delay);
+  }
+
+  droneCrash(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("drone_crash", volume, delay);
+  }
+
+  slingshotDraw(_windup: number): void {
+    const volume = 1;
+    const delay = 0.5;
+    this.play("slingshot_draw", volume, delay);
+  }
+
+  slingshotFire(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("slingshot_fire", volume, delay);
+  }
+
+  bonk(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("bonk", volume, delay);
+  }
+
+  pebbleShot(_combo: number): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("pebble_shot", volume, delay);
+  }
+
+  ricochet(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("ricochet", volume, delay);
+  }
+
+  kidCry(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("kid_cry", volume, delay);
+  }
+
+  sadTrombone(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("sad_trombone", volume, delay);
+  }
+
+  weddingKiss(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("wedding_kiss", volume, delay);
+  }
+
+  weddingRuined(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("wedding_ruined", volume, delay);
+  }
+
+  weddingMarried(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("wedding_married", volume, delay);
+  }
+
+  bouquetThrown(_angry: boolean): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("bouquet_thrown", volume, delay);
+  }
+
+  bouquetCaught(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("bouquet_caught", volume, delay);
+  }
+
+  bouquetHit(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("bouquet_hit", volume, delay);
+  }
+
+  anglerCast(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("angler_cast", volume, delay);
+  }
+
+  anglerHooked(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("angler_hooked", volume, delay);
+  }
+
+  reelClick(): void {
+    const volume = 0.5;
+    const delay = 0.25;
+    this.play("reel_click", volume, delay);
+  }
+
+  lineSnap(): void {
+    const volume = 1;
+    const delay = 0;
+    this.play("line_snap", volume, delay);
+  }
+
+  /** Cycles through the curse recordings in a shuffled order, never the same one twice in a row. */
+  curse(): void {
+    const volume = 1;
+    const delay = 0;
+    if (this.curseBag.length === 0) {
+      this.curseBag = shuffle([...CURSE_SOUNDS]);
+      if (this.curseBag[0] === this.lastCurse) this.curseBag.push(this.curseBag.shift()!);
+    }
+    const name = this.curseBag.shift()!;
+    this.lastCurse = name;
+
+    // A re-provoked pedestrian starts a new curse; cut the old one off rather than talk over it.
+    const ctx = this.ctx;
+    if (ctx && this.cursing) {
+      this.cursing.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
+      this.cursing.source.stop(ctx.currentTime + 0.15);
+    }
+    const started = this.play(name, volume, delay);
+    this.cursing = started;
+    if (started) {
+      started.source.onended = () => {
+        if (this.cursing === started) this.cursing = null;
+      };
+    }
+  }
+
+  /** Additional event sounds used by the current gameplay code. */
   powerDown(): void { this.play("power_down"); }
-  droneCrash(): void { this.play("drone_crash"); }
   smash(): void { this.play("smash"); }
-  slingshotDraw(_windup: number): void { this.play("slingshot_draw", 1, 0.5); }
-  slingshotFire(): void { this.play("slingshot_fire"); }
-  bonk(): void { this.play("bonk"); }
-  pebbleShot(_combo: number): void { this.play("pebble_shot"); }
-  ricochet(): void { this.play("ricochet"); }
-  kidCry(): void { this.play("kid_cry"); }
-  beep(_high = false): void { this.play("beep"); }
-  sadTrombone(): void { this.play("sad_trombone"); }
   weddingArrived(): void { this.play("wedding_arrived"); }
   weddingBeat(_count: number): void { this.play("wedding_beat"); }
-  weddingKiss(): void { this.play("wedding_kiss"); }
-  weddingRuined(): void { this.play("wedding_ruined"); }
-  weddingMarried(): void { this.play("wedding_married"); }
-  bouquetThrown(_angry: boolean): void { this.play("bouquet_thrown"); }
-  bouquetCaught(): void { this.play("bouquet_caught"); }
-  bouquetHit(): void { this.play("bouquet_hit"); }
-  anglerCast(): void { this.play("angler_cast"); }
-  anglerHooked(): void { this.play("angler_hooked"); }
-  reelClick(): void { this.play("reel_click", 0.5, 0.25); }
-  lineSnap(): void { this.play("line_snap"); }
+  anchorRattle(): void { this.play("reel_click", 0.8, 0.1); }
+  anchorLanded(): void { this.play("bonk"); }
 }

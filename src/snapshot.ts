@@ -1,6 +1,8 @@
-// "Finest strain" snapshot: keeps a cropped copy of the video frame at
-// the run's peak strain. The crop lives in an in-memory canvas and is only
-// encoded to JPEG at game over. Nothing is uploaded anywhere.
+// "Finest strain" snapshot: keeps a cropped copy of the video frame where the
+// face looked most strained during the run (strain.ts `strainedness`, the
+// leaderboard's face ranking). The crop lives in an in-memory canvas and is
+// only encoded to JPEG at game over. It leaves the device only if the player
+// submits the run to the leaderboard with their face.
 //
 // captureFace() uses the same crop for the paparazzi's in-game photos, which
 // only ever live in memory for the current run.
@@ -19,13 +21,14 @@ export class StrainSnapshot {
     this.has = false;
   }
 
+  /** Strainedness (0..1) of the captured face; 0 if none. */
   get peakStrain(): number {
-    return this.peak;
+    return this.has ? this.peak : 0;
   }
 
-  /** Call on every detection during a run. Grabs the frame when strain hits a new peak. */
+  /** Call on every detection while the player strains. Grabs the frame when strainedness hits a new peak. */
   offer(video: HTMLVideoElement, box: FaceBox | null, strain: number): void {
-    if (!box || strain <= this.peak + 0.01 || strain < 0.15) return;
+    if (!box || strain <= this.peak + 0.002 || strain < 0.15) return;
     if (!cropFace(video, box, this.canvas, WIDTH)) return;
     this.peak = strain;
     this.has = true;
