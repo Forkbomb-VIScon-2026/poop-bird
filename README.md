@@ -119,19 +119,19 @@ timer. On the perch it sits beside the bird; in the city and the ocean, over
 the game near the top. The swim lesson and the puff calibration use it too.
 
 - **Flight lesson** (new players: the tutorial hasn't been seen on this
-  browser, or "I'm new here" is ticked), five steps:
+  browser, or "I'm new here" is ticked), four steps:
   1. "Squeeze your face" (Hold Space) until the bird starts filling up,
   2. "Now relax": the poop hops the bird up, and the coach says "Pooping
      pushes you up!",
   3. "Squeeze longer to fly": a full bird takes off,
   4. in a **calm city** (`Game.calmCity`: no obstacles, paparazzi or kids,
      and the street bounces the bird back up instead of ending the run):
-     "Squeeze & relax to stay up" until three poops (or 20 s),
-  5. "Now dodge the buildings!": the lesson counts as seen, and the calm ends
-     once the bird is clear of the street (or after 8 s); the first obstacle
-     comes `firstObstacleDelay` later.
-  The lesson only teaches flying: what to poop on, and what the ocean's
-  jellyfish and sharks do, is left for the player to discover.
+     "Squeeze & relax to stay up" until three poops (or 20 s), then "Nice
+     flying!". The lesson counts as seen, and the calm ends (and the coach
+     goes) once the bird is clear of the street (or after 8 s); the first
+     obstacle comes `firstObstacleDelay` later, unannounced.
+  The lesson only teaches flying: the buildings, what to poop on, and what
+  the ocean's jellyfish and sharks do are left for the player to discover.
   An accident (held too long) shows "Too long! Relax as soon as it's full".
   The perch part and the city part are remembered separately (`perch`,
   `city` in `TUTORIALS`).

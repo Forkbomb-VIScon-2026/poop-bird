@@ -1282,8 +1282,8 @@ const PERCH_FULL: PerchLine = { face: "Relax to fly! 🚀", faceHint: "", keys: 
 /** Charge at which a poop off the perch takes off: full. */
 const TAKEOFF_CHARGE = 1;
 
-/** The flight lesson's steps, for the coach's dots: three on the perch, two in the city. */
-const LESSON_STEPS_TOTAL = 5;
+/** The flight lesson's steps, for the coach's dots: three on the perch, one in the city. */
+const LESSON_STEPS_TOTAL = 4;
 const PERCH_DOT: Partial<Record<PerchStep, number>> = { strain: 0, relax: 1, pushed: 1, fill: 2 };
 
 function enterPerchStep(step: PerchStep): void {
@@ -1422,7 +1422,7 @@ function takeOff(): void {
 /**
  * A new player's first flight: the city stays calm (Game.calmCity: no
  * obstacles, the street bounces the bird back up) while the coach teaches
- * staying up, then the buildings come. Each step moves on once
+ * staying up, then the buildings come unannounced. Each step moves on once
  * it's done, or after a while anyway. Belongs to the run's flow token.
  */
 async function runCityLesson(): Promise<void> {
@@ -1467,12 +1467,11 @@ async function runCityLesson(): Promise<void> {
 
   // Seen from here on, so a player who crashes soon after doesn't get the whole lesson again.
   markTutorialSeen("city");
-  say(4, "Now dodge the buildings!", "Fly through the gaps", null);
   // The street stops bouncing once the bird is clear of it (or after a while), so the handoff isn't a crash.
+  // The last line stays up until then; the buildings that follow are for the player to discover.
   const clear = (): boolean => game.bird.y + BIRD_RADIUS < GROUND_Y - 120;
   if ((await until(clear, 8000)) === null) return abandon();
   game.calmCity = false;
-  if ((await until(() => false, 3500)) === null) return abandon();
   releaseCoach(owner);
 }
 
