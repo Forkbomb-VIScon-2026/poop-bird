@@ -2078,6 +2078,12 @@ function focusHandlesEnter(): boolean {
 
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
+  // Esc closes the settings too. Done takes Enter, and a screen's yellow button takes no other key (keyhints.ts).
+  if (e.key === "Escape" && !settingsPanel.classList.contains("hidden")) {
+    e.preventDefault();
+    if (!e.repeat && performance.now() >= buttonKeysArmedAt) pressFromKey($<HTMLButtonElement>("btn-settings-done"));
+    return;
+  }
   // Each button takes the one key on its badge: Enter for a screen's yellow button, else its own (keyhints.ts).
   if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const name = keyName(e);
