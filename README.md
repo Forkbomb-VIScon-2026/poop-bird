@@ -98,6 +98,11 @@ wording instead of key hints (`.kbd-only` / `.touch-only` in the HTML), and
   (Android; iOS has no vibration API).
 - Short landscape screens get compact cards: the webcam sits next to the
   calibration card, and the game-over card puts its buttons first.
+- The game-over card shows the run in pictures, all in one row: your finest
+  strain as a polaroid (face mode), then every front page, wedding photo and
+  the fisherman's trophy photo in the order they were taken. When they don't
+  fit, they overlap like a pile of prints (hover one to lift it), and past
+  that the row scrolls sideways.
 - If face tracking runs below `slowDetectionRate` detections per second, the
   perch suggests playing with touch or the keyboard instead.
 
@@ -212,7 +217,7 @@ Practice poops score nothing, and the lamp and its nest scroll away with the str
     guests and the bird photobombing from the corner, blissfully relieved if
     it just ruined everything. In face mode the bird has the player's face,
     grabbed at "KISS!" (when they should be straining hardest). The game-over
-    screen shows the run's last ruined wedding (or the last wedding).
+    screen shows every wedding of the run.
   Tunables are in the debug panel's "Wedding" group.
 - **Hot-air balloons:** some city obstacles are a balloon drifting along with
   the wind (`balloonChance`). Fly through the envelope (or poop on it) and it

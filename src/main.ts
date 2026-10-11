@@ -1564,55 +1564,16 @@ function onGameOver(): void {
   $("go-scandals").textContent = String(game.frontPages.length);
   $("go-kids").textContent = String(game.kidsDisarmed + game.pebblesShot);
   $("go-weddings").textContent = String(game.weddingsRuined);
-
-  // The wedding album: the last ruined wedding if there was one (that's the good one).
-  const wedding = game.weddingPhotos.filter((p) => p.ruined).at(-1) ?? game.weddingPhotos.at(-1) ?? null;
-  show($("go-wedding"), wedding !== null);
-  if (wedding) {
-    const wc = $<HTMLCanvasElement>("go-wedding-canvas");
-    const wctx = wc.getContext("2d");
-    if (wctx) {
-      wctx.setTransform(1, 0, 0, 1, 0, 0);
-      wctx.clearRect(0, 0, wc.width, wc.height);
-      wctx.scale(wc.width / 250, wc.width / 250);
-      drawWeddingPrint(wctx, 2, 2, 240, wedding, renderer.photos.get(wedding.photoId));
-    }
-  }
   $("go-balloons").textContent = String(game.balloonsPopped);
   $("go-lines").textContent = String(game.anglersSnapped);
   $("go-sharks").textContent = String(game.sharksSpiked);
 
-  // Landed by the fisherman: his trophy photo.
-  show($("go-trophy"), game.trophy !== null);
-  if (game.trophy !== null) {
-    const tc = $<HTMLCanvasElement>("go-trophy-canvas");
-    const tctx = tc.getContext("2d");
-    if (tctx) {
-      tctx.setTransform(1, 0, 0, 1, 0, 0);
-      tctx.clearRect(0, 0, tc.width, tc.height);
-      tctx.scale(tc.width / 250, tc.width / 250);
-      drawTrophyPrint(tctx, 2, 2, 240, renderer.photos.get(game.trophy));
-    }
-  }
-
-  // The last photo that got away makes tomorrow's paper.
-  const front = game.frontPages.at(-1) ?? null;
-  show($("go-frontpage"), front !== null);
-  if (front) {
-    const fp = $<HTMLCanvasElement>("go-frontpage-canvas");
-    const fctx = fp.getContext("2d");
-    if (fctx) {
-      fctx.setTransform(1, 0, 0, 1, 0, 0);
-      fctx.clearRect(0, 0, fp.width, fp.height);
-      fctx.scale(fp.width / 200, fp.height / 240);
-      drawFrontPage(fctx, 2, 2, 196, 236, front, renderer.photos);
-    }
-  }
-
   currentSnapshotUrl = mode === "face" ? snapshot.toDataURL() : null;
   show($("go-snapshot"), currentSnapshotUrl !== null);
+  show($("go-snapshot-actions"), currentSnapshotUrl !== null);
   if (currentSnapshotUrl) $<HTMLImageElement>("go-snapshot-img").src = currentSnapshotUrl;
   $("go-strain").textContent = String(strainPercent(snapshot.peakStrain));
+  showRunPhotos();
 
   // Only runs played with the face count: keyboard and touch runs can't be submitted.
   lastRun = mode !== "face" ? null : {
@@ -1632,6 +1593,57 @@ function onGameOver(): void {
   show(status, lastRun === null);
   void showBoards($("go-lb"));
   showScreen("gameover");
+}
+
+/** The game-over prints' canvases have this many pixels per logical unit, so they stay sharp. */
+const PRINT_SCALE = 2;
+
+/**
+ * The run in pictures on the game-over screen, all on one level: the finest
+ * strain (static in index.html, first), then every front page, wedding photo
+ * and the trophy photo in the order they were taken (photo ids count up).
+ */
+function showRunPhotos(): void {
+  const strip = $("go-photos");
+  for (const el of strip.querySelectorAll(".go-print:not(#go-snapshot)")) el.remove();
+  type Print = { photoId: number; title: string; kind: string; w: number; h: number; draw: (ctx: CanvasRenderingContext2D) => void };
+  const prints: Print[] = [
+    ...game.frontPages.map((t): Print => ({
+      photoId: t.photoId, title: "Tomorrow's front page", kind: "frontpage", w: 200, h: 240,
+      draw: (ctx) => drawFrontPage(ctx, 2, 2, 196, 236, t, renderer.photos),
+    })),
+    ...game.weddingPhotos.map((w): Print => ({
+      photoId: w.photoId, title: "The official wedding photo", kind: "wedding", w: 250, h: 235,
+      draw: (ctx) => drawWeddingPrint(ctx, 2, 2, 240, w, renderer.photos.get(w.photoId)),
+    })),
+  ];
+  const trophy = game.trophy;
+  if (trophy !== null) {
+    prints.push({
+      photoId: trophy, title: "Catch of the day", kind: "trophy", w: 250, h: 235,
+      draw: (ctx) => drawTrophyPrint(ctx, 2, 2, 240, renderer.photos.get(trophy)),
+    });
+  }
+  prints.sort((a, b) => a.photoId - b.photoId);
+  for (const p of prints) {
+    const figure = document.createElement("figure");
+    figure.className = `go-print ${p.kind}`;
+    figure.title = p.title;
+    const c = document.createElement("canvas");
+    c.width = p.w * PRINT_SCALE;
+    c.height = p.h * PRINT_SCALE;
+    c.setAttribute("role", "img");
+    c.setAttribute("aria-label", p.title);
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      ctx.scale(PRINT_SCALE, PRINT_SCALE);
+      p.draw(ctx);
+    }
+    figure.append(c);
+    strip.append(figure);
+  }
+  show(strip, prints.length > 0 || currentSnapshotUrl !== null);
+  strip.scrollLeft = 0;
 }
 
 /** Sends the game-over screen's run to the online leaderboard (only when the player presses Submit). */

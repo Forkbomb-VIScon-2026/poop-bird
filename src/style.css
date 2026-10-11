@@ -1243,11 +1243,16 @@ svg.face.gauge-face {
 
 /* --- Game over ----------------------------------------------------------------- */
 
-.go-grid {
+#screen-gameover .card.wide {
+  max-width: 860px;
+}
+
+/* Score on the left, the stats in two columns beside it. */
+.go-head {
   display: flex;
-  gap: 20px;
+  gap: 8px 28px;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: wrap;
 }
 
@@ -1272,13 +1277,23 @@ svg.face.gauge-face {
 }
 
 .go-table {
-  margin: 10px auto 0;
   border-collapse: collapse;
   font-size: 15px;
 }
 
+.go-table tbody {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  column-gap: 24px;
+}
+
+.go-table tr {
+  display: flex;
+  justify-content: space-between;
+}
+
 .go-table td {
-  padding: 2px 10px;
+  padding: 1px 6px;
 }
 
 .go-table td:first-child {
@@ -1291,53 +1306,131 @@ svg.face.gauge-face {
   font-weight: 800;
 }
 
-.go-snapshot {
+/*
+ * The run in pictures, all on one level and the same height. When they don't
+ * fit, they overlap like prints dropped on a table (each print shrinks its box,
+ * not its picture; the last one keeps its box so nothing hangs off the end),
+ * and hovering one lifts it on top. Past that, the row scrolls sideways.
+ */
+.go-photos {
+  --print-h: 210px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  flex-shrink: 0;
+  align-items: flex-end;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 18px 16px 16px;
+  margin: 6px -12px 0;
 }
 
-.go-snapshot-title {
-  font-weight: 800;
+/* Centred while the prints fit, without cutting off the first one when they scroll. */
+.go-photos::before,
+.go-photos::after {
+  content: "";
+  margin: auto;
 }
 
-.go-snapshot img {
-  width: 200px;
-  border: 4px solid var(--ink);
-  border-radius: 12px;
-  transform: rotate(-2deg);
-  box-shadow: 0 5px 0 var(--ink);
-  background: #000;
+.go-print {
+  position: relative;
+  margin: 0 6px;
+  flex: 0 1 auto;
+  min-width: 44px;
+  transition: transform 0.15s ease-out;
+  animation: print-drop 0.45s ease-out backwards;
 }
 
-.go-frontpage {
-  width: 200px;
-  height: 240px;
-  transform: rotate(2deg);
+.go-print:last-child {
+  flex-shrink: 0;
+}
+
+.go-print:nth-child(4n + 1) { --tilt: -2.5deg; }
+.go-print:nth-child(4n + 2) { --tilt: 1.8deg; }
+.go-print:nth-child(4n + 3) { --tilt: -1deg; }
+.go-print:nth-child(4n + 4) { --tilt: 2.6deg; }
+
+.go-print:nth-child(2) { animation-delay: 0.08s; }
+.go-print:nth-child(3) { animation-delay: 0.16s; }
+.go-print:nth-child(4) { animation-delay: 0.24s; }
+.go-print:nth-child(n + 5) { animation-delay: 0.32s; }
+
+.go-print > * {
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.15s ease-out;
+}
+
+.go-print:hover {
+  z-index: 2;
+  transform: translateY(-8px);
+}
+
+.go-print:hover > * {
+  transform: rotate(0deg) scale(1.04);
+}
+
+@keyframes print-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-24px) rotate(-6deg);
+  }
+}
+
+.go-print canvas {
+  display: block;
+  height: var(--print-h);
+  width: auto;
+}
+
+.go-print.frontpage canvas {
   filter: drop-shadow(0 5px 0 var(--ink));
 }
 
-.go-wedding {
-  width: 250px;
-  height: 235px;
-  transform: rotate(-1.5deg);
+/* The finest strain as a polaroid: white frame, wide bottom edge with the caption. */
+.go-polaroid {
+  width: max-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #fffdf7;
+  border: 3px solid var(--ink);
+  box-shadow: 0 5px 0 var(--ink);
+  padding: 8px 8px 4px;
 }
 
-.go-trophy {
-  width: 250px;
-  height: 235px;
-  transform: rotate(1.5deg);
+.go-polaroid img {
+  display: block;
+  height: calc(var(--print-h) - 62px);
+  width: auto;
+  background: #000;
+}
+
+.go-polaroid figcaption {
+  font: italic 700 15px "Comic Sans MS", "Trebuchet MS", cursive;
+  margin-top: 4px;
+  white-space: nowrap;
 }
 
 .go-strain {
   font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .go-strain b {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   color: var(--accent);
+}
+
+.go-snapshot-actions {
+  display: flex;
+  gap: 4px 10px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.go-snapshot-actions .privacy {
+  margin: 0;
 }
 
 .go-lb-form {
@@ -1677,6 +1770,10 @@ body.debug-open #cam {
   .hud-score {
     font-size: 34px;
   }
+
+  .go-photos {
+    --print-h: 150px;
+  }
 }
 
 /* Phones in landscape: little height. Compact cards, the webcam beside the calibration card. */
@@ -1838,7 +1935,7 @@ body.debug-open #cam {
     margin: 4px 0 8px;
   }
 
-  .go-grid {
+  .go-head {
     flex-wrap: nowrap;
     gap: 16px;
   }
@@ -1847,33 +1944,29 @@ body.debug-open #cam {
     font-size: 44px;
   }
 
-  /* The stats in two columns. */
   .go-table {
     font-size: 13px;
   }
 
   .go-table tbody {
-    display: grid;
-    grid-template-columns: repeat(2, auto);
     column-gap: 20px;
-  }
-
-  .go-table tr {
-    display: flex;
-    justify-content: space-between;
   }
 
   .go-table td {
     padding: 0 4px;
   }
 
-  .go-snapshot img,
-  .go-frontpage {
-    width: 120px;
+  .go-photos {
+    --print-h: 120px;
+    padding: 10px 12px 12px;
   }
 
-  .go-frontpage {
-    height: 144px;
+  .go-polaroid img {
+    height: calc(var(--print-h) - 50px);
+  }
+
+  .go-polaroid figcaption {
+    font-size: 12px;
   }
 
   .go-lb-form {
