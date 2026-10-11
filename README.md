@@ -66,7 +66,7 @@ starts the face dataset collector (local credentials `local` /
 | **P** / ⏸ button | Pause, and resume |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
 | **Enter** | Press the yellow button on any screen (Play, Play again…). Every button takes exactly one key, the one on the keycap badge on its corner |
-| **K** | Menu: play with the keyboard |
+| **K** | Menu settings (the gear): play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
 | **Q** | Pause: back to the menu |
 | **Esc** | Calibration and game over: back to the menu |

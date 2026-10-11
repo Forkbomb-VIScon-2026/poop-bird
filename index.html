@@ -82,6 +82,17 @@
               <input type="checkbox" id="opt-rtx" class="switch" />
             </label>
           </fieldset>
+          <!-- From the menu only (the menu's gear): playing without the camera. -->
+          <fieldset id="settings-nocam" class="settings-group">
+            <legend>No camera?</legend>
+            <div class="setting">
+              <span class="setting-text">
+                <b>Play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span></b>
+                <small><span class="kbd-only">Hold Space or the mouse</span><span class="touch-only">Hold the screen</span> instead of straining. These runs don't go on the leaderboard.</small>
+              </span>
+              <button id="btn-keyboard" class="btn icon" data-keys="K" aria-label="Play without the camera" title="Play without the camera"><svg class="kbd-only kbd-icon" viewBox="0 0 40 26" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="23" rx="4" fill="#fff" stroke="currentColor" stroke-width="3" /><g fill="currentColor"><rect x="7" y="7" width="4" height="4" rx="1" /><rect x="14" y="7" width="4" height="4" rx="1" /><rect x="21" y="7" width="4" height="4" rx="1" /><rect x="28" y="7" width="4" height="4" rx="1" /><rect x="11" y="15" width="18" height="4" rx="1" /></g></svg><span class="touch-only">👆</span></button>
+            </div>
+          </fieldset>
           <div class="buttons">
             <button id="btn-settings-done" class="btn primary" data-default>Done</button>
           </div>
@@ -127,7 +138,6 @@
           <p class="tagline">Strain your face. Fly the bird. 💩</p>
           <div class="start-play">
             <button id="btn-face" class="btn primary big" data-default>😣 Play</button>
-            <button id="btn-keyboard" class="btn icon" data-keys="K" aria-label="Play without the camera" title="Play without the camera"><svg class="kbd-only kbd-icon" viewBox="0 0 40 26" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="23" rx="4" fill="#fff" stroke="currentColor" stroke-width="3" /><g fill="currentColor"><rect x="7" y="7" width="4" height="4" rx="1" /><rect x="14" y="7" width="4" height="4" rx="1" /><rect x="21" y="7" width="4" height="4" rx="1" /><rect x="28" y="7" width="4" height="4" rx="1" /><rect x="11" y="15" width="18" height="4" rx="1" /></g></svg><span class="touch-only">👆</span></button>
             <button id="btn-leaderboard" class="btn icon" data-keys="L" aria-label="Leaderboard" title="Leaderboard">🏆</button>
           </div>
           <label class="opt light" title="Show tips, like how to swim in the ocean"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here</label>
