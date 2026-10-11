@@ -1742,6 +1742,8 @@ export class Game {
   /** It bit into the spines: it yelps and flees, and the fish gets knocked back a little. */
   private spikeShark(s: Shark): void {
     this.setSharkState(s, "fleeing");
+    // Beaten: its music cuts out right away.
+    this.sharkTheme = null;
     s.vx = 120;
     s.vy = -60;
     this.sharksSpiked++;

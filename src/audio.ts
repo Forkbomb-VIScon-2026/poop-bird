@@ -199,8 +199,9 @@ export class Sound {
     if (playing) {
       const drift = ctx.currentTime - playing.zeroAt - (position ?? Infinity);
       if (Math.abs(drift) < 0.3) return;
-      playing.sound.gain.gain.setTargetAtTime(0, ctx.currentTime, position === null ? 0.25 : 0.02);
-      playing.sound.source.stop(ctx.currentTime + (position === null ? 1.2 : 0.1));
+      // Stopping: a quick fade, so it's gone at once without a click.
+      playing.sound.gain.gain.setTargetAtTime(0, ctx.currentTime, position === null ? 0.06 : 0.02);
+      playing.sound.source.stop(ctx.currentTime + (position === null ? 0.4 : 0.1));
       this.theme = null;
     }
     const buffer = this.buffers.get("shark_theme");

@@ -257,6 +257,7 @@ describe("sharks", () => {
     expect(game.eaten).toBe(false);
     expect(game.shark?.state).toBe("fleeing");
     expect(game.sharksSpiked).toBe(1);
+    expect(game.sharkTheme).toBeNull(); // its music stops at once
     expect(game.bonus).toBeGreaterThan(bonus);
   });
 });

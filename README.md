@@ -254,7 +254,7 @@ city by city (the debug panel's "Progression" group).
   before it shows up: `shark_theme.mp3` (the Jaws theme, from the second
   "do-doop"), timed so the shark shows up as the attack music kicks in
   (17.5 s into the track) and lunges on the swell `sharkThemeAttack` (16.6 s) in, and kept in
-  sync across pauses (`Game.sharkTheme` is the clock). No new obstacles spawn
+  sync across pauses (`Game.sharkTheme` is the clock). It cuts out the moment the shark bites into the spines; if it eats you, it plays on until the shark is gone. No new obstacles spawn
   in the last seconds before it arrives. Without that file, a synthesized
   two-note "dun-dun" plays instead, speeding up as it closes in. The shark
   glides in from ahead at the fish's depth for `sharkStalkTime`, stops, opens its jaws and a "!" pops over it,
