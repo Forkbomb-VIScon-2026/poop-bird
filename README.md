@@ -68,6 +68,7 @@ starts the face dataset collector (local credentials `local` /
 | **R** | Play again from game over |
 | **K** | Menu: play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
+| **2** / 👯 button | Menu: [two players](#two-players-the-doo-el) (W A D and ↑ ← → in that mode) |
 | **Esc** | Calibration, game over and the leaderboard: back to the menu |
 | **C** | Re-run calibration |
 | **N** | Face mode: track another face (if the wrong person got picked) |
@@ -774,10 +775,115 @@ by a hash of their code); score them with `npm run eval -- --holdout` only
 when a change is ready to merge. Older debug-recorder clips
 (`poopbird-face-*.json`) still work: put them in `data/local/`.
 
+## Two players: the Doo-el
+
+Menu → **👯 2 players** (**2**; not on phones). Two people sit side by side
+in front of one laptop webcam and race two birds down a city avenue, seen
+from behind (pseudo-3D, drawn with canvas 2D). Player 1 is the left bird and
+the person on the left of the (mirrored) webcam image, Player 2 the right.
+
+- **Squeeze to fly, relax to poop**: the same charge, sweet spot and
+  overstrain accident as the main game (`charge.ts`), and the same gravity
+  and pushes, over an altitude range about the main playfield's height.
+- **Spread your wings 🪽 and tilt to steer.** Steering is your head's roll
+  (bank): tilt toward a shoulder and the bird turns that way, keep your head
+  level and it flies straight. Holding your arms out like wings is optional
+  theatre; only the head tilt is measured (from the eye corners, relative to
+  your natural tilt at the seat check, with a 5° dead zone). Arms aren't
+  tracked: with two people at a laptop they leave the frame and overlap, and
+  a pose model on top of two face trackers costs too much.
+- **Poop on your friend.** A poop keeps the bird's forward speed, so it falls
+  straight down: on the rival below you (stun, knock-down, +300), on the cars,
+  pedestrians and the ×2 statue on the median (points × combo, like the main
+  game), or on the street (combo lost). A bird that was just hit is immune
+  for a moment, so one barrage can't stun-lock it.
+- **Gates** come down the avenue: footbridges, banners across part of the
+  road, power lines, and arches with one hole. Every gate leaves an opening
+  at least `duelMinOpening` wide and high (`gatePassable`, tested over many
+  seeds). The ceiling is soft: you bump off it.
+- **Crashes** (a gate, the street, the statue) cost `duelCrashPenalty`
+  points (never below 0) and a short tumble; the bird respawns in its lane
+  with a shield. Nobody is ever out: both play the whole match.
+- **Reading depth**: a shadow under each bird, a landing reticle on the
+  street where a poop released now would land (it moves as you charge), a
+  green/red ring on the next gate where your bird would cross it, and fog.
+- The match lasts `duelMatchTime` (75 s). A FINISH arch, then the results:
+  the winner (with a crown), each player's targets / rival splats / crashes,
+  both finest-strain photos side by side and "😣 Most strained face".
+  **Rematch** (Enter) keeps the seats and calibrations.
+
+The seat check: the webcam image split into two seats. A face in a seat gets
+a quick relaxed read (as the main game's default calibration), then
+"Squeeze! 😣" until its gauge passes the 💩 line: that's the whole tutorial,
+and proves detection works for both. Either player can press their strain
+key instead to play with keys, and both can without a camera at all.
+
+| Input | Player 1 | Player 2 |
+| --- | --- | --- |
+| Squeeze (hold) | **W** or your face | **↑** or your face |
+| Steer | **A** / **D** or tilt your head | **←** / **→** or tilt your head |
+| Pause / resume | **P** / Esc | |
+| Mute | **M** | |
+
+**Who is who.** Never mixing up the players is the hard part, so identity is
+structural and layered, and the rule is "when in doubt, freeze and ask":
+
+1. *One face lock per player*, like the main game's lock (`face.ts`): each
+   player has their own MediaPipe landmarker that only ever sees a crop
+   around their own face, with the other player's face painted over. It
+   can't jump to the other player, because they're not in its input. A lock
+   that jumps more than a face width in a frame isn't followed.
+2. *Face recognition* confirms the locks about every 0.75 s: dlib's ResNet
+   face model (128-d descriptors, run by `@vladmandic/face-api`'s
+   FaceRecognitionNet on crops aligned from MediaPipe's eye landmarks)
+   against a small gallery per player, enrolled relaxed and strained at the
+   seat check and in the first seconds of the match. If "swapped" explains
+   both faces better than "as is" on two checks in a row, the locks change
+   owners: players who swap seats keep their own birds, scores and
+   calibrations ("🔄 Players swapped seats"). A face far from both
+   galleries is a stranger and never gets a slot. Unclear checks change
+   nothing.
+3. *Guards*: two locks on one face (one is dropped), a face out of view for
+   `duelLostPause` (pause: "Player 2, come back into view!"), a stranger in
+   a seat (pause: "Who's that?"). Lost players are searched for only while
+   the game is paused, and it resumes (with a 3-2-1) once both are back and
+   confirmed.
+4. *Without the recognition model* (it failed to load): seat sides (P1 on
+   the left) and a coarse colour signature of each player's clothes and hair.
+   A swap then can't be resolved, so the game pauses and asks: "Player 1 sits
+   on the left, Player 2 on the right!".
+
+In debug mode (`npm run dev:debug`) a small webcam view shows both crops,
+masks and locks with each player's distances to both galleries, and
+`window.poopBird.duel` has the identity event counts. **J** skips the Squeeze
+step and **G** brings a gate (D steers Player 1, so the tuning panel can't
+open in this mode). The "Two players" group of the panel has the tunables.
+
+**Privacy.** Nothing in two-player mode leaves the device or is stored. The
+face descriptors are biometric data: they are computed and kept in memory
+only for the current session, never stored (no localStorage or IndexedDB)
+and never sent anywhere; leaving the mode drops them (a rematch keeps them).
+The seat check says so. Two-player calibrations, the colour signatures and
+the finest-strain photos live in memory the same way. Two-player runs never
+reach the leaderboard, the best score, the saved calibrations or the
+tutorial list. The recognition code and weights are loaded only when the
+mode starts and served from this site (`public/faceid`, copied from
+`node_modules` on install), never from a CDN.
+
+**Credits.** The face recognition weights are dlib's
+`dlib_face_recognition_resnet_model_v1`, released into the public domain by
+Davis King ([dlib-models](https://github.com/davisking/dlib-models)), as
+packaged by [@vladmandic/face-api](https://github.com/vladmandic/face-api)
+(MIT). InsightFace's ArcFace/MobileFaceNet weights were not used: they're
+licensed for non-commercial research only.
+
 ## Privacy
 
 - Video frames go to MediaPipe running in the page (WASM/WebGL) and nowhere
   else.
+- Two-player mode: face descriptors (for telling the players apart), its
+  calibrations and the finest-strain photos stay in memory for the session
+  and are never stored or sent. See [Two players](#two-players-the-doo-el).
 - The "finest strain" snapshot is taken in every face-mode run. It's a 200 px
   JPEG of your face at its most strained, kept in memory and shown on the
   game-over screen. It leaves the device only if you submit the run to the
@@ -815,6 +921,13 @@ src/
   leaderboard.ts       leaderboard format, checks, ranking (shared with the collector)
   leaderboard-view.ts  the boards in the page: fetch, submit, remove, draw
   main.ts       screens, input, loops, calibration flow
+  duel.ts       two players: the Doo-el simulation (pure)              duel.test.ts
+  duo.ts        two players: identity, guards, head-bank steering (pure) duo.test.ts
+  duel-camera.ts  two players: pinhole projection (pure, tested in duel.test.ts)
+  duo-face.ts   two players: per-player face locks + identity checks
+  faceid.ts     two players: face recognition (lazy-loaded face-api)
+  duel-render.ts  two players: pseudo-3D canvas drawing, HUD, seat check
+  duel-main.ts  two players: screens, loop, input, sound, results
   session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
   collect.ts    the dataset recorder page (collect.html)
 collector/
@@ -823,7 +936,7 @@ collector/
   http.ts       helpers shared by both
   Dockerfile
 scripts/
-  copy-wasm.mjs    node_modules → public/mediapipe/wasm
+  copy-wasm.mjs    node_modules → public/mediapipe/wasm, public/faceid
   fetch-model.mjs  downloads face_landmarker.task
   data.ts          data:pull / data:purge
   leaderboard.ts   leaderboard moderation: list and remove runs
