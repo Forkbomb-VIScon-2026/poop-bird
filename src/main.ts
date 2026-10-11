@@ -682,7 +682,6 @@ async function runCalibration(forced = calib.forced): Promise<void> {
  * face goes on to the perch). false = abandoned, or the face was known.
  */
 async function welcome(token: number): Promise<boolean> {
-  $("calib-step").textContent = "Calibration";
   $("calib-prompt").textContent = "Hi! 👋 Just look at the camera for a moment";
   screens.calibrate.classList.add("welcome");
   show($("calib-buttons"), false);
@@ -817,11 +816,9 @@ function puffRetryReason(reason: string | undefined): string {
 
 const CALIB_TEXT = {
   strain: {
-    step: "Calibration 1/2: poop face",
     prompt: "Strain like you really need to go 💩",
   },
   puff: {
-    step: "Calibration 2/2: pufferfish face",
     prompt: "Puff your cheeks like a pufferfish 🐡",
   },
 };
@@ -834,7 +831,6 @@ const CALIB_TEXT = {
  */
 async function calibrationIntro(token: number, phase: "strain" | "puff", tries: number): Promise<"go" | "skip" | null> {
   const text = CALIB_TEXT[phase];
-  $("calib-step").textContent = text.step;
   $("calib-prompt").textContent = text.prompt;
   $<HTMLImageElement>("calib-example").src = examples[phase];
   screens.calibrate.querySelector(".calib")!.classList.remove("holding");
