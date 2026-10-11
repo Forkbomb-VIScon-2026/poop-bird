@@ -2471,6 +2471,7 @@ on("btn-calib-keyboard", () => {
   startKeyboardMode();
 });
 on("btn-calib-cancel", goToMenu);
+on("btn-perch-menu", goToMenu);
 on("btn-tune", () => void recalibrate());
 on("btn-perch-keyboard", () => {
   goLandscape();
