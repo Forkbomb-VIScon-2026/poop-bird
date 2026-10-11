@@ -190,6 +190,7 @@ let faceStrain = 0;
 const seenWithoutFace = new Set<Tutorial>();
 
 sound.setMuted(storageGet("poopybird.muted.v1") === "1");
+void sound.preload();
 
 /** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
 function manualHeld(): boolean {
@@ -529,7 +530,7 @@ function updateStrainBars(): void {
 
 async function startFaceMode(forceCalibrate = false): Promise<void> {
   const token = ++flow;
-  sound.unlock();
+  const audioReady = sound.unlock();
   mode = "face";
   // A camera that wasn't on yet locks onto a face that may be anyone.
   const freshCamera = !tracker.ready;
@@ -560,6 +561,9 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
       return;
     }
   }
+  if (!sound.ready) showAudioLoading();
+  await audioReady;
+  if (token !== flow) return releaseCameraIfUnused();
   tracker.start();
   if (freshCamera) newFaceLock();
   else void recognizeFace();
@@ -571,11 +575,26 @@ async function startFaceMode(forceCalibrate = false): Promise<void> {
   else await runCalibration(forceCalibrate);
 }
 
-function startKeyboardMode(): void {
-  sound.unlock();
+/** Reuse the startup card while a cold audio cache finishes decoding. */
+function showAudioLoading(): void {
+  state = "loading";
+  showScreen("loading");
+  show(hud, false);
+  $("loading-title").textContent = "Warming up…";
+  $("loading-text").textContent = "Loading sounds…";
+  show($("loading-spinner"), true);
+  show($("loading-error"), false);
+}
+
+async function startKeyboardMode(): Promise<void> {
+  const token = ++flow;
+  const audioReady = sound.unlock();
   mode = "keyboard";
   tracker.stopCamera();
   show(cam, false);
+  if (!sound.ready) showAudioLoading();
+  await audioReady;
+  if (token !== flow) return;
   startReady();
 }
 
@@ -1185,13 +1204,17 @@ function hideToast(): void {
  * Debug: a fresh run that dives straight into the ocean (no city). From the
  * menu it starts in keyboard mode; mid-calibration it does nothing.
  */
-function startOceanRun(): void {
+async function startOceanRun(): Promise<void> {
   if (state === "loading" || state === "calibrating") return;
+  const token = ++flow;
+  const audioReady = sound.unlock();
   if (state === "menu") {
-    sound.unlock();
     mode = "keyboard";
     tracker.stopCamera();
   }
+  if (!sound.ready) showAudioLoading();
+  await audioReady;
+  if (token !== flow) return;
   startReady(true);
 }
 
@@ -2020,6 +2043,7 @@ function focusHandlesEnter(): boolean {
 
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
+  if (!e.repeat) void sound.unlock();
   // Esc closes the settings too. Done takes Enter, and a screen's yellow button takes no other key (keyhints.ts).
   if (e.key === "Escape" && !settingsPanel.classList.contains("hidden")) {
     e.preventDefault();
@@ -2116,7 +2140,7 @@ function gameButton(target: EventTarget | null): HTMLButtonElement | null {
 }
 
 function buttonClick(): void {
-  sound.unlock();
+  void sound.unlock();
   sound.buttonClick();
 }
 
@@ -2131,7 +2155,7 @@ document.addEventListener("click", (e) => {
 canvas.addEventListener("pointerdown", (e) => {
   if (state !== "playing" && state !== "ready") return;
   e.preventDefault();
-  sound.unlock();
+  void sound.unlock();
   heldPointers.add(e.pointerId);
   canvas.setPointerCapture?.(e.pointerId);
 });

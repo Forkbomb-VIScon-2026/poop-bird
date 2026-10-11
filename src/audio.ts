@@ -1,4 +1,3 @@
-
 import { SOUND_NAMES, type SoundName } from "./audio-assets";
 
 export type PoopSize = "weak" | "middle" | "large";
@@ -6,6 +5,22 @@ export type PoopSize = "weak" | "middle" | "large";
 type ActiveSound = { source: AudioBufferSourceNode; gain: GainNode };
 
 const CURSE_SOUNDS = SOUND_NAMES.filter((name) => name.startsWith("curse_"));
+
+/** Keep a small pre-roll; only skip a measurable quiet lead-in, never music or a loop. */
+function effectOffset(buffer: AudioBuffer): number {
+  let first = buffer.length;
+  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+    const samples = buffer.getChannelData(channel);
+    for (let i = 0; i < first; i++) {
+      if (Math.abs(samples[i]) >= 0.001) { // -60 dBFS
+        first = i;
+        break;
+      }
+    }
+  }
+  const seconds = first / buffer.sampleRate;
+  return first < buffer.length && seconds > 0.02 ? Math.max(0, seconds - 0.005) : 0;
+}
 
 function shuffle<T>(items: T[]): T[] {
   for (let i = items.length - 1; i > 0; i--) {
@@ -22,6 +37,10 @@ export class Sound {
   /** The shark's music, and the context time at which its position 0 would have played. */
   private theme: { sound: ActiveSound; zeroAt: number } | null = null;
   private readonly buffers = new Map<SoundName, AudioBuffer>();
+  private readonly offsets = new Map<SoundName, number>();
+  private loading: Promise<void> | null = null;
+  private loaded = false;
+  private resuming: Promise<void> | null = null;
   private readonly active = new Map<SoundName, ActiveSound>();
   private powerLine: ActiveSound | null = null;
   private cursing: ActiveSound | null = null;
@@ -52,6 +71,9 @@ export class Sound {
         const buffer = await fetchAudio(`${prefix}.${extension}`);
         if (buffer) {
           this.buffers.set(name, buffer);
+          if (name !== "shark_theme" && name !== "power_line") {
+            this.offsets.set(name, effectOffset(buffer));
+          }
           return;
         }
       }
@@ -60,24 +82,40 @@ export class Sound {
     console.warn(`[audio] missing or unsupported audio for ${name} (opus/mp3/wav)`);
   }
 
-  /** Call after a user gesture to satisfy browser autoplay restrictions. */
-  unlock(): void {
+  /** Decode during the menu, even while autoplay keeps the context suspended. */
+  preload(): Promise<void> {
+    if (this.loading) return this.loading;
     try {
       if (!this.ctx) {
-        this.ctx = new AudioContext();
+        this.ctx = new AudioContext({ latencyHint: "interactive" });
         this.master = this.ctx.createGain();
         this.master.gain.value = this.muted ? 0 : 0.6;
         this.master.connect(this.ctx.destination);
-
-        for (const name of SOUND_NAMES) {
-          void this.load(name);
-        }
       }
-
-      if (this.ctx.state === "suspended") void this.ctx.resume();
+      this.loading = Promise.all(SOUND_NAMES.map((name) => this.load(name))).then(() => {
+        this.loaded = true;
+      });
     } catch (error) {
       console.warn("[audio] unavailable", error);
+      // Audio is optional: an unsupported API must not block starting the game.
+      this.loaded = true;
+      this.loading = Promise.resolve();
     }
+    return this.loading;
+  }
+
+  get ready(): boolean { return this.loaded; }
+
+  /** Call synchronously from a user gesture, then await before starting gameplay. */
+  unlock(): Promise<void> {
+    const loading = this.preload();
+    const ctx = this.ctx;
+    if (ctx && ctx.state !== "running" && ctx.state !== "closed" && !this.resuming) {
+      this.resuming = ctx.resume().catch((error: unknown) => {
+        console.warn("[audio] could not resume", error);
+      }).finally(() => { this.resuming = null; });
+    }
+    return Promise.all([loading, this.resuming]).then(() => {});
   }
 
   setMuted(muted: boolean): void {
@@ -110,7 +148,8 @@ export class Sound {
     const ctx = this.ctx;
     const buffer = this.buffers.get(name);
 
-    if (!ctx || !this.master || !buffer) return null;
+    // Don't queue stale effects on a stopped audio clock to burst out on resume.
+    if (!ctx || ctx.state !== "running" || !this.master || !buffer) return null;
 
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
@@ -119,7 +158,7 @@ export class Sound {
     gain.gain.value = Math.max(0, volume);
 
     source.connect(gain).connect(this.master);
-    source.start(ctx.currentTime + Math.max(0, delay));
+    source.start(ctx.currentTime + Math.max(0, delay), this.offsets.get(name) ?? 0);
 
     return { source, gain };
   }
@@ -479,7 +518,7 @@ export class Sound {
    */
   setSharkTheme(position: number | null): void {
     const ctx = this.ctx;
-    if (!ctx) return;
+    if (!ctx || ctx.state !== "running") return;
     const playing = this.theme;
     if (playing) {
       const drift = ctx.currentTime - playing.zeroAt - (position ?? Infinity);
