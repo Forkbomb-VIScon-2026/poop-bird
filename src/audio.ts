@@ -3,7 +3,14 @@ import { SOUND_NAMES, type SoundName } from "./audio-assets";
 
 export type PoopSize = "weak" | "middle" | "large";
 
+/** Background music: one looping track per stage (public/assets/audio/music_<track>.opus, .m4a for old Safari). */
+export type MusicTrack = "city" | "ocean";
+const MUSIC_TRACKS: readonly MusicTrack[] = ["city", "ocean"];
+/** Time constant of music fades (s); a stage change crossfades over about three of these. */
+const MUSIC_FADE = 0.4;
+
 type ActiveSound = { source: AudioBufferSourceNode; gain: GainNode };
+type MusicPlayer = { el: HTMLAudioElement; gain: GainNode; target: number; stopTimer: number | null };
 
 const CURSE_SOUNDS = SOUND_NAMES.filter((name) => name.startsWith("curse_"));
 
@@ -27,7 +34,27 @@ export class Sound {
   private cursing: ActiveSound | null = null;
   private curseBag: SoundName[] = [];
   private lastCurse: SoundName | null = null;
+  private readonly music = new Map<MusicTrack, MusicPlayer>();
   muted = false;
+  /** The player's music switch (settings); the mute button silences music and effects alike. */
+  private musicOn = true;
+
+  /** Whether this page plays stage music: the game does, the dataset recorder doesn't. */
+  private readonly withMusic: boolean;
+
+  constructor(withMusic = false) {
+    this.withMusic = withMusic;
+  }
+
+  /** Call from the switch's own input event when it turns music on, so iOS lets it play. */
+  setMusicOn(on: boolean): void {
+    this.musicOn = on;
+    this.primeMusic();
+  }
+
+  get musicEnabled(): boolean {
+    return this.musicOn;
+  }
 
   /** Prefer Opus, then MP3/WAV, with placeholder fallback. */
   private async load(name: SoundName): Promise<void> {
@@ -72,6 +99,7 @@ export class Sound {
         for (const name of SOUND_NAMES) {
           void this.load(name);
         }
+        this.primeMusic();
       }
 
       if (this.ctx.state === "suspended") void this.ctx.resume();
@@ -470,6 +498,89 @@ export class Sound {
   sharkNote(high: boolean, volume: number): void {
     if (this.buffers.has("shark_theme")) return;
     this.play(high ? "shark_note_high" : "shark_note_low", volume);
+  }
+
+  /**
+   * Plays `track` at `volume` and fades every other track out (null = no
+   * music). Called every frame. Music streams from <audio> elements rather
+   * than decoded buffers: minutes of decoded stereo would take ~75 MB. A track
+   * that has faded out rewinds, so the next stage visit starts it from the top.
+   */
+  setMusic(track: MusicTrack | null, volume: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.withMusic) return;
+    for (const name of MUSIC_TRACKS) {
+      const target = name === track && this.musicOn ? Math.max(0, volume) : 0;
+      let player = this.music.get(name);
+      if (!player) {
+        if (target === 0) continue;
+        player = this.createMusic(ctx, this.master, name) ?? undefined;
+        if (!player) continue;
+      }
+      if (target === player.target) continue;
+      player.target = target;
+      player.gain.gain.setTargetAtTime(target, ctx.currentTime, MUSIC_FADE);
+      if (player.stopTimer !== null) {
+        clearTimeout(player.stopTimer);
+        player.stopTimer = null;
+      }
+      if (target > 0) {
+        if (player.el.paused) {
+          player.el.play().catch((error: unknown) => console.warn(`[audio] music_${name} won't play`, error));
+        }
+      } else {
+        const stopping = player;
+        stopping.stopTimer = window.setTimeout(() => {
+          stopping.stopTimer = null;
+          stopping.el.pause();
+          stopping.el.currentTime = 0;
+        }, MUSIC_FADE * 5 * 1000);
+      }
+    }
+  }
+
+  /**
+   * iOS lets a media element play only once it has started inside a user
+   * gesture: start each track silently now (unlock() and setMusicOn() run in
+   * one), and stop it again unless setMusic() wants it by then. Nothing loads
+   * while music is off.
+   */
+  private primeMusic(): void {
+    const { ctx, master } = this;
+    if (!ctx || !master || !this.withMusic || !this.musicOn) return;
+    for (const name of MUSIC_TRACKS) {
+      if (this.music.has(name)) continue;
+      const player = this.createMusic(ctx, master, name);
+      if (!player) continue;
+      player.el.play().then(
+        () => {
+          if (player.target > 0) return;
+          player.el.pause();
+          player.el.currentTime = 0;
+        },
+        () => {},
+      );
+    }
+  }
+
+  private createMusic(ctx: AudioContext, master: GainNode, name: MusicTrack): MusicPlayer | null {
+    try {
+      const el = new Audio();
+      // Safari before 18.4 can't play Ogg/Opus: AAC for it.
+      const extension = el.canPlayType('audio/ogg; codecs="opus"') ? "opus" : "m4a";
+      el.src = `${import.meta.env.BASE_URL}assets/audio/music_${name}.${extension}`;
+      el.loop = true;
+      el.preload = "auto";
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      ctx.createMediaElementSource(el).connect(gain).connect(master);
+      const player: MusicPlayer = { el, gain, target: 0, stopTimer: null };
+      this.music.set(name, player);
+      return player;
+    } catch (error) {
+      console.warn(`[audio] music_${name} unavailable`, error);
+      return null;
+    }
   }
 
   /**

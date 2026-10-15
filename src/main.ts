@@ -43,9 +43,11 @@ import {
   loadBest,
   loadGraphics,
   loadKnownFacesJson,
+  loadMusic,
   saveBest,
   saveGraphics,
   saveKnownFacesJson,
+  saveMusic,
   storageGet,
   storageRemove,
   storageSet,
@@ -141,7 +143,7 @@ let mode: Mode = "keyboard";
 const renderer = new Renderer(canvas);
 renderer.graphics = loadGraphics();
 const game = new Game(renderer.resize());
-const sound = new Sound();
+const sound = new Sound(true);
 const tracker = new FaceTracker(video);
 const snapshot = new StrainSnapshot();
 const debug = DEBUG
@@ -194,6 +196,7 @@ let activeLesson: { tutorial: Tutorial; lock: number } | null = null;
 const seenWithoutFace = new Set<Tutorial>();
 
 sound.setMuted(storageGet("poopybird.muted.v1") === "1");
+sound.setMusicOn(loadMusic());
 
 /** Space / pointer held. Counts only in keyboard mode: face mode is face-only. */
 function manualHeld(): boolean {
@@ -1750,6 +1753,13 @@ function frame(now: number): void {
   }
   sound.setPowerLineProximity(powerLineProximity);
   sound.setSharkTheme(state === "playing" && game.sharkTheme !== null ? config.sharkThemeOffset + game.sharkTheme : null);
+  // Stage music, from take-off until the crash: none on the perch, and it stops as the bird
+  // goes down rather than at the game-over screen. The shark brings its own.
+  const musicPlays = (state === "playing" || state === "paused") && game.phase === "playing";
+  sound.setMusic(
+    musicPlays && game.sharkTheme === null ? game.stage : null,
+    config.musicVolume * (state === "paused" ? config.musicPausedVolume : 1),
+  );
 
   updateHud();
   updateStrainBars();
@@ -2160,6 +2170,8 @@ window.addEventListener("blur", () => {
 });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && state === "playing") togglePause();
+  // The render loop stops in a hidden tab, so it can't fade the music out itself.
+  if (document.hidden) sound.setMusic(null, 0);
 });
 window.addEventListener("resize", () => game.resize(renderer.resize()));
 
@@ -2168,13 +2180,15 @@ window.addEventListener("resize", () => game.resize(renderer.resize()));
 decorateAll();
 const on = (id: string, fn: () => void) => $(id).addEventListener("click", fn);
 
-// Settings (the gear, top right): the graphics style, the remembered faces, and from the menu,
+// Settings (the gear, top right): the graphics style, the music, the remembered faces, and from the menu,
 // playing without the camera. Opening it mid-run pauses the game.
 const settingsPanel = $("screen-settings");
 const rtxSwitch = $<HTMLInputElement>("opt-rtx");
+const musicSwitch = $<HTMLInputElement>("opt-music");
 function openSettings(fromMenu: boolean): void {
   if (state === "playing") togglePause();
   rtxSwitch.checked = renderer.graphics === "rtx";
+  musicSwitch.checked = sound.musicEnabled;
   show($("settings-nocam"), fromMenu);
   updateFacesSetting();
   show(settingsPanel, true);
@@ -2186,6 +2200,10 @@ on("btn-settings-done", () => show(settingsPanel, false));
 rtxSwitch.addEventListener("change", () => {
   renderer.graphics = rtxSwitch.checked ? "rtx" : "classic";
   saveGraphics(renderer.graphics);
+});
+musicSwitch.addEventListener("change", () => {
+  sound.setMusicOn(musicSwitch.checked);
+  saveMusic(musicSwitch.checked);
 });
 on("btn-forget-faces", forgetFaces);
 on("btn-face", () => {

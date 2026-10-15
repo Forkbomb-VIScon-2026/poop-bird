@@ -366,6 +366,19 @@ city by city (the debug panel's "Progression" group).
   hover. The puff meter next to the fish marks the hover level (blue) and the
   spike threshold (red).
 
+### Music
+
+Each stage has its own looping track: "Clumsy Pigeon March" in the city
+(`music_city.opus`), "Bubble Oom-Pah" under water (`music_ocean.opus`), both in
+`public/assets/audio/`, with `.m4a` (AAC) copies for Safari before 18.4,
+which can't play Opus. They crossfade at the waterfront, when the bird turns
+into the fish and back. The music starts when the bird takes off from the
+perch and stops the moment it crashes; it's quieter while paused
+(`musicPausedVolume`) and fades out while the shark's theme plays. **Settings → Sound →
+Music** switches it off for good (saved in localStorage; the tracks then
+aren't even downloaded); the mute button
+silences it with everything else. `musicVolume` sets its level.
+
 ## Leaderboard
 
 The game-over screen and the start screen's 🏆 (**L**) show the online
@@ -873,7 +886,7 @@ src/
   known-faces.ts  the faces this tab calibrated: matching, storage format (pure)  known-faces.test.ts
   game.ts       simulation (fixed timestep)        wedding.test.ts
   render.ts     canvas drawing
-  audio.ts      WebAudio synth sounds
+  audio.ts      sound effects (WebAudio samples) and stage music
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, your leaderboard runs
