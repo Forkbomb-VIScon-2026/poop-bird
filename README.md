@@ -372,9 +372,9 @@ Each stage has its own looping track: "Clumsy Pigeon March" in the city
 (`music_city.opus`), "Bubble Oom-Pah" under water (`music_ocean.opus`), both in
 `public/assets/audio/`, with `.m4a` (AAC) copies for Safari before 18.4,
 which can't play Opus. They crossfade at the waterfront, when the bird turns
-into the fish and back. The music plays from the start screen through a run,
-quieter while paused (`musicPausedVolume`), not while calibrating or at game
-over, and it fades out while the shark's theme plays. **Settings → Sound →
+into the fish and back. The music starts when the bird takes off from the
+perch and stops the moment it crashes; it's quieter while paused
+(`musicPausedVolume`) and fades out while the shark's theme plays. **Settings → Sound →
 Music** switches it off for good (saved in localStorage; the tracks then
 aren't even downloaded); the mute button
 silences it with everything else. `musicVolume` sets its level.

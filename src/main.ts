@@ -1753,9 +1753,9 @@ function frame(now: number): void {
   }
   sound.setPowerLineProximity(powerLineProximity);
   sound.setSharkTheme(state === "playing" && game.sharkTheme !== null ? config.sharkThemeOffset + game.sharkTheme : null);
-  // Stage music, from the start screen through a run: none while calibrating (the groan is the
-  // feedback there) or at game over (the sad trombone), and the shark brings its own.
-  const musicPlays = state === "menu" || state === "ready" || state === "playing" || state === "paused";
+  // Stage music, from take-off until the crash: none on the perch, and it stops as the bird
+  // goes down rather than at the game-over screen. The shark brings its own.
+  const musicPlays = (state === "playing" || state === "paused") && game.phase === "playing";
   sound.setMusic(
     musicPlays && game.sharkTheme === null ? game.stage : null,
     config.musicVolume * (state === "paused" ? config.musicPausedVolume : 1),
