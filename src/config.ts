@@ -263,6 +263,10 @@ export const CONFIG_SPEC = {
   oceanPuffMinGap: { value: 0.5, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min puff gap", hint: "a feature gets full weight once the puff clears the relaxed edge by this share of its change" },
   oceanPuffMinSinkRate: { value: 0.8, min: 0, max: 1, step: 0.05, group: "Ocean puff", label: "Min sink rate", hint: "calibration quality: share of its relaxed faces that must score below the hover point" },
 
+  // --- Music -----------------------------------------------------------------
+  musicVolume: { value: 0.35, min: 0, max: 1, step: 0.05, group: "Music", label: "Volume", hint: "stage music level (sound effects play at 1)" },
+  musicPausedVolume: { value: 0.4, min: 0, max: 1, step: 0.05, group: "Music", label: "Paused", hint: "× music volume while paused" },
+
   // --- Beak ------------------------------------------------------------------
   // The bird opens its beak when the player opens their mouth (MediaPipe's jawOpen blendshape).
   mouthOpenFrom: { value: 0.15, min: 0, max: 1, step: 0.01, group: "Beak", label: "Mouth closed below", hint: "jawOpen at which the beak starts to open" },

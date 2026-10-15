@@ -135,6 +135,17 @@ export function saveGraphics(mode: "classic" | "rtx"): void {
   storageSet(GRAPHICS_KEY, mode);
 }
 
+const MUSIC_KEY = "poopyBird.music";
+
+/** Whether the stage music plays (on unless the player switched it off). */
+export function loadMusic(): boolean {
+  return storageGet(MUSIC_KEY) !== "off";
+}
+
+export function saveMusic(on: boolean): void {
+  storageSet(MUSIC_KEY, on ? "on" : "off");
+}
+
 const MUTED_KEY = "poopybird.muted.v1";
 
 export function loadMuted(): boolean {

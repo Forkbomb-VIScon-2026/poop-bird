@@ -19,6 +19,9 @@
 
 		@wasm path *.wasm
 		header @wasm Content-Type application/wasm
+		# The stage music's fallback for Safari before 18.4 (no Ogg/Opus).
+		@m4a path *.m4a
+		header @m4a Content-Type audio/mp4
 
 		@static path /assets/* /mediapipe/* /faceid/*
 		header @static Cache-Control "public, max-age=604800"
