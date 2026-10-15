@@ -65,6 +65,7 @@ starts the face dataset collector (local credentials `local` /
 | Hold **Space** / mouse / touch | City: same as straining. Ocean: inflate while held, deflate when released. Keyboard mode only |
 | **P** / **Esc** / ⏸ button | Pause, and resume |
 | **M** / 🔊 button | Mute (also silences vibration on phones) |
+| **S** / ⚙ button | Settings (menu and in game; opening it mid-run pauses) |
 | **Enter** | Press the yellow button on any screen (Play, Play again…). Every button takes exactly one key, the one on the keycap badge on its corner |
 | **K** | Menu settings (the gear): play with the keyboard |
 | **L** / 🏆 button | Menu: the [leaderboard](#leaderboard) |
@@ -79,7 +80,7 @@ starts the face dataset collector (local credentials `local` /
 | **W** | With the debug panel open: a wedding right now |
 | **B** | With the debug panel open: a hot-air balloon floats in |
 | **H** | With the debug panel open: a fisherman rows in (ocean only) |
-| **S** | With the debug panel open: a shark swims in (ocean only) |
+| **J** | With the debug panel open: a shark swims in (ocean only) |
 | **A** | With the debug panel open: a boat that drops its anchor comes in (ocean only) |
 | **O** | With the debug panel open: start a run as the pufferfish (skips the city) |
 
@@ -115,16 +116,16 @@ any bird: a deliberately plain step, so that from then on the bird and the
 fish do what the player expects, and nothing calibrates mid-game.
 
 1. "Strain like you really need to go 💩", with an example photo of the face
-   next to the player's webcam ("Like this" / "You") and a hint. Nothing
+   next to the player's webcam ("Like this" / "You"). Nothing
    happens until the player presses **I'm ready** (Enter). Then "Get ready to
    strain… 3, 2, 1", "STRAIN! Hold it!" for `calibrationSeconds` (3 s) with a
    countdown and a progress bar.
 2. "Puff your cheeks like a pufferfish 🐡", the same way (held for
-   `oceanCalibrationSeconds`, 3.5 s), then "And let it out" for
-   `oceanLessonLetOutSeconds` (5 s).
+   `oceanCalibrationSeconds`, 3.5 s). No let-out step: the puff is fitted
+   against the welcome's relaxed face.
 
 The player is never asked for a relaxed face. The screen opens with a short
-welcome ("Hi! 👋 Let's get the game to know your face", just the webcam, no
+welcome ("Hi! 👋 Just look at the camera for a moment", just the webcam, no
 example face yet, so nobody practises one): the relaxed face is read there
 (2 s of a face in view, with a progress bar) and then kept as it is, retries
 included. A phase whose fit fails its quality check says why ("That
@@ -147,8 +148,8 @@ step moves on once the player has done it (the line turns green for a moment),
 not on a timer. On the perch it sits beside the bird; in the city and the
 ocean, over the game near the top. The ocean tips use it too.
 
-- **Flight lesson** (new players: the tutorial hasn't been seen on this
-  browser, or "I'm new here" is ticked): right after takeoff, in a **calm
+- **Flight lesson** (new players: this face hasn't seen it yet, see
+  [Tutorials are per face](#tutorials-are-per-face)): right after takeoff, in a **calm
   city** (`Game.calmCity`: no obstacles, paparazzi or kids, and the street
   bounces the bird back up instead of ending the run): "Squeeze & relax to
   stay up" until three poops (or 20 s), then "Nice flying!". The lesson counts
@@ -268,16 +269,16 @@ city by city (the debug panel's "Progression" group).
   your cheeks to float 🐡", or "Hold SPACE to puff up").
 - **New players** (the ocean tutorial hasn't been seen): the first dive swims
   on in **calm water** (`Game.calmWater`: no obstacles or jellyfish, no
-  spiking, the sea floor doesn't kill) under banners on how to puff (the
-  pufferfish face, or holding Space or the screen) and the ocean tip (spiking
-  out, and popping when held too long; what's in the sea is left to
-  discover); then
-  the level starts. A fish lying on the sand when the level starts isn't
+  spiking, the sea floor doesn't kill) for the **swim lesson**
+  (`runSwimLesson()`): "Puff your cheeks to rise" (or hold Space or the
+  screen) until the fish is near the surface, then "Let the air out to sink"
+  until it's near the floor (each step moves on after 15 s anyway), "Nice
+  swimming!", and the spikes tip (spiking out, and popping when held too
+  long; what's in the sea is left to discover); then the level starts. A fish lying on the sand when the level starts isn't
   killed by the sea floor until it swims off (at most `oceanCalmFloorGrace`,
   5 s). Nothing calibrates here: the puff was calibrated before the run. The
-  tips never stop the world. The tips show once per browser;
-  **⚙️ Options → "I'm new here: show tips"** in the menu turns them back on
-  (or off) for the next player.
+  lesson never stops the world. It shows once per face, like the flight
+  lesson.
 - **Buoyancy.** The fish is always somewhere between deflated (puff 0, sinks)
   and fully puffed (puff 1, rises). Around 40% puff it hovers. Speed eases
   toward the target with water drag, so it's floaty, never snappy. The sea
@@ -566,9 +567,15 @@ the distance (`GROW_WITHIN`), so a borderline match can't widen a face until it
 matches someone else too. At most 20 faces are kept, the one seen longest ago
 going first.
 
+<a id="tutorials-are-per-face"></a>**Tutorials are per face.** A known face
+also remembers which tutorials (`TUTORIALS` in `known-faces.ts`: the flight and
+the swim lesson) it has seen, so each person gets them once, and someone new at
+the booth gets them again. Without a face to remember them with (keyboard mode,
+or no face recognition here), they show once per tab.
+
 The faces live in memory and `sessionStorage` only (`poopybird.knownFaces.v1`),
 so they go when the tab closes. **Settings → Faces → Forget all** deletes them
-at once. The model (6 MB) is loaded only in face mode, from `public/faceid`
+at once, and with them every tutorial seen: the next player starts fresh. The model (6 MB) is loaded only in face mode, from `public/faceid`
 (copied from `node_modules` on install). Without WebGL (tfjs's CPU backend
 blocks the page for a second per descriptor) or if loading fails, there's no
 recognition: a saved calibration is used whoever plays (Play skips the
@@ -622,19 +629,17 @@ separated their puffs from their relaxed face), while pursed lips light up
 2. **Calibration** (the calibration screen's second phase, `main.ts`
    `calibratePuff`, before the first run). The player holds the pufferfish
    face for `oceanCalibrationSeconds` (3.5 s), with an example photo next to
-   their webcam, then "And let it out" for `oceanLessonLetOutSeconds` (5 s);
-   the first `calibrationSettle` of each is dropped. "Not puffing" is the
-   welcome's read of the relaxed face plus the let-out step. The let-out
-   step matters most: a face just after a puff doesn't go back to the relaxed
+   their webcam; the first `calibrationSettle` is dropped. "Not puffing" is
+   the welcome's read of the relaxed face. (There used to be a "let it out"
+   step after the hold, dropped to keep the screen simple. It was there
+   because a face just after a puff doesn't go back to the relaxed
    face from before it (the mouth stays narrower, the lips pressed or a bit
    pursed, the mouth corners up). When the calibration only knew the relaxed
    face from before, those leftovers read as puff and the fish often wouldn't
    sink: in the face dataset a fifth of the relaxed frames after a puff
-   floated, for some people half. (This used to be the swim lesson on the
-   first dive. One cycle with a long let-out was what the face dataset and
-   play-testing settled on there, so the screen does the same.)
-3. **Fit** (`buildInteractivePuffCalibration`). All relax steps count as "not
-   puffing". Per feature, "relaxed" is the `oceanPuffRelaxedQuantile` (80%) of
+   floated, for some people half.) The relaxed quantile edge in the fit
+   below still keeps most relaxed frames at 0.
+3. **Fit** (`buildInteractivePuffCalibration`). Per feature, "relaxed" is the `oceanPuffRelaxedQuantile` (80%) of
    those relaxed faces toward the puff side, so most of them score 0, and
    "full" is the puff **median** (as the cheeks fill, the lips purse hard for
    ~0.2 s and then relax; with the median only what you hold counts).

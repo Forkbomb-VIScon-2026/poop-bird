@@ -30,15 +30,12 @@ const FEEDBACK: { [T in GameEvent["type"]]: Feedback<Extract<GameEvent, { type: 
   droneDown: { sound: (s) => s.powerDown() },
   droneCrashed: { sound: (s) => s.droneCrash(), buzz: [20, 30, 60] },
   gameover: {},
-  gateEntered: {
-    sound: (s, e) => {
-      if (e.to === "ocean") s.splash();
-    },
-  },
+  // One splash per stage change, delayed to land as the bird hits the water (or the fish breaks the surface).
+  gateEntered: { sound: (s, e) => s.splash(e.to === "ocean" ? 0.6 : 0.3) },
   submerged: {},
-  breached: { sound: (s) => s.splash() },
-  transformed: { sound: (s) => s.splash() },
-  surfaced: { sound: (s) => s.splash() },
+  breached: {},
+  transformed: {},
+  surfaced: {},
   spike: { sound: (s) => s.spike() },
   pop: { sound: (s) => s.deflate(), buzz: 120 },
   jellyPopped: { sound: (s, e) => s.jellyPop(e.combo) },

@@ -120,28 +120,6 @@ export function loadCalibration(key: string, required: readonly FeatureName[]): 
   }
 }
 
-// --- Tutorials (new-player tips) -----------------------------------------------
-
-const TUTORIALS_KEY = "poopybird.tutorialsSeen.v1";
-export const TUTORIALS = ["city", "ocean"] as const;
-export type Tutorial = (typeof TUTORIALS)[number];
-
-/** Tutorials this browser has already shown (and the player dismissed). */
-export function loadSeenTutorials(): Set<Tutorial> {
-  try {
-    const parsed: unknown = JSON.parse(storageGet(TUTORIALS_KEY) ?? "[]");
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(TUTORIALS.filter((t) => parsed.includes(t)));
-  } catch {
-    return new Set();
-  }
-}
-
-export function saveSeenTutorials(seen: ReadonlySet<Tutorial>): void {
-  if (seen.size === 0) storageRemove(TUTORIALS_KEY);
-  else storageSet(TUTORIALS_KEY, JSON.stringify([...seen]));
-}
-
 // --- Best score ------------------------------------------------------------------
 
 const BEST_KEY = "poopybird.best.v1";

@@ -63,7 +63,7 @@
         <div class="hud-buttons">
           <button id="btn-hud-mute" class="hud-btn" aria-label="Mute" data-shortcut="M">🔊</button>
           <button id="btn-hud-pause" class="hud-btn" aria-label="Pause" data-shortcut="P">⏸</button>
-          <button id="btn-hud-settings" class="hud-btn" aria-label="Settings" title="Settings"><svg class="gear-icon" aria-hidden="true"><use href="#icon-gear" /></svg></button>
+          <button id="btn-hud-settings" class="hud-btn" data-keys="S" aria-label="Settings" title="Settings (S)"><svg class="gear-icon" aria-hidden="true"><use href="#icon-gear" /></svg></button>
         </div>
         <div id="hud-toast" class="hud-toast hidden"></div>
       </div>
@@ -121,6 +121,8 @@
         <div id="coach-bar" class="progress hidden"><div id="coach-progress" class="progress-fill"></div></div>
         <!-- A tutorial's steps: done ones filled, the current one bigger. -->
         <ol id="coach-dots" class="coach-dots hidden"></ol>
+        <!-- Lessons only: ends this one and marks it seen (for this face). -->
+        <button id="coach-skip" class="btn small primary coach-skip hidden" data-default>Skip tutorial</button>
       </div>
 
       <!-- Webcam preview (also used, enlarged, during calibration) -->
@@ -140,7 +142,7 @@
 
       <!-- Start screen: no card, just the title over the city with the bird hovering. -->
       <section id="screen-start" class="screen start">
-        <button id="btn-settings" class="hud-btn settings-gear" aria-label="Settings" title="Settings"><svg class="gear-icon" aria-hidden="true"><use href="#icon-gear" /></svg></button>
+        <button id="btn-settings" class="hud-btn settings-gear" data-keys="S" aria-label="Settings" title="Settings (S)"><svg class="gear-icon" aria-hidden="true"><use href="#icon-gear" /></svg></button>
         <div class="start-hero">
           <h1 class="title">Poopy <span class="accent">Bird</span></h1>
           <p id="tagline" class="tagline">Bio-fuel jet propulsion. 💩</p>
@@ -148,7 +150,6 @@
             <button id="btn-face" class="btn primary big" data-default>😣 Play</button>
             <button id="btn-leaderboard" class="btn icon" data-keys="L" aria-label="Leaderboard" title="Leaderboard">🏆</button>
           </div>
-          <label class="opt light" title="Show tips, like how to swim in the ocean"><input type="checkbox" id="opt-tips" /> 🐣 I'm new here</label>
         </div>
       </section>
 
@@ -184,8 +185,8 @@
            with a button. An example photo of the face sits next to the webcam (#cam, moved into
            #calib-cam-slot). The relaxed face is read on its own meanwhile, from the moment a face shows. -->
       <section id="screen-calibrate" class="screen hidden">
+        <button id="btn-calib-cancel" class="btn small corner-menu" data-keys="Escape">← Menu</button>
         <div class="card calib">
-          <div id="calib-step" class="calib-step">Calibration 1/2</div>
           <h2 id="calib-prompt">Strain like you really need to go 💩</h2>
           <div class="calib-media">
             <figure class="calib-example">
@@ -197,7 +198,6 @@
               <figcaption>You</figcaption>
             </figure>
           </div>
-          <p id="calib-hint" class="hint"></p>
           <div id="calib-run" class="calib-run hidden">
             <div id="calib-count" class="calib-count"></div>
             <div class="progress"><div id="calib-progress" class="progress-fill"></div></div>
@@ -207,17 +207,13 @@
             <button id="btn-calib-go" class="btn primary big" data-default>I'm ready</button>
             <button id="btn-calib-skip" class="btn hidden" data-keys="S">Play anyway</button>
           </div>
-          <div class="ghost-row">
-            <button id="btn-calib-keyboard" class="btn small ghost">Play with <span class="kbd-only">the keyboard</span><span class="touch-only">touch</span> instead</button>
-            <button id="btn-calib-cancel" class="btn small ghost" data-keys="Escape">Back to menu</button>
-          </div>
         </div>
       </section>
 
       <!-- Ready: the bird sits on a street lamp. Its first poop takes off and starts the run. -->
       <section id="screen-ready" class="screen hidden passthrough">
         <!-- Top left, where the score shows once the run starts. -->
-        <button id="btn-perch-menu" class="btn small perch-menu" data-keys="Escape">← Menu</button>
+        <button id="btn-perch-menu" class="btn small corner-menu" data-keys="Escape">← Menu</button>
         <div id="perch" class="perch">
           <!-- The coach (#coach) goes here while the bird is on the perch. -->
           <div id="perch-coach-slot" class="perch-coach-slot"></div>

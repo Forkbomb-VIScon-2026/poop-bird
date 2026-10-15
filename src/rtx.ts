@@ -40,6 +40,15 @@ import fishDeflatedUrl from "./assets/fish-deflated.png";
 import fishPuffedUrl from "./assets/fish-puffed.png";
 import jellyUrl from "./assets/jelly.png";
 import kelpUrl from "./assets/kelp.png";
+import lampUrl from "./assets/lamp.png";
+import nestUrl from "./assets/nest.png";
+import rowboatUrl from "./assets/rowboat.png";
+import fishermanUrl from "./assets/fisherman.png";
+import souwesterUrl from "./assets/souwester.png";
+import anchorUrl from "./assets/anchor.png";
+import wreckUrl from "./assets/wreck.png";
+import sharkUrl from "./assets/shark.png";
+import sharkJawUrl from "./assets/shark-jaw.png";
 import perchedUrl from "./assets/perched.png";
 import personBrideUrl from "./assets/person-bride.png";
 import personGroomUrl from "./assets/person-groom.png";
@@ -155,6 +164,19 @@ function loadSprites() {
     jelly: load(jellyUrl, 90, 58, 88, 1.2),
     // Kelp blade: anchored at its foot, drawn 0.6 r pixels tall.
     kelp: load(kelpUrl, 42, 426, 426, 0.6),
+    // The practice perch: a street lamp (its pole at poleX) and the nest on it.
+    lamp: load(lampUrl, 27, 420, 422, 1),
+    nest: load(nestUrl, 113, 169, 226, 1),
+    // The angler: rowboat (bow on the left, anchored at its keel's centre), fisherman (feet), his sou'wester (centre).
+    rowboat: load(rowboatUrl, 213, 169, 426, 1),
+    fisherman: load(fishermanUrl, 67, 424, 426, 1),
+    souwester: load(souwesterUrl, 63, 37, 126, 1),
+    // A boat's anchor, ring on top (anchored at its crown), and a sunken hull (bow on the right).
+    anchor: load(anchorUrl, 103, 304, 306, 1),
+    wreck: load(wreckUrl, 0, 0, 426, 1),
+    // The shark (facing right) and its lower jaw, in the same frame; anchored mid-body.
+    shark: load(sharkUrl, 262, 125, 420, 1),
+    sharkJaw: load(sharkJawUrl, 262, 125, 420, 1),
     // Backdrops and textures.
     sky: load(skyUrl),
     skyline: load(skylineUrl),
@@ -722,6 +744,46 @@ export class RtxPlayer {
     const sx = 1 - this.wobble;
     const sy = 1 + this.wobble;
     const rot = b.rot + (game.phase === "playing" ? Math.sin(game.time * 7) * 0.05 : 0);
+
+    // Spines when puffed / spiked, drawn behind the fish photo.
+    const prickle = r * 0.12 * Math.min(1, Math.max(0, (puff - 0.5) * 2.5));
+    const spineLen = r * 0.42 * game.fish.spikes;
+    if (prickle + spineLen > 1 && !game.stunned) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(rot);
+      ctx.scale(sx, sy);
+      ctx.lineJoin = "round";
+      ctx.fillStyle = "#ece6cf";
+      ctx.strokeStyle = PHOTO_INK;
+      ctx.lineWidth = 1.8;
+      const k = (r * s.scale) / s.size;
+      const rx = (s.img.naturalWidth * 0.46) * k;
+      const ry = (s.img.naturalHeight * 0.46) * k;
+      const n = 22;
+      const half = 1.4 + r * 0.05;
+      for (let i = 0; i < n; i++) {
+        const a = -2.2 + (i / (n - 1)) * 4.4;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        const x = ca * rx * 0.92;
+        const y = sa * ry * 0.92;
+        const nl = Math.hypot(ca * ry, sa * rx) || 1;
+        const nx = (ca * ry) / nl;
+        const ny = (sa * rx) / nl;
+        const len = spineLen * (sa < 0 ? 0.8 : 1) + (sa > 0.25 ? prickle : 0);
+        if (len < 1) continue;
+        ctx.beginPath();
+        ctx.moveTo(x - ny * half, y + nx * half);
+        ctx.lineTo(x + nx * (len + r * 0.12), y + ny * (len + r * 0.12));
+        ctx.lineTo(x + ny * half, y - nx * half);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     drawSpriteOn(ctx, s, b.x, b.y, rot, r, sx, sy);
     if (s.eye) {
       const e = spritePoint(s, b.x, b.y, rot, r, sx, sy, s.eye.x, s.eye.y);
@@ -732,4 +794,96 @@ export class RtxPlayer {
     }
     return true;
   }
+}
+
+// --- main's newer things ------------------------------------------------------------
+
+/** The perch's street lamp: its pole at x, from the street (foot) up past the nest. */
+export function rtxLamp(ctx: CanvasRenderingContext2D, x: number, top: number, foot: number): boolean {
+  const s = sprites().lamp;
+  if (!spriteReady(s)) return false;
+  return drawSpriteOn(ctx, s, x, foot, 0, foot - top + 14);
+}
+
+/** The front of the nest: the lower part of the nest photo, over the bird's belly, between y0 and bottom. */
+export function rtxNestFront(ctx: CanvasRenderingContext2D, x: number, y0: number, bottom: number, rx: number): boolean {
+  const s = sprites().nest;
+  if (!spriteReady(s)) return false;
+  const iw = s.img.naturalWidth;
+  const ih = s.img.naturalHeight;
+  const sy = ih * 0.38;
+  ctx.drawImage(s.img, 0, sy, iw, ih - sy, x - rx - 10, y0 - 6, rx * 2 + 20, bottom - y0 + 12);
+  return true;
+}
+
+/** A rowboat on the water, its keel's centre at (x, keel), w wide; bow on the left. */
+export function rtxRowboat(ctx: CanvasRenderingContext2D, x: number, keel: number, w: number): boolean {
+  return drawSpriteOn(ctx, sprites().rowboat, x, keel, 0, w);
+}
+
+/** The anchor, ring on top, crown at (x, crown), h tall. */
+export function rtxAnchor(ctx: CanvasRenderingContext2D, x: number, crown: number, h: number): boolean {
+  return drawSpriteOn(ctx, sprites().anchor, x, crown, 0, h);
+}
+
+/**
+ * A sunken hull, sitting in the sand: the photo w wide from x, its top at the deck, clipped at
+ * the sand line so it looks half-buried. Bow toward `facing`.
+ */
+export function rtxWreck(ctx: CanvasRenderingContext2D, x: number, deck: number, w: number, facing: number): boolean {
+  const s = sprites().wreck;
+  if (!spriteReady(s)) return false;
+  const h = (w * s.img.naturalHeight) / s.img.naturalWidth;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x - 20, deck - 40, w + 40, GROUND_Y + 10 - (deck - 40));
+  ctx.clip();
+  ctx.translate(facing > 0 ? x : x + w, deck - 14);
+  ctx.scale(facing > 0 ? 1 : -1, 1);
+  ctx.drawImage(s.img, 0, 0, w, h);
+  ctx.restore();
+  return true;
+}
+
+/** In shark.png pixels: its nose, and the lower jaw's hinge. */
+const SHARK_PHOTO_NOSE = { x: 418, y: 131 };
+const SHARK_PHOTO_HINGE = { x: 315, y: 145 };
+/** How wide the shark photo is drawn, in the shark's own units (its nose sits at SHARK_NOSE + 6). */
+const SHARK_PHOTO_W = 210;
+
+/**
+ * The photo shark in its own coordinates (facing +x, the caller has rotated and flipped it):
+ * the body, a dark mouth, and the lower jaw swung down by `jaw` (0..1).
+ */
+export function rtxShark(ctx: CanvasRenderingContext2D, jaw: number): boolean {
+  const { shark, sharkJaw } = sprites();
+  if (!spriteReady(shark) || !spriteReady(sharkJaw)) return false;
+  const k = SHARK_PHOTO_W / shark.size;
+  const px = (x: number) => (x - shark.cx) * k;
+  const py = (y: number) => (y - shark.cy) * k;
+  const hx = px(SHARK_PHOTO_HINGE.x);
+  const hy = py(SHARK_PHOTO_HINGE.y);
+  const angle = jaw * 0.5;
+  const tipX = px(SHARK_PHOTO_NOSE.x) - 6;
+  const tipY = py(SHARK_PHOTO_NOSE.y) + 10;
+  // The inside of the mouth, showing between the jaws as they open.
+  if (angle > 0.02) {
+    const ox = hx + (tipX - hx) * Math.cos(angle) - (tipY - hy) * Math.sin(angle);
+    const oy = hy + (tipX - hx) * Math.sin(angle) + (tipY - hy) * Math.cos(angle);
+    ctx.fillStyle = "#3a0d12";
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(tipX, tipY - 2);
+    ctx.lineTo(ox, oy);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.save();
+  ctx.translate(hx, hy);
+  ctx.rotate(angle);
+  ctx.translate(-hx, -hy);
+  ctx.drawImage(sharkJaw.img, px(0), py(0), sharkJaw.img.naturalWidth * k, sharkJaw.img.naturalHeight * k);
+  ctx.restore();
+  ctx.drawImage(shark.img, px(0), py(0), shark.img.naturalWidth * k, shark.img.naturalHeight * k);
+  return true;
 }

@@ -1,5 +1,6 @@
 // The fisherman in his boat, his line and hook; and his trophy photo.
 
+import { drawPhoto as drawRtxPhoto, RTX, rtxRowboat } from "../rtx";
 import { ANGLER_HAT_DX, ANGLER_TIP_DX, ANGLER_TOPPLE_TIME, ANGLER_TUG_TIME, GROUND_Y, SURFACE_Y, type Angler, type Game } from "../game";
 import { rnd } from "../random";
 import { initialSpikeState } from "../swim";
@@ -89,6 +90,7 @@ function drawHook(ctx: CanvasRenderingContext2D, x: number, y: number, worm: boo
  * over the fisherman's legs. Below `water` (boat y) the sea tints it.
  */
 function drawBoatHull(ctx: CanvasRenderingContext2D, seed: number, water = 0): void {
+  if (RTX.on && rtxRowboat(ctx, -4, 27, 136)) return;
   const hull = () => {
     ctx.beginPath();
     ctx.moveTo(-66, -11);
@@ -196,6 +198,12 @@ function drawFisherman(
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 1.5;
     circle(ctx, hx + 3, hy + 3, 3, true);
+  }
+
+  // RTX: the photo fisherman in oilskins (his rod above stays drawn).
+  if (RTX.on && drawRtxPhoto(ctx, "fisherman", 16, 22, 0, 62)) {
+    ctx.restore();
+    return;
   }
 
   // Oilskin coat
@@ -370,6 +378,10 @@ function drawFloatingHat(ctx: CanvasRenderingContext2D, x: number, y: number, ti
   ctx.translate(x, spin === undefined ? y + Math.sin(time * 3 + 1) * 1.5 : y);
   ctx.scale(1.4, 1.4);
   ctx.rotate(spin ?? Math.PI + Math.sin(time * 2) * 0.15);
+  if (RTX.on && drawRtxPhoto(ctx, "souwester", 0, 0, Math.PI, 26)) {
+    ctx.restore();
+    return;
+  }
   ctx.fillStyle = "#f4a300";
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 2;

@@ -28,6 +28,18 @@ export function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** A stopwatch (ms) that only runs while `running()` holds, checked each time it's read. */
+export function stopwatch(running: () => boolean): () => number {
+  let elapsed = 0;
+  let last = performance.now();
+  return () => {
+    const now = performance.now();
+    if (running()) elapsed += now - last;
+    last = now;
+    return elapsed;
+  };
+}
+
 /** Restarts an element's CSS animation (a toast or the combo popping in again). */
 export function replayAnimation(el: HTMLElement): void {
   el.style.animation = "none";

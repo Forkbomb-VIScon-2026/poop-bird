@@ -1,6 +1,7 @@
 // The shark and its warning cue.
 
 import type { Game, Shark } from "../game";
+import { RTX, rtxShark } from "../rtx";
 import { circle, outlinedText, oval } from "./shapes";
 import { OUTLINE, type View } from "./view";
 
@@ -23,6 +24,35 @@ export function drawShark(view: View, s: Shark, game: Game): void {
   ctx.lineCap = "round";
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 3;
+
+  // RTX: the photo shark, its lower jaw swinging open, with the drawn cues on top.
+  if (RTX.on && rtxShark(ctx, s.jaw)) {
+    if (s.state === "chomped") {
+      // The fish's tail sticks out of its mouth, still wiggling.
+      const wag = Math.sin(game.time * 14) * 4;
+      ctx.fillStyle = "#b7a64a";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(72, 8);
+      ctx.lineTo(90, -4 + wag);
+      ctx.lineTo(88, 18 + wag);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (s.state === "fleeing") {
+      // Spines stuck in its snout.
+      ctx.strokeStyle = "#8a6d1f";
+      ctx.lineWidth = 2;
+      for (const [sx, sy, a] of [[72, -2, -0.5], [76, 6, 0.1], [70, 12, 0.6]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + Math.cos(a) * 12, sy + Math.sin(a) * 12);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    return;
+  }
 
   // Tail and dorsal fin first: the body's outline covers their bases.
   ctx.fillStyle = dark;

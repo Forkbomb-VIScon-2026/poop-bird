@@ -2,7 +2,7 @@
 
 import { ANCHOR_H, ANCHOR_RIP_Y, anchorChainLength, anchorCrown, anchorRipped, BILLBOARD_H, BILLBOARD_LEGS_INSET, BOAT_DRAFT, BOAT_FREEBOARD, BOAT_W, GROUND_Y, obstacleRects, SURFACE_Y, WRECK_MAST_W, wreckGeometry, type Obstacle, type Tabloid } from "../game";
 import { rnd } from "../random";
-import { RTX, rtxBillboard, rtxBuilding, rtxSeaColumn } from "../rtx";
+import { RTX, rtxAnchor, rtxBillboard, rtxBuilding, rtxRowboat, rtxSeaColumn, rtxWreck } from "../rtx";
 import { drawSplat } from "./effects";
 import { circle, drawPhoto, drawStar, outlinedText, oval, roundRect, shadeHex, wrapText } from "./shapes";
 import { OUTLINE, type Photo, type View } from "./view";
@@ -355,6 +355,8 @@ function drawWreck(view: View, o: Obstacle, time: number): void {
   ctx.stroke();
   ctx.lineCap = "butt";
 
+  if (RTX.on && rtxWreck(ctx, o.x, deck, o.w, facing)) return;
+
   // Hull: a flat, rotten deck line, the stern post on one end and the bow rising a little on the other.
   const sand = GROUND_Y + 4;
   const hull = () => {
@@ -524,62 +526,64 @@ function drawAnchoredBoat(view: View, o: Obstacle, time: number): void {
   for (let y = ripped ? drop.chain : keel - 6; y < top + 2; y += 10) links.push({ x: cx, y, a: 0 });
   drawChain(ctx, links, iron);
 
-  // Anchor: ring, shank, stock with ball ends, curved arms with flukes.
-  ctx.beginPath();
-  ctx.arc(cx, top + 7, 6.5, 0, Math.PI * 2);
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 6.5;
-  ctx.stroke();
-  ctx.strokeStyle = iron;
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.fillStyle = iron;
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2.5;
-  roundRect(ctx, cx - 5, top + 12, 10, ANCHOR_H - 18, 3);
-  ctx.fill();
-  ctx.stroke();
-  const armY = crown - 33;
-  ctx.beginPath();
-  ctx.arc(cx, armY, 27, 0.2, Math.PI - 0.2);
-  ctx.lineWidth = 13;
-  ctx.stroke();
-  ctx.strokeStyle = iron;
-  ctx.lineWidth = 8;
-  ctx.stroke();
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 2.5;
-  for (const s of [-1, 1]) {
+  if (!(RTX.on && rtxAnchor(ctx, cx, crown + 4, ANCHOR_H + 8))) {
+    // Anchor: ring, shank, stock with ball ends, curved arms with flukes.
     ctx.beginPath();
-    ctx.moveTo(cx + s * 31, crown - 46);
-    ctx.lineTo(cx + s * 37, crown - 22);
-    ctx.lineTo(cx + s * 18, crown - 29);
-    ctx.closePath();
+    ctx.arc(cx, top + 7, 6.5, 0, Math.PI * 2);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 6.5;
+    ctx.stroke();
+    ctx.strokeStyle = iron;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = iron;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    roundRect(ctx, cx - 5, top + 12, 10, ANCHOR_H - 18, 3);
     ctx.fill();
     ctx.stroke();
-  }
-  roundRect(ctx, cx - 21, top + 15, 42, 9, 4);
-  ctx.fill();
-  ctx.stroke();
-  for (const s of [-1, 1]) {
-    circle(ctx, cx + s * 22, top + 19.5, 5.5, true);
-  }
-  // Rust and a strand of weed caught on a fluke.
-  ctx.fillStyle = "rgba(170,90,40,0.55)";
-  for (let i = 0; i < 4; i++) {
+    const armY = crown - 33;
     ctx.beginPath();
-    ctx.arc(cx + (rnd(o.seed + i) - 0.5) * 6, top + 28 + rnd(o.seed + i + 9) * (ANCHOR_H - 50), 1.8 + rnd(o.seed + i + 5) * 1.5, 0, Math.PI * 2);
+    ctx.arc(cx, armY, 27, 0.2, Math.PI - 0.2);
+    ctx.lineWidth = 13;
+    ctx.stroke();
+    ctx.strokeStyle = iron;
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.5;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 31, crown - 46);
+      ctx.lineTo(cx + s * 37, crown - 22);
+      ctx.lineTo(cx + s * 18, crown - 29);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    roundRect(ctx, cx - 21, top + 15, 42, 9, 4);
     ctx.fill();
+    ctx.stroke();
+    for (const s of [-1, 1]) {
+      circle(ctx, cx + s * 22, top + 19.5, 5.5, true);
+    }
+    // Rust and a strand of weed caught on a fluke.
+    ctx.fillStyle = "rgba(170,90,40,0.55)";
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(cx + (rnd(o.seed + i) - 0.5) * 6, top + 28 + rnd(o.seed + i + 9) * (ANCHOR_H - 50), 1.8 + rnd(o.seed + i + 5) * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const weed = rnd(o.seed + 3) < 0.5 ? -1 : 1;
+    ctx.strokeStyle = "#2a9d73";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx + weed * 33, crown - 26);
+    ctx.quadraticCurveTo(cx + weed * 42, crown - 8, cx + weed * 36, crown + 8);
+    ctx.stroke();
+    ctx.lineCap = "butt";
   }
-  const weed = rnd(o.seed + 3) < 0.5 ? -1 : 1;
-  ctx.strokeStyle = "#2a9d73";
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(cx + weed * 33, crown - 26);
-  ctx.quadraticCurveTo(cx + weed * 42, crown - 8, cx + weed * 36, crown + 8);
-  ctx.stroke();
-  ctx.lineCap = "butt";
 
   // The torn-off chain piles up on the anchor once it has landed: a jumble of links between the arms.
   if (ripped) {
@@ -595,66 +599,68 @@ function drawAnchoredBoat(view: View, o: Obstacle, time: number): void {
     drawChain(ctx, heap, iron);
   }
 
-  // Mast with a pennant, and the cabin: above the water.
-  const color = BOAT_COLORS[Math.floor(rnd(o.seed + 1) * BOAT_COLORS.length)];
-  const mastX = boatX - 28;
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(mastX, deck);
-  ctx.lineTo(mastX, deck - 74);
-  ctx.stroke();
-  ctx.fillStyle = "#ef476f";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(mastX + 2, deck - 74);
-  ctx.lineTo(mastX + 24, deck - 68);
-  ctx.lineTo(mastX + 2, deck - 62);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.lineWidth = 3;
-  roundRect(ctx, boatX - 6, deck - 26, 54, 28, 5);
-  ctx.fillStyle = "#f1faee";
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#7fd3ea";
-  for (const wx of [boatX + 2, boatX + 26]) {
-    roundRect(ctx, wx, deck - 19, 15, 10, 3);
-    ctx.fill();
-    ctx.lineWidth = 2;
+  if (!(RTX.on && rtxRowboat(ctx, boatX, keel + 6, BOAT_W + 30))) {
+    // Mast with a pennant, and the cabin: above the water.
+    const color = BOAT_COLORS[Math.floor(rnd(o.seed + 1) * BOAT_COLORS.length)];
+    const mastX = boatX - 28;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(mastX, deck);
+    ctx.lineTo(mastX, deck - 74);
     ctx.stroke();
-  }
+    ctx.fillStyle = "#ef476f";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mastX + 2, deck - 74);
+    ctx.lineTo(mastX + 24, deck - 68);
+    ctx.lineTo(mastX + 2, deck - 62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    roundRect(ctx, boatX - 6, deck - 26, 54, 28, 5);
+    ctx.fillStyle = "#f1faee";
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#7fd3ea";
+    for (const wx of [boatX + 2, boatX + 26]) {
+      roundRect(ctx, wx, deck - 19, 15, 10, 3);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
 
-  // Hull: bow on the left, square transom on the right.
-  ctx.beginPath();
-  ctx.moveTo(hl - 8, deck - 8);
-  ctx.lineTo(hr, deck);
-  ctx.lineTo(hr - 5, keel - 8);
-  ctx.quadraticCurveTo(hr - 8, keel, hr - 22, keel);
-  ctx.lineTo(boatX - BOAT_W * 0.18, keel);
-  ctx.quadraticCurveTo(hl + 6, keel - 2, hl - 8, deck - 8);
-  ctx.closePath();
-  ctx.save();
-  ctx.clip();
-  ctx.fillStyle = color;
-  ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, SURFACE_Y - deck + 10);
-  ctx.fillStyle = "#c0392b";
-  ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
-  ctx.fillStyle = "#f1faee";
-  ctx.fillRect(hl - 10, SURFACE_Y - 4, BOAT_W + 20, 4);
-  ctx.fillStyle = "rgba(0,0,0,0.12)";
-  ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, 6);
-  // Seen through the water, the part below the surface is bluer.
-  ctx.fillStyle = "rgba(27,143,181,0.3)";
-  ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
-  ctx.restore();
-  ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  // Hawsepipe where the chain comes out.
-  ctx.fillStyle = OUTLINE;
-  oval(ctx, boatX, keel - 2, 6, 3);
+    // Hull: bow on the left, square transom on the right.
+    ctx.beginPath();
+    ctx.moveTo(hl - 8, deck - 8);
+    ctx.lineTo(hr, deck);
+    ctx.lineTo(hr - 5, keel - 8);
+    ctx.quadraticCurveTo(hr - 8, keel, hr - 22, keel);
+    ctx.lineTo(boatX - BOAT_W * 0.18, keel);
+    ctx.quadraticCurveTo(hl + 6, keel - 2, hl - 8, deck - 8);
+    ctx.closePath();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = color;
+    ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, SURFACE_Y - deck + 10);
+    ctx.fillStyle = "#c0392b";
+    ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
+    ctx.fillStyle = "#f1faee";
+    ctx.fillRect(hl - 10, SURFACE_Y - 4, BOAT_W + 20, 4);
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(hl - 10, deck - 10, BOAT_W + 20, 6);
+    // Seen through the water, the part below the surface is bluer.
+    ctx.fillStyle = "rgba(27,143,181,0.3)";
+    ctx.fillRect(hl - 10, SURFACE_Y, BOAT_W + 20, BOAT_DRAFT + 4);
+    ctx.restore();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Hawsepipe where the chain comes out.
+    ctx.fillStyle = OUTLINE;
+    oval(ctx, boatX, keel - 2, 6, 3);
+  }
 
   // About to drop it: a "!" by the anchor, swelling with each clank, and chevrons marching down below it.
   if (warning) {

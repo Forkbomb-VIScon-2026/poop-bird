@@ -241,6 +241,12 @@ canvas#game {
   display: none;
 }
 
+/* The coach lets clicks through to the game, except on its skip button. */
+.coach .coach-skip {
+  pointer-events: auto;
+  margin: 10px 0 0;
+}
+
 /* The ocean tips: more to read, so bigger. */
 .coach.tips .hint {
   font-size: clamp(18px, 2.6vw, 26px);
@@ -865,19 +871,6 @@ body.touch .key-badge {
   margin: 0 0 4px;
 }
 
-.ghost-row {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.calib-step {
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  opacity: 0.7;
-}
-
 .calib-count {
   font-size: 54px;
   font-weight: 900;
@@ -974,8 +967,15 @@ body.touch .key-badge {
   flex: 1;
 }
 
-.calib-count {
+/* The countdown's slot, mirrored on the right so the bar stays centred. */
+.calib-count,
+.calib-run::after {
   min-width: 1.2em;
+}
+
+.calib-run::after {
+  content: "";
+  font-size: 54px;
 }
 
 .calib.holding h2 {
@@ -1013,8 +1013,8 @@ body.touch .key-badge {
   visibility: hidden;
 }
 
-/* Back to the menu, in the score's spot (hidden on the perch). */
-.perch-menu {
+/* Back to the menu, top left: on the perch in the score's spot (hidden there), and on the calibration screen. */
+.corner-menu {
   position: absolute;
   top: calc(16px + env(safe-area-inset-top));
   left: calc(12px + env(safe-area-inset-left));
@@ -1633,10 +1633,6 @@ body.debug-open #cam {
   .calib {
     padding: 10px 14px 6px;
   }
-  .calib-step {
-    display: none;
-  }
-
   .hud-score {
     font-size: 34px;
   }
@@ -1696,10 +1692,6 @@ body.debug-open #cam {
     padding: 8px 14px 4px;
   }
 
-  .calib-step {
-    display: none;
-  }
-
   .calib-count {
     font-size: 40px;
   }
@@ -1749,7 +1741,6 @@ body.debug-open #cam {
     font-size: 14px;
   }
 
-  .calib .hint,
   #calib-result-text {
     font-size: 14px;
     margin: 4px 0;

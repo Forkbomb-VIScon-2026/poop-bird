@@ -19,6 +19,8 @@ export interface CoachLine {
   done?: boolean;
   /** Where the player is in the flight lesson: [current step, steps]. */
   dots?: readonly [number, number] | null;
+  /** A lesson's line: the "Skip tutorial" button shows. */
+  skip?: boolean;
 }
 
 /** The coach belongs to whoever claimed it last (claimCoach). */
@@ -77,6 +79,7 @@ export function coachSay(owner: number, line: CoachLine): void {
     );
   }
   show(dots, !!line.dots);
+  show($("coach-skip"), !!line.skip);
   show(el, true);
 }
 

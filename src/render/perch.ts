@@ -1,6 +1,7 @@
 // The practice perch before a run: a nest on an old street lamp.
 
 import { GROUND_Y, PERCH_Y } from "../game";
+import { RTX, rtxLamp, rtxNestFront } from "../rtx";
 import { oval, roundRect } from "./shapes";
 import { OUTLINE, type View } from "./view";
 
@@ -18,6 +19,7 @@ const NEST_RX = 36;
  * in the nest.
  */
 export function drawPerch(view: View, x: number): void {
+  if (RTX.on && rtxLamp(view.ctx, x, PERCH_Y + NEST_DEPTH + 6, GROUND_Y + 16)) return;
   const ctx = view.ctx;
   // The nest's bowl rests on the cap's flat top.
   const cap = PERCH_Y + NEST_DEPTH - 2;
@@ -127,6 +129,7 @@ export function drawPerch(view: View, x: number): void {
 
 /** The front of the nest: a woven bowl over the bird's belly, with twigs sticking out. */
 export function drawNestFront(view: View, x: number): void {
+  if (RTX.on && rtxNestFront(view.ctx, x, PERCH_Y + NEST_RIM, PERCH_Y + NEST_DEPTH, NEST_RX)) return;
   const ctx = view.ctx;
   const y0 = PERCH_Y + NEST_RIM;
   const bottom = PERCH_Y + NEST_DEPTH;

@@ -11,7 +11,7 @@ import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
 import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
 import { FaceRecognizer, alignedFaceCrop } from "./faceid";
-import { BIRD_RADIUS, GROUND_Y, Game, VIEW_H, wireAt } from "./game";
+import { BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
 import { playFeedback } from "./feedback";
 import { Renderer, type Photo } from "./render";
@@ -28,6 +28,7 @@ import {
   withDescriptors,
   type Descriptor,
   type KnownFace,
+  type Tutorial,
 } from "./known-faces";
 import { strainPercent } from "./leaderboard";
 import { showBoards } from "./leaderboard-view";
@@ -46,16 +47,12 @@ import {
   loadGraphics,
   loadKnownFacesJson,
   loadMuted,
-  loadSeenTutorials,
   saveBest,
   saveCalibration,
   saveGraphics,
   saveKnownFacesJson,
   saveMuted,
-  saveSeenTutorials,
   storageRemove,
-  TUTORIALS,
-  type Tutorial,
 } from "./storage";
 import {
   PUFF_FEATURES,
@@ -75,7 +72,7 @@ import {
   type FeatureVector,
 } from "./strain";
 import { claimCoach, coachSay, dockCoach, releaseCoach, type CoachFace, type CoachLine } from "./ui/coach";
-import { $, homeOf, isTouch, replayAnimation, show, wait } from "./ui/dom";
+import { $, homeOf, isTouch, replayAnimation, show, stopwatch, wait } from "./ui/dom";
 import { offerRun, showRunPhotos, showRunStats, submitToLeaderboard } from "./ui/gameover";
 import { hideToast, showToast } from "./ui/toast";
 
@@ -140,12 +137,6 @@ let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FE
 let calibrationIsDefault = false;
 /** Puff calibration (neutral vs. full puff), on top of the fixed pucker range. null = the pucker range alone. */
 let puffCalibration: Calibration | null = loadCalibration(PUFF_CALIBRATION_KEY, PUFF_FEATURES);
-/** Flow token of the ocean tips in progress, if any. */
-let activePuffCalibration: number | null = null;
-/** Set to cut the ocean tips short. */
-let abortPuffCalibration = false;
-/** The coach claim of the ocean tips in progress. */
-let puffCoach = 0;
 /** The coach claim of the perch. */
 let perchCoach = 0;
 /** Poops and accidents this run, for the city lesson. */
@@ -174,8 +165,12 @@ let best = loadBest();
 let currentSnapshotUrl: string | null = null;
 /** Smoothed `strainedness` of the face (the finest-strain snapshot's and the leaderboard's measure). */
 let faceStrain = 0;
-/** Tutorials already shown (kept in memory too, so they show once per session even without storage). */
-const seenTutorials = loadSeenTutorials();
+/** The player pressed "Skip tutorial": the lesson running ends (lessons reset it when they start). */
+let tutorialSkipped = false;
+/** The lesson that started last, and the face lock it started under: what "Skip tutorial" skips. */
+let activeLesson: { tutorial: Tutorial; lock: number } | null = null;
+/** Tutorials shown without a face to remember them with (keyboard mode, or no face recognition here); Forget all clears them. */
+const seenWithoutFace = new Set<Tutorial>();
 
 sound.setMuted(loadMuted());
 
@@ -202,6 +197,11 @@ function puffInput(): number {
 /** Face data counts only if the detector produced it recently. */
 function faceFresh(): boolean {
   return performance.now() - lastFaceTime < 500;
+}
+
+/** The run is on (not paused, not over): lessons time themselves in playing time. */
+function playing(): boolean {
+  return state === "playing";
 }
 
 function faceVisible(): boolean {
@@ -289,6 +289,8 @@ const faceId = {
   /** Calibrations made for this face since the lock, remembered with it (rememberFace). */
   strain: null as { cal: Calibration; isDefault: boolean } | null,
   puff: null as Calibration | null,
+  /** Tutorials seen since the lock, remembered with the face (rememberFace). */
+  tutorials: new Set<Tutorial>(),
 };
 /**
  * Set by recognizeFace: the tracker callback aligns the next good view of the
@@ -311,6 +313,7 @@ function resetFaceId(): void {
   faceId.distance = Infinity;
   faceId.strain = null;
   faceId.puff = null;
+  faceId.tutorials = new Set();
   wantFaceCrop = false;
   faceCrop = null;
   // A failed fit was the previous face's: "Play anyway" mustn't hand it to this one.
@@ -418,7 +421,7 @@ function adoptKnownFace(face: KnownFace): void {
 /** Saves the calibrations made for the locked face with it, enrolling a new face with its first one. */
 function rememberFace(): void {
   if (faceId.status === "new" && (faceId.strain || faceId.puff)) {
-    const blank: KnownFace = { id: nextFaceId(knownFaces), descriptors: [], strain: null, strainIsDefault: false, puff: null, lastSeen: 0 };
+    const blank: KnownFace = { id: nextFaceId(knownFaces), descriptors: [], strain: null, strainIsDefault: false, puff: null, tutorials: [], lastSeen: 0 };
     faceId.known = withDescriptors(blank, faceId.descriptors);
     faceId.status = "known";
   }
@@ -429,6 +432,7 @@ function rememberFace(): void {
     strain: faceId.strain?.cal ?? f.strain,
     strainIsDefault: faceId.strain ? faceId.strain.isDefault : f.strainIsDefault,
     puff: faceId.puff ?? f.puff,
+    tutorials: [...new Set([...f.tutorials, ...faceId.tutorials])],
     lastSeen: Date.now(),
   };
   knownFaces = upsertFace(knownFaces, faceId.known);
@@ -453,6 +457,7 @@ function forgetFaces(): void {
   const n = knownFaces.length;
   knownFaces = [];
   saveKnownFacesJson(null);
+  seenWithoutFace.clear();
   resetFaceId();
   updateFacesSetting();
   console.info(`[faceid] forgot ${n} face${n === 1 ? "" : "s"}`);
@@ -462,7 +467,7 @@ function forgetFaces(): void {
 function updateFacesSetting(): void {
   const n = knownFaces.length;
   $("faces-count").textContent = n ? `${n} face${n === 1 ? "" : "s"} remembered in this tab.` : "No faces remembered.";
-  $<HTMLButtonElement>("btn-forget-faces").disabled = n === 0;
+  $<HTMLButtonElement>("btn-forget-faces").disabled = n === 0 && seenWithoutFace.size === 0;
 }
 
 /**
@@ -657,9 +662,7 @@ async function runCalibration(forced = calib.forced): Promise<void> {
  * face goes on to the perch). false = abandoned, or the face was known.
  */
 async function welcome(token: number): Promise<boolean> {
-  $("calib-step").textContent = "Calibration";
-  $("calib-prompt").textContent = "Hi! 👋 Let's get the game to know your face";
-  $("calib-hint").textContent = "Just look at the camera for a moment…";
+  $("calib-prompt").textContent = "Hi! 👋 Just look at the camera for a moment";
   screens.calibrate.classList.add("welcome");
   show($("calib-buttons"), false);
   show($("calib-run"), true);
@@ -735,7 +738,7 @@ async function calibrateStrain(token: number): Promise<boolean | null> {
   }
 }
 
-/** The puff phase: a hold, then "let it out". Like calibrateStrain. */
+/** The puff phase: a hold, against the relaxed face from the welcome. Like calibrateStrain. */
 async function calibratePuff(token: number): Promise<boolean | null> {
   for (let tries = 0; ; tries++) {
     const go = await calibrationIntro(token, "puff", tries);
@@ -755,9 +758,7 @@ async function calibratePuff(token: number): Promise<boolean | null> {
     }
     const held = await holdFace(token, "puff");
     if (!held) return null;
-    const after = await letOut(token);
-    if (!after) return null;
-    const relaxed = [...calib.relaxed, ...after];
+    const relaxed = [...calib.relaxed];
     const cal = buildInteractivePuffCalibration(relaxed, held.samples, config);
     const quality = cal
       ? assessPuffCalibration(cal, held.samples, { strain: held.coverage }, { ...config, minSinkRate: config.oceanPuffMinSinkRate }, relaxed)
@@ -784,8 +785,8 @@ function strainRetryReason(q: ReturnType<typeof assessCalibration>): string {
 function puffRetryReason(reason: string | undefined): string {
   switch (reason) {
     case "puff looked like your relaxed face": return "That looked like your normal face. Fill your cheeks with air and purse your lips!";
+    case "your face didn't relax between puffs": return "Your puff looked too much like your normal face. Fill your cheeks right up!";
     case "puff wasn't held steadily": return "Keep the cheeks puffed for the whole bar, then try again.";
-    case "your face didn't relax between puffs": return "Let all the air out after the puff, lips loose.";
     case "couldn't see your face": return "I couldn't see your face well. Face the camera, in good light.";
     default: return "That didn't work. Try again!";
   }
@@ -793,14 +794,10 @@ function puffRetryReason(reason: string | undefined): string {
 
 const CALIB_TEXT = {
   strain: {
-    step: "Calibration 1/2: poop face",
     prompt: "Strain like you really need to go 💩",
-    hint: "Brows down, eyes squeezed, lips pressed. You'll hold it for 3 seconds.",
   },
   puff: {
-    step: "Calibration 2/2: pufferfish face",
     prompt: "Puff your cheeks like a pufferfish 🐡",
-    hint: "Cheeks full of air, lips pursed. Hold it, then let the air out.",
   },
 };
 
@@ -812,9 +809,7 @@ const CALIB_TEXT = {
  */
 async function calibrationIntro(token: number, phase: "strain" | "puff", tries: number): Promise<"go" | "skip" | null> {
   const text = CALIB_TEXT[phase];
-  $("calib-step").textContent = text.step;
   $("calib-prompt").textContent = text.prompt;
-  $("calib-hint").textContent = text.hint;
   $<HTMLImageElement>("calib-example").src = examples[phase];
   screens.calibrate.querySelector(".calib")!.classList.remove("holding");
   show($("calib-run"), false);
@@ -899,34 +894,6 @@ async function holdFace(token: number, phase: "strain" | "puff"): Promise<{ samp
   return { samples, coverage: frames > 0 ? samples.length / frames : 0 };
 }
 
-/**
- * After the puff: "let it out" for oceanLessonLetOutSeconds, sampled as the
- * relaxed face right after a puff, which isn't the one from before (the
- * mouth stays narrower, the lips pressed): the fit needs it, or the fish
- * won't sink (see buildInteractivePuffCalibration). null = abandoned.
- */
-async function letOut(token: number): Promise<FeatureVector[] | null> {
-  $("calib-prompt").textContent = "And let it out 😮‍💨";
-  $("calib-progress").style.width = "0%";
-  const total = config.oceanLessonLetOutSeconds * 1000;
-  const start = performance.now();
-  const mine = startSampling();
-  try {
-    for (; ;) {
-      if (token !== flow) return null;
-      const elapsed = performance.now() - start;
-      if (elapsed >= total) break;
-      $("calib-count").textContent = "";
-      $("calib-progress").style.width = `${(elapsed / total) * 100}%`;
-      await wait(50);
-    }
-  } finally {
-    stopSampling(mine.samples);
-  }
-  // The first moment is still the air going out.
-  return mine.samples.filter((x) => x.t - start >= config.calibrationSettle * 1000).map((x) => x.f);
-}
-
 /** Starts collecting face samples into fresh shared arrays (filled by the tracker callback). */
 function startSampling(): { samples: { t: number; f: FeatureVector }[]; frames: number[] } {
   const mine = { samples: [] as { t: number; f: FeatureVector }[], frames: [] as number[] };
@@ -953,109 +920,94 @@ function forgetCalibration(): void {
   location.reload();
 }
 
-// --- Ocean tips --------------------------------------------------------------------
-
-/** The ocean tips for new players, as banners over the calm water, after `intro` if given. */
-async function oceanTipBanners(token: number, intro?: [string, string]): Promise<boolean> {
-  const tips: [string, string][] = [
-    ...(intro ? [intro] : []),
-    ["Spikes! 🐡", "Puff past the red line to spike out. Hold it too long and you pop"],
-  ];
-  for (const [title, hint] of tips) {
-    setPuffOverlay(title, hint, null, true);
-    if (!(await waitPlaying(token, 4500))) return false;
-  }
-  return true;
-}
-
-/** Waits `ms` of playing time (pauses don't count). false = abandoned (the run ended, or the tips were cut short). */
-async function waitPlaying(token: number, ms: number): Promise<boolean> {
-  const played = stopwatch(() => state === "playing");
-  while (played() < ms) {
-    if (token !== flow || abortPuffCalibration) {
-      abortPuffCalibration = false;
-      return false;
-    }
-    await wait(50);
-  }
-  return true;
-}
-
-/** A stopwatch (ms) that only runs while `running()` holds, checked each time it's read. */
-function stopwatch(running: () => boolean): () => number {
-  let elapsed = 0;
-  let last = performance.now();
-  return () => {
-    const now = performance.now();
-    if (running()) elapsed += now - last;
-    last = now;
-    return elapsed;
-  };
-}
-
-/** The lesson's coach line: a title, a hint and the face to make (null: no pictogram). `tips`: no progress bar, bigger hint. */
-function setPuffOverlay(title: string, hint: string, face: "relaxed" | "puffed" | null, tips = false): void {
-  coachSay(puffCoach, { title, hint, face, bar: !tips, tips });
-}
-
-/** Hides the lesson's coach if `token`'s lesson still owns it. */
-function endPuffCalibrationOverlay(token: number): void {
-  if (activePuffCalibration !== token) return;
-  activePuffCalibration = null;
-  releaseCoach(puffCoach);
-  sound.setBurble(-1);
-}
-
 // --- Tutorials (new-player tips) ---------------------------------------------------------
 
-/** "I'm new here" in the menu: some tutorial hasn't been shown yet. */
-function isNewPlayer(): boolean {
-  return TUTORIALS.some((t) => !seenTutorials.has(t));
+/** Tutorials are per face: a face playing gets them once; without one (keyboard mode, no face recognition), once per tab. */
+function playsAsFace(): boolean {
+  return mode === "face" && faceId.status !== "off";
 }
 
-/** The menu toggle: on shows every tutorial again, off skips them all. */
-function setNewPlayer(isNew: boolean): void {
-  seenTutorials.clear();
-  if (!isNew) for (const t of TUTORIALS) seenTutorials.add(t);
-  saveSeenTutorials(seenTutorials);
+function tutorialSeen(t: Tutorial): boolean {
+  if (!playsAsFace()) return seenWithoutFace.has(t);
+  return faceId.tutorials.has(t) || !!faceId.known?.tutorials.includes(t);
 }
 
-function markTutorialSeen(t: Tutorial): void {
-  seenTutorials.add(t);
-  saveSeenTutorials(seenTutorials);
+/** `lock`: the face lock the lesson started under; if someone else has taken over since, it isn't theirs. */
+function markTutorialSeen(t: Tutorial, lock: number): void {
+  if (lock !== faceId.lock) return;
+  if (!playsAsFace()) {
+    seenWithoutFace.add(t);
+    updateFacesSetting();
+    return;
+  }
+  faceId.tutorials.add(t);
+  rememberFace();
 }
 
 /**
- * The bird just turned into a deflated fish. A new player gets the ocean tips
- * as banners over calm water; everyone else swims right into the level. (The
+ * The bird just turned into a deflated fish. A new player gets the swim
+ * lesson over calm water; everyone else swims right into the level. (The
  * puff was calibrated before the run, on the calibration screen.)
  */
 function onSubmerged(): void {
-  if (!seenTutorials.has("ocean")) void runOceanTips();
+  if (!tutorialSeen("ocean")) void runSwimLesson();
   else showToast(mode === "face" ? "Puff your cheeks to float 🐡" : isTouch ? "Hold the screen to puff up 🐡" : "Hold SPACE to puff up 🐡");
 }
 
 /**
  * A new player's first dive: the fish swims on in calm water (see
- * Game.calmWater) under banners on how to puff and the ocean tips, then the
- * level starts. Belongs to the run's flow token.
+ * Game.calmWater) while the coach has them rise to the surface, then sink
+ * back down, then warns about spikes; then the level starts. Belongs to the
+ * run's flow token.
  */
-async function runOceanTips(): Promise<void> {
+async function runSwimLesson(): Promise<void> {
   const token = flow;
-  activePuffCalibration = token;
-  puffCoach = claimCoach();
-  abortPuffCalibration = false;
+  const lock = faceId.lock;
+  const owner = claimCoach();
   game.calmWater = true;
-  while (game.transition && token === flow) await wait(50);
-  const hold = isTouch ? "Hold the screen" : "Hold SPACE";
-  const done = await oceanTipBanners(token, [
-    "Swim, little pufferfish! 🐡",
-    mode === "face" ? "Puff your cheeks to float, let the air out to sink" : `${hold} to puff up and float, let go to sink`,
-  ]);
-  endPuffCalibrationOverlay(token);
-  if (token !== flow) return;
-  if (done) markTutorialSeen("ocean");
+  tutorialSkipped = false;
+  activeLesson = { tutorial: "ocean", lock };
+  const face = mode === "face";
+  const say = (line: CoachLine): void => coachSay(owner, { ...line, face: face ? line.face : null, skip: true });
+  /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. */
+  const until = async (done: () => boolean, ms: number): Promise<boolean | null> => {
+    const played = stopwatch(playing);
+    while (!done()) {
+      if (token !== flow || state === "gameover" || tutorialSkipped) return null;
+      if (played() >= ms) return false;
+      await wait(50);
+    }
+    return true;
+  };
+  const abandon = (): void => {
+    releaseCoach(owner);
+    if (token === flow) game.calmWater = false;
+  };
+
+  if ((await until(() => !game.transition, 10_000)) === null) return abandon();
+  say({
+    title: face ? "Puff your cheeks to rise ⬆️" : `${HOLD} to rise ⬆️`,
+    hint: "Swim up to the surface",
+    face: "puffed",
+    dots: [0, 2],
+  });
+  if ((await until(() => game.bird.y < SURFACE_Y + 110, 15_000)) === null) return abandon();
+  say({
+    title: face ? "Let the air out to sink ⬇️" : "Let go to sink ⬇️",
+    hint: "Dive down towards the sea floor",
+    face: "relaxed",
+    dots: [1, 2],
+  });
+  if ((await until(() => game.bird.y > GROUND_Y - 150, 15_000)) === null) return abandon();
+  say({ title: "Nice swimming! 🐡", hint: "", face: null, dots: [2, 2], done: true });
+  if ((await until(() => false, 1200)) === null) return abandon();
+
+  // Seen from here on, so a player who crashes soon after doesn't get the lesson again.
+  markTutorialSeen("ocean", lock);
+  say({ title: "Spikes! 🐡", hint: "Puff past the red line to spike out. Hold it too long and you pop", tips: true });
+  if ((await until(() => false, 4000)) === null) return abandon();
   game.calmWater = false;
+  releaseCoach(owner);
 }
 
 // --- Ready & run -----------------------------------------------------------------
@@ -1217,7 +1169,7 @@ function takeOff(): void {
   state = "playing";
   showScreen(null);
   lessonCount.poops = lessonCount.accidents = 0;
-  if (!seenTutorials.has("city")) void runCityLesson();
+  if (!tutorialSeen("city")) void runCityLesson();
 }
 
 /**
@@ -1228,22 +1180,32 @@ function takeOff(): void {
  */
 async function runCityLesson(): Promise<void> {
   const token = flow;
+  const lock = faceId.lock;
   const owner = claimCoach();
   game.calmCity = true;
+  tutorialSkipped = false;
+  activeLesson = { tutorial: "city", lock };
   const face = mode === "face";
   let line: CoachLine = { title: "" };
   const say = (title: string, hint: string, look: CoachFace | null, done = false): void => {
-    line = { title, hint, face: face ? look : null, done };
+    line = { title, hint, face: face ? look : null, done, skip: true };
     coachSay(owner, line);
   };
-  /** Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. Shows the too-long hint after an accident. */
-  const until = async (done: () => boolean, ms: number): Promise<boolean | null> => {
-    const played = stopwatch(() => state === "playing");
+  /**
+   * Waits until `done()` (true) or `ms` of playing time (false); null = abandoned. Shows the too-long hint after an accident.
+   * Skipping the tutorial ends a `skippable` wait (as done) and hides the coach.
+   */
+  const until = async (done: () => boolean, ms: number, skippable = true): Promise<boolean | null> => {
+    const played = stopwatch(playing);
     while (!done()) {
       if (token !== flow || state === "gameover") return null;
+      if (tutorialSkipped) {
+        releaseCoach(owner);
+        if (skippable) return true;
+      }
       if (played() >= ms) return false;
       const recent = performance.now() - lessonCount.lastAccident < 3000;
-      coachSay(owner, recent ? { ...line, hint: tooLongHint() } : line);
+      if (!tutorialSkipped) coachSay(owner, recent ? { ...line, hint: tooLongHint() } : line);
       await wait(50);
     }
     return true;
@@ -1257,17 +1219,18 @@ async function runCityLesson(): Promise<void> {
   const poops = lessonCount.poops;
   const flew = await until(() => lessonCount.poops - poops >= 3, 20_000);
   if (flew === null) return abandon();
-  if (flew) {
+  if (flew && !tutorialSkipped) {
     say("Nice flying!", "", null, true);
     if ((await until(() => false, 1200)) === null) return abandon();
   }
 
   // Seen from here on, so a player who crashes soon after doesn't get the whole lesson again.
-  markTutorialSeen("city");
+  markTutorialSeen("city", lock);
   // The street stops bouncing once the bird is clear of it (or after a while), so the handoff isn't a crash.
   // The last line stays up until then; the buildings that follow are for the player to discover.
   const clear = (): boolean => game.bird.y + BIRD_RADIUS < GROUND_Y - 120;
-  if ((await until(clear, 8000)) === null) return abandon();
+  // Not skippable: a skipped lesson still waits (without the coach) for the bird to be clear of the street.
+  if ((await until(clear, 8000, false)) === null) return abandon();
   game.calmCity = false;
   releaseCoach(owner);
 }
@@ -1345,7 +1308,6 @@ function goToMenu(): void {
   show(cam, false);
   show(hud, false);
   game.startDemo();
-  $<HTMLInputElement>("opt-tips").checked = isNewPlayer();
   newTagline();
   showScreen("start");
 }
@@ -1467,9 +1429,7 @@ function frame(now: number): void {
 
   const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);
-  if (activePuffCalibration === null) {
-    sound.setBurble(state === "playing" && game.swimming && !game.stunned ? game.fish.puff : -1);
-  }
+  sound.setBurble(state === "playing" && game.swimming && !game.stunned ? game.fish.puff : -1);
 
   // Only audible during active city gameplay, and only when part of a line
   // is actually visible. Distance is to the nearest point on any visible wire.
@@ -1602,6 +1562,12 @@ function focusHandlesEnter(): boolean {
 
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
+  // Esc closes the settings too. Done takes Enter, and a screen's yellow button takes no other key (keyhints.ts).
+  if (e.key === "Escape" && !settingsPanel.classList.contains("hidden")) {
+    e.preventDefault();
+    if (!e.repeat && performance.now() >= buttonKeysArmedAt) pressFromKey($<HTMLButtonElement>("btn-settings-done"));
+    return;
+  }
   // Each button takes the one key on its badge: Enter for a screen's yellow button, else its own (keyhints.ts).
   if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const name = keyName(e);
@@ -1657,7 +1623,7 @@ const DEBUG_SPAWNS: Partial<Record<string, () => void>> = {
   w: () => game.spawnWeddingNow(),
   b: () => game.spawnBalloonNow(),
   h: () => game.spawnAnglerNow(), // a fisherman (ocean)
-  s: () => game.spawnSharkNow(), // ocean
+  j: () => game.spawnSharkNow(), // J for Jaws (ocean): S opens the settings
   a: () => game.spawnAnchorDropNow(), // a boat that drops its anchor (ocean)
 };
 
@@ -1749,7 +1715,6 @@ onPlay("btn-calib-go", () => {
 on("btn-calib-skip", () => {
   calib.skipped = true;
 });
-onPlay("btn-calib-keyboard", startKeyboardMode);
 on("btn-calib-cancel", goToMenu);
 on("btn-perch-menu", goToMenu);
 on("btn-tune", () => void recalibrate());
@@ -1763,8 +1728,13 @@ onPlay("btn-again", () => {
 });
 on("btn-go-calibrate", () => void recalibrate());
 on("btn-go-menu", goToMenu);
-$<HTMLInputElement>("opt-tips").addEventListener("change", (e) => {
-  setNewPlayer((e.target as HTMLInputElement).checked);
+on("coach-skip", () => {
+  // Not while paused: Enter there mustn't skip the lesson underneath.
+  if (state !== "playing") return;
+  if (activeLesson) markTutorialSeen(activeLesson.tutorial, activeLesson.lock);
+  tutorialSkipped = true;
+  // Space puffs and flaps: it mustn't press this button again.
+  $("coach-skip").blur();
 });
 on("btn-download", () => {
   if (!currentSnapshotUrl) return;

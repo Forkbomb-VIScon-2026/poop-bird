@@ -114,19 +114,21 @@ function drawDroneWreck(ctx: CanvasRenderingContext2D, w: DroneWreck, seed: numb
   ctx.rotate(-0.18);
   ctx.save();
   clipDroneHalf(ctx, -1);
-  ctx.fillStyle = "#5c6370";
-  ctx.beginPath();
-  ctx.moveTo(-8, -12);
-  ctx.lineTo(-19, -9);
-  ctx.lineTo(-17, -4);
-  ctx.lineTo(-6, -8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#9aa3ad";
-  oval(ctx, 0, -12, 12, 8, 0, true);
-  ctx.fillStyle = "#7d8691";
-  oval(ctx, -5, -14, 8, 4.5, 0.15, true);
+  if (!(RTX.on && drawRtxPhoto(ctx, "perched", 0, 0, 0, PIGEON_R / PIGEON_SCALE))) {
+    ctx.fillStyle = "#5c6370";
+    ctx.beginPath();
+    ctx.moveTo(-8, -12);
+    ctx.lineTo(-19, -9);
+    ctx.lineTo(-17, -4);
+    ctx.lineTo(-6, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#9aa3ad";
+    oval(ctx, 0, -12, 12, 8, 0, true);
+    ctx.fillStyle = "#7d8691";
+    oval(ctx, -5, -14, 8, 4.5, 0.15, true);
+  }
   drawDroneInnards(ctx, -1, seed);
   ctx.restore();
   drawSplat(ctx, -6, -15, 5, seed, 1);
@@ -138,8 +140,10 @@ function drawDroneWreck(ctx: CanvasRenderingContext2D, w: DroneWreck, seed: numb
   ctx.rotate(0.45);
   ctx.save();
   clipDroneHalf(ctx, 1);
-  ctx.fillStyle = "#9aa3ad";
-  oval(ctx, 0, -12, 12, 8, 0, true);
+  if (!(RTX.on && drawRtxPhoto(ctx, "perched", 0, 0, 0, PIGEON_R / PIGEON_SCALE))) {
+    ctx.fillStyle = "#9aa3ad";
+    oval(ctx, 0, -12, 12, 8, 0, true);
+  }
   drawDroneInnards(ctx, 1, seed);
   ctx.restore();
   ctx.fillStyle = "#6a994e";
