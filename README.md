@@ -379,6 +379,9 @@ Music** switches it off for good (saved in localStorage; the tracks then
 aren't even downloaded); the mute button
 silences it with everything else. `musicVolume` sets its level.
 
+Both tracks were made with [Suno](https://suno.com); credits are in
+`public/assets/audio/CREDITS.md`.
+
 ## Leaderboard
 
 The game-over screen and the start screen's 🏆 (**L**) show the online
