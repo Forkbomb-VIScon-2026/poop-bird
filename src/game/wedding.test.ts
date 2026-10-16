@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { config } from "./config";
-import { Game } from "./game";
+import { config } from "../config";
+import { Game } from ".";
 
 /** A game whose bird hovers mid-screen and can't die, so the world just scrolls by. */
 function immortalGame(): { game: Game; step: (seconds: number, until?: () => boolean) => void } {

@@ -1,11 +1,12 @@
 // RTX graphics: the game drawn with real photos, cut out with a dark outline
 // (sources and licences in assets/CREDITS.md). Off by default; the settings menu
-// turns it on. render.ts stays the one renderer: when RTX is on, its drawing
+// turns it on. render/ stays the one renderer: when RTX is on, its drawing
 // functions hand what we have photos for to the helpers here and draw everything
 // else as usual, so new things on the classic side keep working with RTX on.
 // The photos only load the first time RTX is turned on.
 
 import { BIRD_RADIUS, GROUND_Y, SURFACE_Y, carLength, poleX, type Game, type PowerLine, type Target } from "./game";
+import { rnd } from "./random";
 
 import asphaltUrl from "./assets/asphalt.jpg";
 import balloonUrl from "./assets/balloon.png";
@@ -93,12 +94,6 @@ export interface Sprite {
   scale: number;
   /** The animal's own eye in the picture, where the googly eye goes. */
   eye?: { x: number; y: number };
-}
-
-/** Deterministic pseudo-random in [0,1) from a seed (same as render.ts). */
-function rnd(seed: number): number {
-  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
-  return x - Math.floor(x);
 }
 
 function loadSprites() {

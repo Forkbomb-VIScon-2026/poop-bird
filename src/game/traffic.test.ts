@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { config } from "./config";
-import { Game, carLength, type Target } from "./game";
+import { config } from "../config";
+import { carLength, Game, type Target } from ".";
 
 describe("traffic", () => {
   it("keeps each direction in its own lane, and cars never overlap", () => {

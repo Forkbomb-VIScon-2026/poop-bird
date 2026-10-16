@@ -2,6 +2,8 @@
 // blocked site data, quota), so every access is guarded and the game keeps
 // working without it.
 
+import { restoreCalibration, type Calibration, type FeatureName } from "./strain";
+
 function store(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
@@ -103,6 +105,21 @@ export const CALIBRATION_KEY = "poopybird.calibration.v1";
 // v3: interactive calibration (puff/relax cycles; "relaxed" includes the face right after a puff).
 export const PUFF_CALIBRATION_KEY = "poopybird.puffCalibration.v3";
 
+export function saveCalibration(key: string, cal: Calibration): void {
+  storageSet(key, JSON.stringify(cal));
+}
+
+/** Calibrations saved before the puff features existed still load (see restoreCalibration). */
+export function loadCalibration(key: string, required: readonly FeatureName[]): Calibration | null {
+  const raw = storageGet(key);
+  if (!raw) return null;
+  try {
+    return restoreCalibration(JSON.parse(raw), required);
+  } catch {
+    return null;
+  }
+}
+
 // --- Best score ------------------------------------------------------------------
 
 const BEST_KEY = "poopybird.best.v1";
@@ -127,6 +144,16 @@ export function loadMusic(): boolean {
 
 export function saveMusic(on: boolean): void {
   storageSet(MUSIC_KEY, on ? "on" : "off");
+}
+
+const MUTED_KEY = "poopybird.muted.v1";
+
+export function loadMuted(): boolean {
+  return storageGet(MUTED_KEY) === "1";
+}
+
+export function saveMuted(muted: boolean): void {
+  storageSet(MUTED_KEY, muted ? "1" : "0");
 }
 
 export function loadBest(): number {

@@ -887,15 +887,28 @@ src/
   face.ts       MediaPipe + webcam, detection loop
   faceid.ts     face recognition: descriptors of aligned face crops (face-api)
   known-faces.ts  the faces this tab calibrated: matching, storage format (pure)  known-faces.test.ts
-  game.ts       simulation (fixed timestep)        wedding.test.ts
-  render.ts     canvas drawing
+  game/         simulation (fixed timestep), one module per feature, with its tests
+    game.ts       the Game: a run's state, step(), scoring and effects helpers, debug spawns
+    world.ts      playfield heights, the two stages' coordinates
+    bird.ts fish.ts stage.ts   the creature in each stage, and the dive / leap between them
+    obstacles.ts ocean-obstacles.ts power-lines.ts balloons.ts   what's in the way
+    street.ts traffic.ts paparazzi.ts kids.ts wedding.ts poops.ts   the city's targets and what hits them
+    jellies.ts shark.ts angler.ts   the ocean's
+    effects.ts events.ts demo.ts     particles and floaters; GameEvents; the start screen's autopilot
+  render/       canvas drawing, a module per feature named like its game/ module
+    renderer.ts   the Renderer: camera, draw order, photo captures
+    view.ts shapes.ts   what drawing functions share; canvas helpers
+  rtx.ts        the RTX style's photos
   audio.ts      sound effects (WebAudio samples) and stage music
+  feedback.ts   each GameEvent's sound and vibration
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   storage.ts    safe localStorage, best score, your leaderboard runs
   leaderboard.ts       leaderboard format, checks, ranking (shared with the collector)
   leaderboard-view.ts  the boards in the page: fetch, submit, remove, draw
-  main.ts       screens, input, loops, calibration flow
+  main.ts       screens, input, loops, calibration flow, lessons
+  ui/           dom helpers, toast, coach (tutorial banner), game-over screen
+  random.ts     pick, rnd (seeded)
   session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
   collect.ts    the dataset recorder page (collect.html)
 collector/

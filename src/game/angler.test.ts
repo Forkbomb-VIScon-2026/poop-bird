@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ANGLER_TIP_DX, Game } from "./game";
+import { ANGLER_TIP_DX, Game } from ".";
 
 /** Dives in and settles in the ocean, hovering, with a fisherman whose hook is `dy` below the fish and `ahead` px in front. */
 function fishing(ahead: number, dy: number, puff = 0.4): Game {

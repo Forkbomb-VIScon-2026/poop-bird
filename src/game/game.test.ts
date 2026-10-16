@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { config, ramp } from "./config";
+import { config, ramp } from "../config";
 import {
   ANCHOR_H, ANCHOR_RIP_Y, ANCHOR_W, BIRD_RADIUS, BOAT_DRAFT, GROUND_Y, Game, OCEAN_MID_Y, PERCH_Y, SURFACE_Y, WATER_Y, WRECK_HULL_H,
   WRECK_MAST_MAX, WRECK_MAST_MIN, obstacleRects, type Obstacle,
-} from "./game";
+} from ".";
+import { spawnAngler } from "./angler";
+import { spawnOceanObstacle } from "./ocean-obstacles";
 
 /** A city game with the quay's edge `edge` px behind the bird. */
 function atHarbour(edge: number, y: number, vy: number): Game {
@@ -187,7 +189,7 @@ describe("anchored boats", () => {
       config.oceanAnchorOpenChance = open ? 1 : 0;
       const game = new Game(1000);
       const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
-      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"]();
+      for (let i = 0; i < 200; i++) spawnOceanObstacle(game);
       // (stageObstacles stays 0 here, so none of them is the stage's last.)
       for (const o of game.obstacles) {
         expect(o.anchor).toBe(true);
@@ -206,8 +208,8 @@ describe("anchored boats", () => {
   it("stay away while a fisherman is out", () => {
     config.oceanAnchorChance = 1;
     const game = new Game(1000);
-    game["spawnAngler"]();
-    for (let i = 0; i < 50; i++) game["spawnOceanObstacle"]();
+    spawnAngler(game);
+    for (let i = 0; i < 50; i++) spawnOceanObstacle(game);
     expect(game.obstacles.some((o) => o.anchor)).toBe(false);
   });
 
@@ -253,7 +255,7 @@ describe("dropping anchors", () => {
       const game = new Game(1000);
       const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
       const hullBottom = SURFACE_Y + BOAT_DRAFT;
-      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"](true);
+      for (let i = 0; i < 200; i++) spawnOceanObstacle(game, true);
       for (const o of game.obstacles) {
         const d = o.drop!;
         expect(d.state).toBe("hanging");
@@ -275,7 +277,7 @@ describe("dropping anchors", () => {
 
   it("rip the chain, which is still a hit as it falls with the anchor", () => {
     const game = new Game(1000);
-    game["spawnOceanObstacle"](true);
+    spawnOceanObstacle(game, true);
     const o = game.obstacles[0];
     const d = o.drop!;
     // Hanging, the chain runs from the hull to the anchor.
@@ -354,7 +356,7 @@ describe("shipwrecks", () => {
       config.oceanAnchorOpenChance = 0;
       const game = new Game(1000);
       const gap = ramp(config.oceanGap, config.oceanGapMin, game.difficulty);
-      for (let i = 0; i < 200; i++) game["spawnOceanObstacle"]();
+      for (let i = 0; i < 200; i++) spawnOceanObstacle(game);
       config.oceanAnchorOpenChance = open;
       for (const o of game.obstacles) {
         expect(o.bottom).toBe("wreck");
@@ -416,7 +418,7 @@ describe("sharks", () => {
     for (let i = 0; i < 60 * 12 && (game.stage === "city" || game.transition); i++) game.step(1 / 60);
     expect(game.stage).toBe("ocean");
     game.obstacles = [];
-    game["nextObstacleAt"] = Infinity;
+    game.nextObstacleAt = Infinity;
     Object.assign(game.bird, { y: 300, vy: 0 });
     game.puffInput = config.oceanHoverPuff;
     game.spawnSharkNow();
@@ -456,7 +458,7 @@ describe("sharks", () => {
     let late = 0;
     for (let i = 0; i < 60 * 20 && !game.shark; i++) {
       // One obstacle falls due inside the clear window.
-      if (game.sharkTheme! > spawnAt - 3 && game.sharkTheme! < spawnAt - 3 + 1 / 30) game["nextObstacleAt"] = game.distance;
+      if (game.sharkTheme! > spawnAt - 3 && game.sharkTheme! < spawnAt - 3 + 1 / 30) game.nextObstacleAt = game.distance;
       const before = game.obstacles.length;
       game.step(1 / 60);
       if (game.obstacles.length > before && game.sharkTheme! > spawnAt - 3) late++;
