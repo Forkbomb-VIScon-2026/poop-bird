@@ -37,6 +37,15 @@ jobs:
       - run: npx cap sync android
       - run: ./gradlew assembleDebug && mv app/build/outputs/apk/debug/app-debug.apk ../poopy-bird.apk
         working-directory: android
+      # Keeps the release build working (android-release.yml signs it with the real key).
+      - name: Release build, signed with the debug key
+        run: ./gradlew assembleRelease
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE: app/debug.keystore
+          ANDROID_KEYSTORE_PASSWORD: android
+          ANDROID_KEY_ALIAS: androiddebugkey
+          ANDROID_KEY_PASSWORD: android
       - uses: actions/upload-artifact@v4
         with:
           name: poopy-bird-apk

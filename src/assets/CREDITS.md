@@ -2,6 +2,8 @@
 
 The pictures in this folder are cut out of (or cropped from) photos on Wikimedia Commons, scaled, and given a dark outline. Faces that showed in the people photos are pixelated. The modified versions are shared under the same licence as their source.
 
+The Android app's icon and splash screen (`scripts/app-icons.mjs`, in `android/app/src/main/res`) are made from `bird-glide.png` and `poop.png`, so they carry `bird-glide.png`'s licence and credit below.
+
 | File | Source | Author | Licence |
 | --- | --- | --- | --- |
 | `jelly.png` | [Aurelia aurita (Cnidaria) Luc Viatour.jpg](https://commons.wikimedia.org/wiki/File:Aurelia_aurita_(Cnidaria)_Luc_Viatour.jpg) | Luc Viatour | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
