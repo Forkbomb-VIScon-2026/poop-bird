@@ -78,6 +78,7 @@ npm run eval           # detection scoreboard over data/ (variants in scripts/ev
 docker compose up --build              # Caddy serving dist/ on :8080, plus the dataset collector
 npm run app:dev        # the Android app on a USB phone, showing the debug dev server (needs JDK 21 + Android SDK, README "Android app")
 npm run app:run        # the Android app with the production build inside (debug APK, installed over USB)
+npm run app:release    # signed release APK + AAB (needs android/keystore.properties; README "Release builds")
 ```
 
 `public/mediapipe/` is gitignored and generated: the game fails to load face tracking if the model hasn't been fetched.

@@ -1784,9 +1784,21 @@ on("coach-skip", () => {
 });
 on("btn-download", () => {
   if (!currentSnapshotUrl) return;
+  const name = `poopy-bird-finest-strain-${game.score}.jpg`;
+  if (APP) {
+    // The app's WebView can't download: the share sheet saves or sends it instead.
+    const url = currentSnapshotUrl;
+    void import("./app-share")
+      .then(({ shareImage }) => shareImage(url, name, "My finest strain"))
+      .catch((err: unknown) => {
+        console.warn("[share] failed", err);
+        showToast("Couldn't share the picture", 2000);
+      });
+    return;
+  }
   const a = document.createElement("a");
   a.href = currentSnapshotUrl;
-  a.download = `poopy-bird-finest-strain-${game.score}.jpg`;
+  a.download = name;
   a.click();
 });
 $<HTMLFormElement>("go-lb-form").addEventListener("submit", (e) => {

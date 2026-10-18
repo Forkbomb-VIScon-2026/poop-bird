@@ -1,0 +1,66 @@
+name: Android release
+
+# A signed release of the Android app (README "Android app", "Release builds"),
+# started by hand: Actions → Android release → Run workflow. It makes a draft
+# GitHub release with the APK, which only goes public (the repo is public) when
+# someone publishes it, and keeps the AAB for the Play Store as an artifact.
+#
+# Repository secrets:
+#   ANDROID_KEYSTORE_BASE64     the release keystore, base64 -w0 encoded
+#   ANDROID_KEYSTORE_PASSWORD   its password
+#   ANDROID_KEY_ALIAS           the key's alias in it
+#   ANDROID_KEY_PASSWORD        the key's password
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Release key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::No release key: add the ANDROID_KEYSTORE_* secrets (README \"Android app\", \"Release builds\")"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - run: npm ci
+      - run: npm run fetch-model
+      - run: npm run build
+      - run: npx cap sync android
+      - run: ./gradlew assembleRelease bundleRelease
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          apk="poopy-bird-$version-$GITHUB_RUN_NUMBER.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
+          gh release create "app-v$version-$GITHUB_RUN_NUMBER" "$apk" --draft --target "$GITHUB_SHA" \
+            --title "Poopy Bird for Android $version (build $GITHUB_RUN_NUMBER)" \
+            --notes "Install: open this page on the phone, download the APK and allow installing it. Face tracking stays on the phone, and the app has no online leaderboard. Photo credits: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/src/assets/CREDITS.md"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poopy-bird-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30

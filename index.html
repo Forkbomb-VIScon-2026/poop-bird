@@ -281,9 +281,9 @@
               </div>
             </figure>
           </div>
-          <!-- Not in the app: its WebView doesn't download. -->
-          <div id="go-snapshot-actions" class="go-snapshot-actions web-only hidden">
-            <button id="btn-download" class="btn small">⬇️ Download my face</button>
+          <!-- The app's WebView can't download: there it goes to the share sheet (app-share.ts). -->
+          <div id="go-snapshot-actions" class="go-snapshot-actions hidden">
+            <button id="btn-download" class="btn small"><span class="web-only">⬇️ Download my face</span><span class="app-only">📤 Share my face</span></button>
             <span class="privacy small">It stays on this device unless you share it.</span>
           </div>
           <!-- Opt-in: nothing is sent unless the player presses Submit, and the face only with the box ticked. Not in the app (.web-only). -->

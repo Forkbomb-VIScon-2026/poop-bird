@@ -32,6 +32,7 @@ Other scripts:
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
 | `npm run app:dev` / `app:run` / `app:open` | The [Android app](#android-app) on a phone over USB: showing the dev server / the build; the project in Android Studio |
+| `npm run app:release` | A signed release APK and Play Store bundle (needs the release key, see [Release builds](#release-builds)) |
 | `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector, leaderboard) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
@@ -71,7 +72,10 @@ Differences, from `APP` in `src/env.ts` (true when Capacitor's
 
 - **On-device only.** No online leaderboard: everything marked `.web-only` is
   hidden (`body.app`), and nothing goes to `/api`.
-- **No face download** at game over (the WebView can't save files).
+- **Share instead of download** at game over: the WebView can't save files,
+  so "📤 Share my face" (`src/app-share.ts`, Capacitor's Filesystem and Share
+  plugins) puts the picture in the app's cache and opens Android's share
+  sheet, which can save it or send it on.
 - **Full screen and landscape** come from the app (`MainActivity.java`, the
   manifest), not from `requestFullscreen`.
 - The camera permission is Android's (`CAMERA` in
@@ -120,6 +124,62 @@ adb install -r /tmp/apk/poopy-bird-debug-panel.apk
 
 The debug panel's "Save perf log" only reaches the laptop under `app:dev`; in
 an installed build it can't save (the WebView doesn't download).
+
+All debug builds (CI's and every laptop's) are signed with the same committed
+debug key (`android/app/debug.keystore`), and the version code is the build
+time, so any newer build installs over an older one. Uninstalling would delete
+the app's saved calibrations.
+
+**Icon and splash screen:** the RTX pigeon pooping, on the game's sky.
+`scripts/app-icons.mjs` draws them from `src/assets/bird-glide.png` and
+`poop.png` at every density into `android/app/src/main/res` (and the store
+icon, `android/app/src/main/ic_launcher-playstore.png`). The output is
+committed; to change the icon, edit the script and run it (instructions at its
+top; it draws in headless Chromium through `playwright-core`). On Android 12+
+the splash is the icon on the sky (`values/styles.xml`), before that the
+`splash.png` bitmaps. The photo's licence (CC BY 4.0) applies to the icon too:
+see `src/assets/CREDITS.md`.
+
+#### Release builds
+
+A release build has the production web build inside, no WebView debugging,
+and is signed with the release key. Debug builds can't be published: Android
+treats the shared debug key as anyone's.
+
+1. **Make the release key once**, and keep it and its passwords safe (a
+   password manager, not the repo). Every update of the app must be signed
+   with the same key, or phones refuse to install it over the old one.
+
+   ```sh
+   keytool -genkeypair -v -keystore ~/poopy-bird-release.jks -alias poopybird \
+     -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+2. **Build locally:** put the key's details in `android/keystore.properties`
+   (gitignored), then run `npm run app:release`:
+
+   ```properties
+   storeFile=/home/you/poopy-bird-release.jks
+   storePassword=…
+   keyAlias=poopybird
+   keyPassword=…
+   ```
+
+   The APK lands in `android/app/build/outputs/apk/release/app-release.apk`,
+   the Play Store bundle in `android/app/build/outputs/bundle/release/app-release.aab`.
+
+3. **Or build in CI:** add the repository secrets `ANDROID_KEYSTORE_BASE64`
+   (`base64 -w0 ~/poopy-bird-release.jks`), `ANDROID_KEYSTORE_PASSWORD`,
+   `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, then start
+   Actions → "Android release" → Run workflow. It makes a **draft** GitHub
+   release with the APK (the repo is public, so publishing it makes the APK
+   public) and keeps the AAB as an artifact.
+
+**Sharing it:** send the APK, or publish the draft release. To install, the
+phone downloads it and allows installing from that app (the browser or Files)
+once. The Google Play Store needs a developer account (one-time fee), the AAB,
+a privacy policy (the app keeps faces on the phone, and Play asks about camera
+use) and a review; with Play App Signing, the key above becomes the upload key.
 
 ## Controls
 
@@ -983,6 +1043,7 @@ src/
   feedback.ts   each GameEvent's sound and vibration
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
+  app-share.ts  the Android app's share sheet (instead of downloads)
   storage.ts    safe localStorage, best score, your leaderboard runs
   leaderboard.ts       leaderboard format, checks, ranking (shared with the collector)
   leaderboard-view.ts  the boards in the page: fetch, submit, remove, draw
@@ -1001,6 +1062,7 @@ collector/
 scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm, public/faceid
   app-dev.mjs      app:dev: the dev server, and the Android app showing it
+  app-icons.mjs    draws the Android app's icons and splash screens
   fetch-model.mjs  downloads face_landmarker.task
   data.ts          data:pull / data:purge
   leaderboard.ts   leaderboard moderation: list and remove runs
