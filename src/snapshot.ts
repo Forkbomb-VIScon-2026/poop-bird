@@ -7,7 +7,7 @@
 // captureFace() uses the same crop for the paparazzi's in-game photos, which
 // only ever live in memory for the current run.
 
-import type { FaceBox } from "./face";
+import type { FaceBox, FrameImage } from "./face";
 
 const WIDTH = 200;
 
@@ -27,9 +27,9 @@ export class StrainSnapshot {
   }
 
   /** Call on every detection while the player strains. Grabs the frame when strainedness hits a new peak. */
-  offer(video: HTMLVideoElement, box: FaceBox | null, strain: number): void {
+  offer(image: FrameImage, box: FaceBox | null, strain: number): void {
     if (!box || strain <= this.peak + 0.002 || strain < 0.15) return;
-    if (!cropFace(video, box, this.canvas, WIDTH)) return;
+    if (!cropFace(image, box, this.canvas, WIDTH)) return;
     this.peak = strain;
     this.has = true;
   }
@@ -46,15 +46,15 @@ export class StrainSnapshot {
 }
 
 /** A fresh canvas holding the face crop of the current video frame (the paparazzi's photo), or null. */
-export function captureFace(video: HTMLVideoElement, box: FaceBox | null): HTMLCanvasElement | null {
+export function captureFace(image: FrameImage, box: FaceBox | null): HTMLCanvasElement | null {
   const canvas = document.createElement("canvas");
-  return box && cropFace(video, box, canvas, WIDTH) ? canvas : null;
+  return box && cropFace(image, box, canvas, WIDTH) ? canvas : null;
 }
 
 /** Draws the padded, mirrored face crop into `canvas` (resized to `width`). False if there's nothing to crop. */
-function cropFace(video: HTMLVideoElement, box: FaceBox, canvas: HTMLCanvasElement, width: number): boolean {
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
+function cropFace(image: FrameImage, box: FaceBox, canvas: HTMLCanvasElement, width: number): boolean {
+  const vw = image.width;
+  const vh = image.height;
   if (!vw || !vh) return false;
   // Pad the landmark box so the whole face (and some forehead) fits.
   const padX = box.w * 0.25;
@@ -73,7 +73,7 @@ function cropFace(video: HTMLVideoElement, box: FaceBox, canvas: HTMLCanvasEleme
   ctx.save();
   ctx.translate(width, 0);
   ctx.scale(-1, 1);
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+  ctx.drawImage(image.source, sx, sy, sw, sh, 0, 0, width, height);
   ctx.restore();
   return true;
 }

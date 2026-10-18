@@ -1,38 +1,35 @@
-// MediaPipe Face Landmarker + webcam plumbing. Everything here is I/O; the
-// strain math lives in strain.ts.
+// Webcam plumbing and the face detection loop. The detection itself (MediaPipe
+// Face Landmarker and the face lock) is face-detect.ts; the strain math lives
+// in strain.ts.
 //
 // Detection runs on its own loop, driven by new video frames
 // (requestVideoFrameCallback, or a rAF fallback that checks currentTime), so
-// it is decoupled from the game's fixed-timestep physics.
-//
-// Face lock: with several people in view, MediaPipe (numFaces: 1) returns
-// whichever face it happens to track, and may jump to a bystander whenever its
-// tracking confidence drops (straining or puffing does that). So once a face is
-// found we lock onto it and only show MediaPipe a square crop around it: other
-// faces are simply not in its input. Detecting more faces instead costs one
-// landmark-model run per visible face; the crop costs nothing extra.
+// it is decoupled from the game's fixed-timestep physics. It runs in a worker
+// (face-worker.ts) where it can: each MediaPipe run takes 40–70 ms on a phone,
+// and on the main thread that much blocking costs the game most of its frames.
+// One frame is in flight at a time; video frames that come in meanwhile are
+// skipped, so the face data is never more than one detection old. Without a
+// worker (no OffscreenCanvas, no GPU in workers, or the faceWorker tunable
+// off) it runs on the main thread as before.
 
-import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { config } from "./config";
+import { FaceDetector, boundingBox, type Detection, type FaceBox, type LockParams } from "./face-detect";
+import type { FromWorker, ToWorker } from "./face-worker";
 import { faceGeometry, type LandmarkPoint } from "./puff";
 import { extractFeatures, type FeatureVector } from "./strain";
+import { RollingTiming } from "./timing";
+
+export type { FaceBox } from "./face-detect";
 
 const BASE = import.meta.env.BASE_URL;
 const WASM_PATH = `${BASE}mediapipe/wasm`;
 const MODEL_PATH = `${BASE}mediapipe/face_landmarker.task`;
-/** Side of the square canvas the crop around the locked face is scaled into. */
-const CROP_PX = 384;
-/** Most faces the full-frame search for the player looks at. */
-const ACQUIRE_MAX_FACES = 3;
-/** Margin (× the face box) when painting a face over so MediaPipe looks for another one. */
-const MASK_MARGIN = 1.3;
 
-/** Face bounding box in normalized video coordinates (0..1, not mirrored). */
-export interface FaceBox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+/** A video frame to draw from: the video element, or a copy of one of its frames. */
+export interface FrameImage {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
 }
 
 export interface FaceFrame {
@@ -51,54 +48,81 @@ export interface FaceFrame {
   newFace: boolean;
   /** Region the detection ran on (normalized, not mirrored); null = the full frame. */
   crop: FaceBox | null;
-  /** performance.now() of the detection. */
+  /** performance.now() when the video frame was taken. */
   time: number;
-}
-
-/** A square crop region in video pixels. */
-interface Region {
-  x: number;
-  y: number;
-  side: number;
-}
-
-interface Hit {
-  blendshapes: Record<string, number>;
-  /** Landmarks normalized to the full video frame. */
-  landmarks: LandmarkPoint[];
+  /**
+   * The video frame the landmarks are from, to crop the face out of. Only
+   * valid during the listener call (a worker frame is closed after it).
+   */
+  image: FrameImage;
 }
 
 export type FaceListener = (frame: FaceFrame) => void;
 
+/** The video element as a FrameImage (its current frame). */
+export function videoImage(video: HTMLVideoElement): FrameImage {
+  return { source: video, width: video.videoWidth, height: video.videoHeight };
+}
+
+/** Whether this browser can run the detection in a worker (MediaPipe's GPU delegate there needs OffscreenCanvas). */
+function workersWork(): boolean {
+  return typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined" && typeof createImageBitmap === "function";
+}
+
+function lockParams(): LockParams {
+  return {
+    faceCropScale: config.faceCropScale,
+    faceLockMaxJump: config.faceLockMaxJump,
+    faceRelockSeconds: config.faceRelockSeconds,
+  };
+}
+
+/** The frame in the worker: when it was taken, and what is waiting for it. */
+interface InFlight {
+  now: number;
+  /** The tracker's generation when it was sent; a result from an older one is dropped. */
+  generation: number;
+  /** A switchFace() call this frame answers. */
+  switched: ((found: boolean) => void) | null;
+  /** Main-thread time spent sending it, ms. */
+  sendMs: number;
+}
+
 export class FaceTracker {
   readonly video: HTMLVideoElement;
-  private landmarker: FaceLandmarker | null = null;
+  /** Detection on the main thread (no worker). */
+  private detector: FaceDetector | null = null;
+  private worker: Worker | null = null;
+  private loading: Promise<void> | null = null;
   private stream: MediaStream | null = null;
   private starting: Promise<void> | null = null;
   private running = false;
   private lastVideoTime = -1;
-  private lastTimestamp = 0;
   private listeners = new Set<FaceListener>();
   private detectionTimes: number[] = [];
   delegate: "GPU" | "CPU" | null = null;
-  /** The player's face (normalized box) and when it was last seen. */
-  private lock: { box: FaceBox; seen: number } | null = null;
-  /** Set while the locked face is missing: the crop widens to cover everywhere it may have moved. */
-  private lost = false;
-  /** What the previous detection ran on; MediaPipe's tracking only carries over within one kind. */
-  private lastInput: "full" | "crop" | "mask" | null = null;
+  /** Main-thread time of each detection (sending the frame or detecting, plus the listeners), for the debug panel. */
+  readonly detectTiming = new RollingTiming();
+  /** Time of each MediaPipe run (a detection can make several: retries, the full-frame search). */
+  readonly mediapipeTiming = new RollingTiming();
+  /** Age of each video frame when its detection reaches the listeners. */
+  readonly latencyTiming = new RollingTiming();
+  private inFlight: InFlight | null = null;
+  /** Bumped by stop() and resetLock(): detections of frames sent before are dropped. */
+  private generation = 0;
   private switchRequest: ((found: boolean) => void) | null = null;
-  /** Whether a face was locked before, since the camera started (so the next pick is a new face). */
-  private hadLock = false;
-  private cropCanvas: HTMLCanvasElement | null = null;
-  private maskCanvas: HTMLCanvasElement | null = null;
 
   constructor(video: HTMLVideoElement) {
     this.video = video;
   }
 
   get ready(): boolean {
-    return this.landmarker !== null && this.stream !== null;
+    return (this.detector !== null || this.worker !== null) && this.stream !== null;
+  }
+
+  /** Whether detection runs in the worker. */
+  get inWorker(): boolean {
+    return this.worker !== null;
   }
 
   /** Detections per second over the last second. */
@@ -113,49 +137,70 @@ export class FaceTracker {
     return () => this.listeners.delete(fn);
   }
 
-  /** Whether detection is locked onto a face (false: it searches the full frame). */
-  get locked(): boolean {
-    return this.lock !== null;
-  }
-
   /** Forgets the locked face; the next detection picks one from the full frame. */
   resetLock(): void {
-    this.lock = null;
-    this.lost = false;
-    this.hadLock = false;
+    this.generation++;
+    this.detector?.resetLock();
+    this.post({ type: "reset" });
   }
 
   /**
    * On the next frame, looks for a face other than the locked one (by masking
-   * the locked one out) and locks onto it. Resolves false if there was none,
-   * in which case the lock stays where it was.
+   * the locked one out) and locks onto it. Resolves false if there was none
+   * (or no face was locked), in which case the lock stays where it was.
    */
   switchFace(): Promise<boolean> {
-    if (!this.running || !this.lock) return Promise.resolve(false);
+    if (!this.running) return Promise.resolve(false);
     this.switchRequest?.(false);
     return new Promise((resolve) => (this.switchRequest = resolve));
   }
 
-  /** Loads the model (GPU, falling back to CPU). Safe to call repeatedly. */
-  async loadModel(): Promise<void> {
-    if (this.landmarker) return;
-    const fileset = await FilesetResolver.forVisionTasks(WASM_PATH);
-    const make = (delegate: "GPU" | "CPU") =>
-      FaceLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_PATH, delegate },
-        runningMode: "VIDEO",
-        numFaces: 1,
-        outputFaceBlendshapes: true,
-        outputFacialTransformationMatrixes: false,
-      });
-    try {
-      this.landmarker = await make("GPU");
-      this.delegate = "GPU";
-    } catch (err) {
-      console.warn("[face] GPU delegate failed, falling back to CPU", err);
-      this.landmarker = await make("CPU");
-      this.delegate = "CPU";
+  /** Loads the model, in the worker if it can. Safe to call repeatedly. */
+  loadModel(): Promise<void> {
+    if (this.detector || this.worker) return Promise.resolve();
+    this.loading ??= this.load().finally(() => (this.loading = null));
+    return this.loading;
+  }
+
+  private async load(): Promise<void> {
+    if (config.faceWorker && workersWork()) {
+      try {
+        await this.startWorker();
+        return;
+      } catch (err) {
+        console.warn("[face] no detection in a worker, running it on the main thread", err);
+      }
     }
+    const abs = (p: string) => new URL(p, location.href).href;
+    this.detector = await FaceDetector.create(abs(WASM_PATH), abs(MODEL_PATH), false, true);
+    this.delegate = this.detector.delegate;
+  }
+
+  private async startWorker(): Promise<void> {
+    const w = new Worker(new URL("./face-worker.ts", import.meta.url), { type: "module" });
+    try {
+      this.delegate = await new Promise<"GPU" | "CPU">((resolve, reject) => {
+        w.onmessage = (e: MessageEvent<FromWorker>) => {
+          if (e.data.type === "ready") resolve(e.data.delegate);
+          else if (e.data.type === "error") reject(new Error(e.data.message));
+        };
+        w.onerror = (e) => reject(new Error(e.message || "the face worker failed to load"));
+        const abs = (p: string) => new URL(p, location.href).href;
+        w.postMessage({ type: "init", wasmPath: abs(WASM_PATH), modelPath: abs(MODEL_PATH) } satisfies ToWorker);
+      });
+    } catch (err) {
+      w.terminate();
+      throw err;
+    }
+    w.onmessage = (e: MessageEvent<FromWorker>) => {
+      if (e.data.type === "detection") this.onWorkerDetection(e.data.bitmap, e.data.detection);
+    };
+    w.onerror = (e) => console.warn("[face] worker error", e.message);
+    this.worker = w;
+  }
+
+  private post(msg: ToWorker, transfer: Transferable[] = []): void {
+    this.worker?.postMessage(msg, transfer);
   }
 
   /** Asks for the camera. Throws if permission is denied or no camera exists. */
@@ -189,6 +234,7 @@ export class FaceTracker {
 
   stop(): void {
     this.running = false;
+    this.generation++;
     this.switchRequest?.(false);
     this.switchRequest = null;
   }
@@ -205,8 +251,12 @@ export class FaceTracker {
 
   dispose(): void {
     this.stopCamera();
-    this.landmarker?.close();
-    this.landmarker = null;
+    this.detector?.close();
+    this.detector = null;
+    this.worker?.terminate();
+    this.worker = null;
+    this.inFlight?.switched?.(false);
+    this.inFlight = null;
   }
 
   private scheduleNext(): void {
@@ -223,213 +273,119 @@ export class FaceTracker {
 
   private tick(): void {
     if (!this.running) return;
+    this.detectIfNew();
+    this.scheduleNext();
+  }
+
+  /** Detects in the video's frame if it is one we haven't seen and nothing is in flight. */
+  private detectIfNew(): void {
     try {
-      // Only detect when the video actually has a new frame.
-      if (this.landmarker && this.video.readyState >= 2 && this.video.currentTime !== this.lastVideoTime) {
-        this.lastVideoTime = this.video.currentTime;
-        this.detect();
+      const v = this.video;
+      if (this.inFlight || v.readyState < 2 || v.currentTime === this.lastVideoTime) return;
+      if (!v.videoWidth || !v.videoHeight) return;
+      if (this.worker) {
+        this.lastVideoTime = v.currentTime;
+        this.send();
+      } else if (this.detector) {
+        this.lastVideoTime = v.currentTime;
+        this.detectHere();
       }
     } catch (err) {
       // A bad frame must never kill the loop.
       console.warn("[face] detection error", err);
     }
-    this.scheduleNext();
   }
 
-  private detect(): void {
-    const W = this.video.videoWidth;
-    const H = this.video.videoHeight;
-    if (!this.landmarker || !W || !H) return;
+  /** Sends the video's frame to the worker. */
+  private send(): void {
     const now = performance.now();
-    this.detectionTimes.push(now);
-
-    let hit: Hit | null = null;
-    let crop: FaceBox | null = null;
-    // A face that doesn't continue the lock: picked by N, or by the full-frame search.
-    let picked = false;
-    if (this.switchRequest) {
-      const resolve = this.switchRequest;
-      this.switchRequest = null;
-      hit = this.lock ? this.detectMasked([this.lock.box], W, H) : null;
-      picked = hit !== null;
-      resolve(picked);
-    }
-    if (!hit) {
-      const lock = this.lock;
-      const region = lock ? this.cropRegion(lock.box, W, H) : null;
-      hit = region ? this.detectCrop(region, W, H) : this.acquire(W, H);
-      picked = !region && hit !== null;
-      if (region) crop = { x: region.x / W, y: region.y / H, w: region.side / W, h: region.side / H };
-      // A face in the crop that isn't where the locked one was is someone else
-      // (e.g. right behind the player). MediaPipe would keep following them,
-      // so look again with them painted over.
-      if (region && hit && lock) {
-        const other = boundingBox(hit.landmarks);
-        if (!continues(lock.box, other, config.faceLockMaxJump)) {
-          hit = this.detectCrop(region, W, H, other);
-          if (hit && !continues(lock.box, boundingBox(hit.landmarks), config.faceLockMaxJump)) hit = null;
+    const flight: InFlight = { now, generation: this.generation, switched: this.switchRequest, sendMs: 0 };
+    this.switchRequest = null;
+    this.inFlight = flight;
+    const drop = () => {
+      if (this.inFlight === flight) this.inFlight = null;
+      flight.switched?.(false);
+    };
+    createImageBitmap(this.video).then(
+      (bitmap) => {
+        if (this.inFlight !== flight || flight.generation !== this.generation || !this.worker) {
+          bitmap.close();
+          drop();
+          return;
         }
-      }
-    }
+        const start = performance.now();
+        this.post({ type: "frame", bitmap, now, switchFace: flight.switched !== null, params: lockParams() }, [bitmap]);
+        flight.sendMs += performance.now() - start;
+      },
+      (err) => {
+        console.warn("[face] couldn't copy the video frame", err);
+        drop();
+      },
+    );
+    flight.sendMs = performance.now() - now;
+  }
 
+  private onWorkerDetection(bitmap: ImageBitmap, detection: Detection | null): void {
+    const flight = this.inFlight;
+    this.inFlight = null;
+    try {
+      if (!flight || flight.generation !== this.generation) {
+        flight?.switched?.(false);
+        return;
+      }
+      const start = performance.now();
+      this.emit(detection, { source: bitmap, width: bitmap.width, height: bitmap.height }, flight.now, flight.switched);
+      const end = performance.now();
+      this.detectTiming.add(end, flight.sendMs + end - start);
+    } finally {
+      bitmap.close();
+    }
+    // A newer video frame may be waiting already: no need to wait for the next one.
+    if (this.running) this.detectIfNew();
+  }
+
+  /** Detects on the main thread (no worker). */
+  private detectHere(): void {
+    const v = this.video;
+    const now = performance.now();
+    const switched = this.switchRequest;
+    this.switchRequest = null;
+    try {
+      const detection = this.detector!.detect(v, v.videoWidth, v.videoHeight, now, switched !== null, lockParams());
+      this.emit(detection, videoImage(v), now, switched);
+    } catch (err) {
+      switched?.(false);
+      throw err;
+    } finally {
+      const end = performance.now();
+      this.detectTiming.add(end, end - now);
+    }
+  }
+
+  /** Turns a detection of the frame taken at `now` into a FaceFrame for the listeners. */
+  private emit(d: Detection | null, image: FrameImage, now: number, switched: ((found: boolean) => void) | null): void {
+    const end = performance.now();
+    this.detectionTimes.push(end);
+    this.latencyTiming.add(end, end - now);
+    for (const ms of d?.mediapipeMs ?? []) this.mediapipeTiming.add(end, ms);
+    switched?.(d?.switched ?? false);
     let frame: FaceFrame;
-    if (hit) {
-      const box = boundingBox(hit.landmarks);
-      const newFace = picked && this.hadLock;
-      this.lock = { box, seen: now };
-      this.lost = false;
-      this.hadLock = true;
+    if (d?.blendshapes && d.landmarks) {
       frame = {
-        newFace,
-        features: extractFeatures(hit.blendshapes, faceGeometry(hit.landmarks, W / H)),
-        blendshapes: hit.blendshapes,
-        box,
-        landmarks: hit.landmarks,
-        crop,
+        newFace: d.newFace,
+        features: extractFeatures(d.blendshapes, faceGeometry(d.landmarks, image.width / image.height)),
+        blendshapes: d.blendshapes,
+        box: boundingBox(d.landmarks),
+        landmarks: d.landmarks,
+        crop: d.crop,
         time: now,
+        image,
       };
     } else {
-      // Lost the locked face: keep looking around where it was, and only
-      // after a grace period search the full frame again. Never jump to
-      // another face straight away.
-      if (this.lock) {
-        this.lost = true;
-        if (now - this.lock.seen > config.faceRelockSeconds * 1000) {
-          this.lock = null;
-          this.lost = false;
-        }
-      }
-      frame = { features: null, blendshapes: {}, box: null, landmarks: null, newFace: false, crop, time: now };
+      frame = { features: null, blendshapes: {}, box: null, landmarks: null, newFace: false, crop: d?.crop ?? null, time: now, image };
     }
     for (const fn of this.listeners) fn(frame);
   }
-
-  /**
-   * The square crop around the locked face, kept inside the video. While the
-   * face is lost it widens to cover every position `continues` would accept.
-   */
-  private cropRegion(box: FaceBox, W: number, H: number): Region {
-    const scale = config.faceCropScale + (this.lost ? 2 * config.faceLockMaxJump : 0);
-    const size = Math.max(box.w * W, box.h * H) * scale;
-    const side = Math.min(size, W, H);
-    const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), max);
-    return {
-      x: clamp((box.x + box.w / 2) * W - side / 2, W - side),
-      y: clamp((box.y + box.h / 2) * H - side / 2, H - side),
-      side,
-    };
-  }
-
-  /** Detects in the crop `r`, optionally with the face `mask` (normalized box) painted over. */
-  private detectCrop(r: Region, W: number, H: number, mask?: FaceBox): Hit | null {
-    this.cropCanvas ??= Object.assign(document.createElement("canvas"), { width: CROP_PX, height: CROP_PX });
-    const g = this.cropCanvas.getContext("2d")!;
-    g.drawImage(this.video, r.x, r.y, r.side, r.side, 0, 0, CROP_PX, CROP_PX);
-    if (mask) {
-      const k = CROP_PX / r.side;
-      paintOver(g, mask, (x) => (x * W - r.x) * k, (y) => (y * H - r.y) * k);
-    }
-    // MediaPipe's z uses roughly the same scale as x, so it scales with the crop width too.
-    return this.run(mask ? "mask" : "crop", this.cropCanvas, (p) => ({
-      x: (r.x + p.x * r.side) / W,
-      y: (r.y + p.y * r.side) / H,
-      z: (p.z * r.side) / W,
-    }));
-  }
-
-  private detectAt(input: HTMLVideoElement | HTMLCanvasElement) {
-    // MediaPipe requires strictly increasing timestamps.
-    const ts = Math.max(performance.now(), this.lastTimestamp + 1);
-    this.lastTimestamp = ts;
-    return this.landmarker!.detectForVideo(input, ts);
-  }
-
-  /**
-   * Full-frame search for the player. MediaPipe's own pick among several
-   * faces is not necessarily the one in front, so find each face in turn
-   * (painting over the ones found so far) and take the biggest. Several
-   * detections, but only when there is no lock yet.
-   */
-  private acquire(W: number, H: number): Hit | null {
-    const hits: Hit[] = [];
-    let hit = this.run("full", this.video, (p) => p);
-    while (hit) {
-      hits.push(hit);
-      if (hits.length >= ACQUIRE_MAX_FACES) break;
-      hit = this.detectMasked(hits.map((h) => boundingBox(h.landmarks)), W, H);
-    }
-    const area = (h: Hit) => {
-      const b = boundingBox(h.landmarks);
-      return b.w * W * b.h * H;
-    };
-    return hits.reduce<Hit | null>((best, h) => (!best || area(h) > area(best) ? h : best), null);
-  }
-
-  /** Full frame with the given faces painted over, so MediaPipe finds someone else. */
-  private detectMasked(boxes: readonly FaceBox[], W: number, H: number): Hit | null {
-    const c = (this.maskCanvas ??= document.createElement("canvas"));
-    if (c.width !== W || c.height !== H) Object.assign(c, { width: W, height: H });
-    const g = c.getContext("2d")!;
-    g.drawImage(this.video, 0, 0, W, H);
-    for (const box of boxes) paintOver(g, box, (x) => x * W, (y) => y * H);
-    // Every masked image is new to MediaPipe's tracking, so always allow the retry.
-    this.lastInput = null;
-    return this.run("mask", c, (p) => p);
-  }
-
-  /**
-   * One detection; `toFrame` maps landmarks from the input's coordinates to
-   * the full video frame. In VIDEO mode MediaPipe follows the previous
-   * frame's face and only runs its face detector on the frame after that
-   * fails, so when the kind of input changes (its coordinates no longer
-   * match) a miss gets one immediate retry.
-   */
-  private run(
-    kind: "full" | "crop" | "mask",
-    input: HTMLVideoElement | HTMLCanvasElement,
-    toFrame: (p: LandmarkPoint) => LandmarkPoint,
-  ): Hit | null {
-    const changed = kind !== this.lastInput;
-    this.lastInput = kind;
-    let result = this.detectAt(input);
-    if (changed && !result.faceLandmarks?.length) result = this.detectAt(input);
-    const shapes = result.faceBlendshapes?.[0]?.categories;
-    const landmarks = result.faceLandmarks?.[0];
-    if (!shapes?.length || !landmarks?.length) return null;
-    const blendshapes: Record<string, number> = {};
-    for (const c of shapes) blendshapes[c.categoryName] = c.score;
-    return { blendshapes, landmarks: landmarks.map(toFrame) };
-  }
-}
-
-/** Paints over a face (normalized box, plus a margin); `px`/`py` map normalized coordinates to the canvas. */
-function paintOver(g: CanvasRenderingContext2D, box: FaceBox, px: (x: number) => number, py: (y: number) => number): void {
-  const w = box.w * MASK_MARGIN;
-  const h = box.h * MASK_MARGIN;
-  const x = box.x + box.w / 2 - w / 2;
-  const y = box.y + box.h / 2 - h / 2;
-  g.fillStyle = "#808080";
-  g.fillRect(px(x), py(y), px(x + w) - px(x), py(y + h) - py(y));
-}
-
-/** Whether `next` is plausibly the same face as `prev`: centre within `maxJump` face sizes, similar size. */
-function continues(prev: FaceBox, next: FaceBox, maxJump: number): boolean {
-  const size = Math.max(prev.w, prev.h);
-  const dx = next.x + next.w / 2 - (prev.x + prev.w / 2);
-  const dy = next.y + next.h / 2 - (prev.y + prev.h / 2);
-  const ratio = Math.max(next.w, next.h) / size;
-  return Math.hypot(dx, dy) <= maxJump * size && ratio > 0.67 && ratio < 1.5;
-}
-
-function boundingBox(landmarks: readonly LandmarkPoint[]): FaceBox {
-  let minX = 1, minY = 1, maxX = 0, maxY = 0;
-  for (const p of landmarks) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
 /** Human-friendly message for getUserMedia / model loading failures. */

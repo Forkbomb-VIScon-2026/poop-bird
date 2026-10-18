@@ -57,6 +57,10 @@ export const CONFIG_SPEC = {
     hint: "face sizes the locked face may move between detections; a face farther away (or ±50% in size) is someone else",
   },
   faceRelockSeconds: { value: 2.0, min: 0.2, max: 5, step: 0.1, group: "Face lock", label: "Relock after", hint: "s without the locked face before searching the full frame again" },
+  faceWorker: {
+    value: 1, min: 0, max: 1, step: 1, group: "Face lock", label: "Detect in a worker",
+    hint: "1: MediaPipe runs off the main thread (where the browser can); 0: on it. Takes effect on reload",
+  },
 
   // --- Face recognition (faceid.ts, known-faces.ts) -------------------------------
   faceIdSameDistance: {

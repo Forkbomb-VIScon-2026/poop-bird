@@ -1479,6 +1479,21 @@ body.debug-open #cam {
   margin-top: 0;
 }
 
+/* Touch screens open the debug panel with this (no D key). Over the panel, so it closes it too. */
+.dbg-toggle {
+  position: absolute;
+  left: calc(8px + env(safe-area-inset-left));
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 21;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  background: rgba(20, 22, 35, 0.6);
+  color: #e9ecef;
+  font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
 .dbg-stats {
   display: grid;
   grid-template-columns: auto 1fr;
