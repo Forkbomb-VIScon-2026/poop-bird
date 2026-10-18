@@ -68,6 +68,32 @@
         <div id="hud-toast" class="hud-toast hidden"></div>
       </div>
 
+      <!-- Credits (Settings → Credits), over the settings. The photo and music lists come from the CREDITS.md
+           files (ui/credits.ts). Before the settings, so Enter and Esc go to its Back button while it's open. -->
+      <section id="screen-credits" class="screen credits hidden" aria-label="Credits">
+        <div class="card credits-card">
+          <h2>📜 Credits</h2>
+          <div class="credits-body">
+            <p>Poopy Bird was made at the VIScon Hackathon 2026.</p>
+            <h3>Photos</h3>
+            <p class="credits-note">The photos in RTX mode<span class="app-only"> and the app icon</span> come from Wikimedia Commons: cut out, scaled and outlined, with faces pixelated. Each changed picture is shared under its photo's licence.</p>
+            <ul id="credits-photos" class="credits-list"></ul>
+            <h3>Music</h3>
+            <p id="credits-music"></p>
+            <h3>Software</h3>
+            <ul class="credits-list">
+              <li>Face tracking: <a href="https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker" target="_blank" rel="noopener">MediaPipe Face Landmarker</a> by Google · Apache 2.0</li>
+              <li>Face recognition: <a href="https://github.com/vladmandic/face-api" target="_blank" rel="noopener">face-api</a> by Vladimir Mandic, forked from <a href="https://github.com/justadudewhohacks/face-api.js" target="_blank" rel="noopener">face-api.js</a> by Vincent Mühler · MIT, with <a href="http://dlib.net/" target="_blank" rel="noopener">dlib</a>'s face recognition model by Davis E. King</li>
+              <li class="app-only">The app: <a href="https://capacitorjs.com/" target="_blank" rel="noopener">Capacitor</a> by Ionic · MIT</li>
+            </ul>
+            <p class="credits-note">The example faces on the calibration screen are AI-generated, not real people.</p>
+          </div>
+          <div class="buttons">
+            <button id="btn-credits-back" class="btn primary" data-default>Back</button>
+          </div>
+        </div>
+      </section>
+
       <!-- Settings (the gear, top right). Before the screens, so Enter and Esc go to its Done button while it's open. -->
       <section id="screen-settings" class="screen settings hidden" aria-label="Settings">
         <div class="card settings-card">
@@ -111,6 +137,16 @@
                 <small><span class="kbd-only">Hold Space or the mouse</span><span class="touch-only">Hold the screen</span> instead of straining.<span class="web-only"> These runs don't go on the leaderboard.</span></small>
               </span>
               <button id="btn-keyboard" class="btn icon" data-keys="K" aria-label="Play without the camera" title="Play without the camera"><svg class="kbd-only kbd-icon" viewBox="0 0 40 26" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="23" rx="4" fill="#fff" stroke="currentColor" stroke-width="3" /><g fill="currentColor"><rect x="7" y="7" width="4" height="4" rx="1" /><rect x="14" y="7" width="4" height="4" rx="1" /><rect x="21" y="7" width="4" height="4" rx="1" /><rect x="28" y="7" width="4" height="4" rx="1" /><rect x="11" y="15" width="18" height="4" rx="1" /></g></svg><span class="touch-only">👆</span></button>
+            </div>
+          </fieldset>
+          <fieldset class="settings-group">
+            <legend>About</legend>
+            <div class="setting">
+              <span class="setting-text">
+                <b>Credits</b>
+                <small>The photos, music and software Poopy Bird is made with.</small>
+              </span>
+              <button id="btn-credits" class="btn small">Credits</button>
             </div>
           </fieldset>
           <div class="buttons">

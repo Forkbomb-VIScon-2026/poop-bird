@@ -138,7 +138,8 @@ committed; to change the icon, edit the script and run it (instructions at its
 top; it draws in headless Chromium through `playwright-core`). On Android 12+
 the splash is the icon on the sky (`values/styles.xml`), before that the
 `splash.png` bitmaps. The photo's licence (CC BY 4.0) applies to the icon too:
-see `src/assets/CREDITS.md`.
+see `src/assets/CREDITS.md`, which the game shows under **Settings → About →
+Credits**.
 
 #### Release builds
 
@@ -507,6 +508,15 @@ silences it with everything else. `musicVolume` sets its level.
 
 Both tracks were made with [Suno](https://suno.com); credits are in
 `public/assets/audio/CREDITS.md`.
+
+## Credits
+
+**Settings → About → Credits** lists where the game's photos come from (author
+and licence, as CC BY and BY-SA require), the music and the software it runs
+on. The photo and music lists are read from `src/assets/CREDITS.md` and
+`public/assets/audio/CREDITS.md` (`src/credits.ts`), so a row added there shows
+up in the game; rows without a source link (the team's own pictures) don't. The
+rest of the screen is in `index.html`.
 
 ## Leaderboard
 
@@ -1044,11 +1054,12 @@ src/
   debug.ts      debug / tuning panel
   snapshot.ts   face crops: peak-strain snapshot, paparazzi and wedding photos
   app-share.ts  the Android app's share sheet (instead of downloads)
+  credits.ts    the credits screen's lists, read from the CREDITS.md files   credits.test.ts
   storage.ts    safe localStorage, best score, your leaderboard runs
   leaderboard.ts       leaderboard format, checks, ranking (shared with the collector)
   leaderboard-view.ts  the boards in the page: fetch, submit, remove, draw
   main.ts       screens, input, loops, calibration flow, lessons
-  ui/           dom helpers, toast, coach (tutorial banner), game-over screen
+  ui/           dom helpers, toast, coach (tutorial banner), game-over screen, credits screen
   random.ts     pick, rnd (seeded)
   session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
   collect.ts    the dataset recorder page (collect.html)

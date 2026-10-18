@@ -1947,3 +1947,54 @@ div.setting {
   outline: 3px solid var(--gold);
   outline-offset: 2px;
 }
+
+/* --- Credits (Settings → Credits) ------------------------------------------------ */
+
+.screen.credits {
+  z-index: 31;
+}
+
+/* The list scrolls, the Back button stays (below it, unlike .card.wide on short screens). */
+.credits-card {
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.credits-card h2 {
+  text-align: center;
+}
+
+.credits-body {
+  overflow-y: auto;
+  min-height: 0;
+  overflow-wrap: anywhere;
+}
+
+.credits-body h3 {
+  margin: 14px 0 4px;
+}
+
+.credits-body p {
+  margin: 4px 0;
+}
+
+.credits-note {
+  opacity: 0.75;
+}
+
+.credits-list {
+  margin: 4px 0;
+  padding-left: 1.2em;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.credits-list li + li {
+  margin-top: 3px;
+}
+
+.credits-body a {
+  color: inherit;
+}

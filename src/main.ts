@@ -1600,10 +1600,11 @@ function focusHandlesEnter(): boolean {
 
 window.addEventListener("keydown", (e) => {
   if (isTyping(e)) return;
-  // Esc closes the settings too. Done takes Enter, and a screen's yellow button takes no other key (keyhints.ts).
+  // Esc closes the settings (or the credits over them) too. Done takes Enter, and a screen's yellow button takes no other key (keyhints.ts).
   if (e.key === "Escape" && !settingsPanel.classList.contains("hidden")) {
     e.preventDefault();
-    if (!e.repeat && performance.now() >= buttonKeysArmedAt) pressFromKey($<HTMLButtonElement>("btn-settings-done"));
+    const close = creditsPanel.classList.contains("hidden") ? "btn-settings-done" : "btn-credits-back";
+    if (!e.repeat && performance.now() >= buttonKeysArmedAt) pressFromKey($<HTMLButtonElement>(close));
     return;
   }
   // Each button takes the one key on its badge: Enter for a screen's yellow button, else its own (keyhints.ts).
@@ -1737,6 +1738,19 @@ function openSettings(fromMenu: boolean): void {
 on("btn-settings", () => openSettings(true));
 on("btn-hud-settings", () => openSettings(false));
 on("btn-settings-done", () => show(settingsPanel, false));
+// Credits (Settings → About), over the settings.
+const creditsPanel = $("screen-credits");
+on("btn-credits", () => {
+  import("./ui/credits")
+    .then(({ fillCredits }) => {
+      fillCredits();
+      show(creditsPanel, true);
+      creditsPanel.querySelector(".credits-body")?.scrollTo(0, 0);
+      armButtonKeys(300);
+    })
+    .catch((err: unknown) => console.warn("[credits] failed to load", err));
+});
+on("btn-credits-back", () => show(creditsPanel, false));
 rtxSwitch.addEventListener("change", () => {
   renderer.graphics = rtxSwitch.checked ? "rtx" : "classic";
   saveGraphics(renderer.graphics);
