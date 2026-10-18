@@ -1,6 +1,7 @@
 // The game-over screen: the run's stats, the run in pictures, and the
 // leaderboard form (opt-in; only face-mode runs can be submitted).
 
+import { APP } from "../env";
 import type { Game } from "../game";
 import { BOARD_KEEP, type RunStats } from "../leaderboard";
 import { showBoards, submitRun } from "../leaderboard-view";
@@ -94,6 +95,8 @@ export function showRunPhotos(game: Game, photos: ReadonlyMap<number, Photo>, ha
 
 /** Sets up the leaderboard form for `run` (null: a keyboard or touch run, which can't be submitted). */
 export function offerRun(run: Run | null): void {
+  // The app has no online leaderboard: its form and boards are .web-only.
+  if (APP) return;
   lastRun = run;
   show($("go-lb-form"), run !== null && (run.score > 0 || run.face !== null));
   show($("go-lb-face-opt"), run?.face != null);

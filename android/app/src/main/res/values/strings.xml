@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Poopy Bird</string>
+    <string name="title_activity_main">Poopy Bird</string>
+    <string name="package_name">ch.forkbomb.poopybird</string>
+    <string name="custom_url_scheme">ch.forkbomb.poopybird</string>
+</resources>

@@ -440,8 +440,10 @@ export class DebugPanel {
     let where: string;
     try {
       const res = await fetch(`/__perf-log?name=${encodeURIComponent(name)}`, { method: "POST", body: csv });
-      if (!res.ok) throw new Error(String(res.status));
-      where = `saved to laptop: ${await res.text()}`;
+      const saved = await res.text();
+      // Not the dev server (a bundled build): anything else may answer with a page.
+      if (!res.ok || !saved.startsWith("perf-logs/")) throw new Error(String(res.status));
+      where = `saved to laptop: ${saved}`;
     } catch {
       const a = Object.assign(document.createElement("a"), {
         href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
