@@ -1,7 +1,7 @@
 name: Android
 
-# Builds the Android app's debug APK (README "Android app") and keeps it as an
-# artifact for a week. A workflow of its own, not a job in CI: deploy.yml waits
+# Builds the Android app's APKs (README "Android app") and keeps them as
+# artifacts for a week. A workflow of its own, not a job in CI: deploy.yml waits
 # for CI, and the web version must never wait for the app.
 on:
   push:
@@ -27,12 +27,23 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run fetch-model
+      # Two APKs: the game as it ships, and one with the debug tooling (the
+      # panel's "D" button, tuning). Same app id, so one replaces the other.
+      - run: npm run build:debug
+      - run: npx cap sync android
+      - run: ./gradlew assembleDebug && mv app/build/outputs/apk/debug/app-debug.apk ../poopy-bird-debug-panel.apk
+        working-directory: android
       - run: npm run build
       - run: npx cap sync android
-      - run: ./gradlew assembleDebug
+      - run: ./gradlew assembleDebug && mv app/build/outputs/apk/debug/app-debug.apk ../poopy-bird.apk
         working-directory: android
       - uses: actions/upload-artifact@v4
         with:
-          name: poopy-bird-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: poopy-bird-apk
+          path: poopy-bird.apk
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poopy-bird-debug-panel-apk
+          path: poopy-bird-debug-panel.apk
           retention-days: 7

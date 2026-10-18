@@ -108,6 +108,19 @@ like in a browser tab, and the debug panel's perf log saves to `perf-logs/`.
 Ctrl+C stops both; the app keeps pointing at the dev server until the next
 `app:run`. Inspect the app's WebView from `chrome://inspect` on the laptop.
 
+**Without the SDK**, install an APK that CI built: the `Android` workflow
+builds `poopy-bird-apk` (the production build) and `poopy-bird-debug-panel-apk`
+(`build:debug`: the panel's "D" button bottom left, tuning) on every PR and
+push to main. Take the run's id from `gh run list --workflow Android`:
+
+```sh
+gh run download <run-id> -n poopy-bird-debug-panel-apk -D /tmp/apk
+adb install -r /tmp/apk/poopy-bird-debug-panel.apk
+```
+
+The debug panel's "Save perf log" only reaches the laptop under `app:dev`; in
+an installed build it can't save (the WebView doesn't download).
+
 ## Controls
 
 | Input | Action |
