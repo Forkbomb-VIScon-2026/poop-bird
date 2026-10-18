@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The game's sky (--sky in src/style.css): the splash screen behind the icon. -->
+    <!-- The game's sky (the sky colour in src/style.css): the splash screen behind the icon. -->
     <color name="sky">#5EC8F2</color>
 </resources>
