@@ -12,11 +12,38 @@ import {
   type FeatureName,
   type FeatureVector,
 } from "./strain";
+import { formatTiming, perfCsv, type PerfRow, type TimingStats } from "./timing";
 
 export interface DebugData {
   fps: number;
   detectionRate: number;
   delegate: string;
+  /** App state (menu, playing, …) and graphics style, for the perf log. */
+  appState: string;
+  graphics: string;
+  perf: {
+    /** Time between animation frames. */
+    gap: TimingStats;
+    /** Simulation (the fixed steps) per frame. */
+    step: TimingStats;
+    /** renderer.draw per frame (recording the canvas commands; rasterizing happens later, off the main thread). */
+    draw: TimingStats;
+    /** The whole frame callback. */
+    frame: TimingStats;
+    /**
+     * Each face detection's main-thread time: sending the frame to the worker
+     * and the listeners, or (without a worker) the whole detection.
+     */
+    detect: TimingStats;
+    /** Each MediaPipe run (in the worker, or on the main thread). */
+    mediapipe: TimingStats;
+    /** Age of each video frame when its detection reached the listeners. */
+    latency: TimingStats;
+    /** The last face-ID descriptor. */
+    faceIdMs: number;
+    /** Canvas backing size. */
+    canvas: string;
+  };
   mode: string;
   faceVisible: boolean;
   features: FeatureVector | null;
@@ -49,6 +76,8 @@ export interface DebugData {
 }
 
 const HISTORY = 300;
+/** Perf log rows kept: one a second, three hours. */
+const PERF_LOG_ROWS = 3 * 3600;
 
 export class DebugPanel {
   readonly el: HTMLElement;
@@ -62,6 +91,10 @@ export class DebugPanel {
   private puffPlot!: HTMLCanvasElement;
   private puffSection!: HTMLElement;
   private lastText = 0;
+  /** One row a second since the page loaded, whether the panel is open or not (see savePerfLog). */
+  private perfLog: PerfRow[] = [];
+  private lastPerfRow = 0;
+  private readonly perfStart = performance.now();
   visible = false;
   /** Outline the locked face and the detection crop on the webcam preview. */
   showFaceLock = storageGet(FACE_LOCK_KEY) === "1";
@@ -91,6 +124,8 @@ export class DebugPanel {
     quick.append(button("🐡 Start as pufferfish (O)", () => this.onStartOcean()));
     quick.append(button("⏺ Record a dataset session", () => this.onOpenRecorder()));
     quick.append(button("🗑 Forget calibration", () => this.onForgetCalibration()));
+    const save = button("📈 Save perf log", () => void this.savePerfLog(save));
+    quick.append(save);
     const faceLock = button("", () => {
       this.showFaceLock = !this.showFaceLock;
       storageSet(FACE_LOCK_KEY, this.showFaceLock ? "1" : "0");
@@ -223,6 +258,7 @@ export class DebugPanel {
     if (this.history.length > HISTORY) this.history.shift();
     this.puffHistory.push({ raw: d.rawPuff, face: d.facePuff, input: d.puffInput, spiked: d.spiked });
     if (this.puffHistory.length > HISTORY) this.puffHistory.shift();
+    this.logPerf(d);
     if (!this.visible) return;
     this.drawPlot();
     const ocean = d.stage.includes("ocean");
@@ -241,6 +277,18 @@ export class DebugPanel {
       ["fps", d.fps.toFixed(0)],
       ["detections/s", d.detectionRate.toFixed(0)],
       ["delegate", d.delegate],
+      // avg / max over the last second.
+      ["frame gap", formatTiming(d.perf.gap)],
+      ["frame (all)", formatTiming(d.perf.frame)],
+      ["  step", formatTiming(d.perf.step)],
+      ["  draw", formatTiming(d.perf.draw)],
+      ["detection (main thread)", formatTiming(d.perf.detect)],
+      ["mediapipe", `${formatTiming(d.perf.mediapipe)} × ${d.perf.mediapipe.count}/s`],
+      ["detection latency", formatTiming(d.perf.latency)],
+      // Share of each second the main thread spends on frames and detections.
+      ["main thread busy", `${Math.round((d.perf.frame.perSecond + d.perf.detect.perSecond) / 10)}%`],
+      ["face ID", d.perf.faceIdMs ? `${d.perf.faceIdMs.toFixed(0)} ms` : "–"],
+      ["canvas", d.perf.canvas],
       ["face", d.faceVisible ? "yes" : "NO"],
       ["raw strain", d.rawStrain.toFixed(3)],
       ["strain (EMA)", d.strain.toFixed(3)],
@@ -340,6 +388,70 @@ export class DebugPanel {
     series((p) => p.input, "#4cc9f0", 2);
     series((p) => p.raw, "#666", 2);
     series((p) => p.face, "#ffd166", 4);
+  }
+
+  /** Adds a perf log row once a second. */
+  private logPerf(d: DebugData): void {
+    const now = performance.now();
+    if (now - this.lastPerfRow < 1000) return;
+    this.lastPerfRow = now;
+    const p = d.perf;
+    const ms = (v: number) => Number(v.toFixed(1));
+    this.perfLog.push({
+      t: Math.round((now - this.perfStart) / 1000),
+      state: d.appState,
+      stage: d.stage,
+      mode: d.mode,
+      graphics: d.graphics,
+      // The open panel costs frames of its own (plots, text).
+      panel: this.visible ? 1 : 0,
+      face: d.faceVisible ? 1 : 0,
+      fps: Math.round(d.fps),
+      gap_avg: ms(p.gap.avg),
+      gap_max: ms(p.gap.max),
+      frame_avg: ms(p.frame.avg),
+      frame_max: ms(p.frame.max),
+      step_avg: ms(p.step.avg),
+      draw_avg: ms(p.draw.avg),
+      draw_max: ms(p.draw.max),
+      detections: Math.round(d.detectionRate),
+      detect_avg: ms(p.detect.avg),
+      detect_max: ms(p.detect.max),
+      mediapipe_avg: ms(p.mediapipe.avg),
+      mediapipe_max: ms(p.mediapipe.max),
+      mediapipe_runs: p.mediapipe.count,
+      latency_avg: ms(p.latency.avg),
+      latency_max: ms(p.latency.max),
+      busy_pct: Math.round((p.frame.perSecond + p.detect.perSecond) / 10),
+      delegate: d.delegate,
+      faceid_ms: Math.round(p.faceIdMs),
+      canvas: p.canvas,
+    });
+    if (this.perfLog.length > PERF_LOG_ROWS) this.perfLog.shift();
+  }
+
+  /**
+   * Saves the perf log as CSV: to the laptop through the dev server (vite.config.ts,
+   * perf-logs/), or, without one (a debug build), as a download on this device.
+   */
+  private async savePerfLog(b: HTMLButtonElement): Promise<void> {
+    const csv = perfCsv(this.perfLog);
+    const name = `poopybird-perf-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+    let where: string;
+    try {
+      const res = await fetch(`/__perf-log?name=${encodeURIComponent(name)}`, { method: "POST", body: csv });
+      if (!res.ok) throw new Error(String(res.status));
+      where = `saved to laptop: ${await res.text()}`;
+    } catch {
+      const a = Object.assign(document.createElement("a"), {
+        href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
+        download: name,
+      });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      where = "downloaded";
+    }
+    b.textContent = `📈 ${this.perfLog.length} s ${where}`;
   }
 
   private drawPlot(): void {

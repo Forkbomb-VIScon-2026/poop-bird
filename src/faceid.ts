@@ -14,7 +14,7 @@
 // recognizer fails and every face counts as new, as before face recognition.
 
 import { ALIGNED_SIZE, alignTransform, eyeCentres, goodView } from "./known-faces";
-import type { FaceBox } from "./face";
+import type { FaceBox, FrameImage } from "./face";
 import type { LandmarkPoint } from "./puff";
 
 type FaceApi = typeof import("@vladmandic/face-api");
@@ -84,14 +84,14 @@ export class FaceRecognizer {
 /**
  * The face aligned for recognition (eyes level at fixed spots in a
  * ALIGNED_SIZE² crop), or null for a poor view (small or turned away).
- * `landmarks` must be from the video frame showing now: call it from the
- * tracker's frame callback.
+ * `landmarks` must be from `image`: call it from the tracker's frame
+ * callback with the frame's image.
  */
 export function alignedFaceCrop(
-  video: HTMLVideoElement, landmarks: readonly LandmarkPoint[], box: FaceBox, minPx: number,
+  image: FrameImage, landmarks: readonly LandmarkPoint[], box: FaceBox, minPx: number,
 ): HTMLCanvasElement | null {
-  const W = video.videoWidth;
-  const H = video.videoHeight;
+  const W = image.width;
+  const H = image.height;
   if (!W || !H || !goodView(landmarks, box, W, H, minPx)) return null;
   const eyes = eyeCentres(landmarks, W, H);
   const m = eyes && alignTransform(eyes.left, eyes.right, ALIGNED_SIZE);
@@ -102,6 +102,6 @@ export function alignedFaceCrop(
   g.fillStyle = "#000";
   g.fillRect(0, 0, ALIGNED_SIZE, ALIGNED_SIZE);
   g.setTransform(...m);
-  g.drawImage(video, 0, 0, W, H);
+  g.drawImage(image.source, 0, 0, W, H);
   return c;
 }

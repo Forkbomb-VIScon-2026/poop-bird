@@ -9,7 +9,7 @@ import { config } from "./config";
 import { Sound } from "./audio";
 import { DebugPanel } from "./debug";
 import { DEBUG } from "./env";
-import { FaceTracker, describeCameraError, type FaceBox, type FaceFrame } from "./face";
+import { FaceTracker, describeCameraError, videoImage, type FaceBox, type FaceFrame } from "./face";
 import { FaceRecognizer, alignedFaceCrop } from "./faceid";
 import { BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, VIEW_H, wireAt } from "./game";
 import { buttonForKey, decorate, decorateAll, keyBlocked, keyName, pressFromKey } from "./keyhints";
@@ -17,6 +17,7 @@ import { playFeedback } from "./feedback";
 import { Renderer, type Photo } from "./render";
 import { StrainSnapshot, captureFace } from "./snapshot";
 import { TAGLINES, pickTagline } from "./taglines";
+import { RollingTiming } from "./timing";
 import {
   GROW_WITHIN,
   faceDistance,
@@ -133,6 +134,7 @@ const debug = DEBUG
   ? new DebugPanel($("debug"), () => void recalibrate(), () => startOceanRun(), openDatasetRecorder, forgetCalibration)
   : null;
 if (!DEBUG) document.querySelectorAll("[data-debug-only]").forEach((el) => el.remove());
+if (debug) $("btn-debug").addEventListener("click", () => debug.toggle());
 
 let calibration: Calibration | null = loadCalibration(CALIBRATION_KEY, STRAIN_FEATURES);
 /** `calibration` is a guess from the relaxed face ("Play anyway" after failed strains), not a fitted one. */
@@ -224,9 +226,9 @@ tracker.onFrame((frame) => {
   lastFaceTime = frame.time;
   lastFace = frame;
   if (frame.features) lastFaceSeen = frame.time;
-  // Here, while the video still shows the frame these landmarks are from.
+  // From the frame these landmarks are from (frame.image is only valid here).
   if (wantFaceCrop && frame.landmarks && frame.box) {
-    faceCrop = alignedFaceCrop(video, frame.landmarks, frame.box, config.faceIdMinFacePx);
+    faceCrop = alignedFaceCrop(frame.image, frame.landmarks, frame.box, config.faceIdMinFacePx);
     if (faceCrop) wantFaceCrop = false;
   }
   calibFrames?.push(frame.time);
@@ -245,7 +247,7 @@ tracker.onFrame((frame) => {
   mouthOpen = smoothStrain(mouthOpen, open, config.mouthOpenAlpha, dt);
   // Only while the game counts it as straining: a laugh or a blink isn't a finest strain.
   if (state === "playing" && game.phase === "playing" && game.stage === "city" && strain.active) {
-    snapshot.offer(video, frame.box, faceStrain);
+    snapshot.offer(frame.image, frame.box, faceStrain);
   }
 });
 
@@ -1389,13 +1391,18 @@ const STEP = 1 / 120;
 let accumulator = 0;
 let lastTime = performance.now();
 let fps = 60;
+/** Main-thread timings for the debug panel: frame-to-frame gap, simulation, drawing, and the whole frame. */
+const frameTiming = { gap: new RollingTiming(), step: new RollingTiming(), draw: new RollingTiming(), frame: new RollingTiming() };
 
 function frame(now: number): void {
+  const frameStart = performance.now();
   const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
+  frameTiming.gap.add(now, now - lastTime);
   lastTime = now;
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
   updateRotatePrompt();
+  const stepStart = performance.now();
   if (state === "playing") {
     accumulator += dt;
     while (accumulator >= STEP) {
@@ -1427,8 +1434,12 @@ function frame(now: number): void {
     accumulator = 0;
   }
 
+  const drawStart = performance.now();
+  frameTiming.step.add(drawStart, drawStart - stepStart);
   renderer.mouthOpen = mode === "face" && faceFresh() && !game.demo ? mouthOpen : 0;
   renderer.draw(game, state === "playing" || game.demo ? dt : 0);
+  const drawEnd = performance.now();
+  frameTiming.draw.add(drawEnd, drawEnd - drawStart);
 
   const charging = (state === "playing" || state === "ready") && game.phase === "playing" && game.charge.charge > 0 && !game.stunned;
   if (state !== "calibrating") sound.setGroan(charging ? game.charge.charge : -1, game.overstrainProgress > 0);
@@ -1464,10 +1475,26 @@ function frame(now: number): void {
 
   updateHud();
   updateStrainBars();
+  // The panel's own DOM work is left out of the frame time.
+  const frameEnd = performance.now();
+  frameTiming.frame.add(frameEnd, frameEnd - frameStart);
   debug?.update({
     fps,
     detectionRate: tracker.ready ? tracker.detectionRate : 0,
-    delegate: tracker.delegate ?? "–",
+    delegate: tracker.delegate ? `${tracker.delegate}${tracker.inWorker ? " worker" : ""}` : "–",
+    appState: state,
+    graphics: renderer.graphics,
+    perf: {
+      gap: frameTiming.gap.stats(frameEnd),
+      step: frameTiming.step.stats(frameEnd),
+      draw: frameTiming.draw.stats(frameEnd),
+      frame: frameTiming.frame.stats(frameEnd),
+      detect: tracker.detectTiming.stats(frameEnd),
+      mediapipe: tracker.mediapipeTiming.stats(frameEnd),
+      latency: tracker.latencyTiming.stats(frameEnd),
+      faceIdMs: recognizer.lastMs,
+      canvas: `${canvas.width}×${canvas.height} px, device dpr ${(window.devicePixelRatio || 1).toFixed(2)}`,
+    },
     mode,
     faceVisible: faceVisible(),
     features: faceFresh() ? (lastFace?.features ?? null) : null,
@@ -1502,7 +1529,7 @@ function frame(now: number): void {
 
 /** The player's face right now, cropped from the webcam (null in keyboard mode or without a fresh face). */
 function playerFace(): Photo | null {
-  return mode === "face" && faceFresh() ? captureFace(video, lastFace?.box ?? null) : null;
+  return mode === "face" && faceFresh() ? captureFace(videoImage(video), lastFace?.box ?? null) : null;
 }
 
 /** The player's face at the wedding's kiss (face mode): it ends up on the bird in the wedding photo. */

@@ -479,8 +479,9 @@ an empty board to play with.
 
 ## How the strain detection works
 
-Code: `src/strain.ts` (pure, unit-tested), `src/face.ts` (MediaPipe and
-webcam), and the wiring in `src/main.ts`.
+Code: `src/strain.ts` (pure, unit-tested), `src/face-detect.ts` (MediaPipe
+and the face lock), `src/face.ts` (webcam and detection loop), and the wiring
+in `src/main.ts`.
 
 1. **Features.** MediaPipe Face Landmarker (`runningMode: "VIDEO"`,
    `outputFaceBlendshapes: true`, GPU delegate with CPU fallback) gives 52
@@ -548,6 +549,17 @@ webcam), and the wiring in `src/main.ts`.
 9. **Decoupled loops.** Detection runs on `requestVideoFrameCallback` (or rAF
    with a `currentTime` check), so only when there's a new video frame. Physics
    runs on a fixed 120 Hz timestep in the render loop.
+10. **Detection in a worker.** A MediaPipe run takes 40–70 ms on a phone, and
+    on the main thread that blocks the game for several screen refreshes each
+    time (a Fairphone 4 played at ~20 fps). So MediaPipe and the face lock run
+    in a module worker (`src/face-worker.ts`): the tracker sends each video
+    frame as an `ImageBitmap`, one at a time (frames that arrive meanwhile
+    are skipped), and gets it back with the result, so face ID and the
+    finest-strain snapshot crop the exact frame the landmarks are from. The
+    worker needs the GPU delegate (OffscreenCanvas WebGL); where it can't
+    have it, or with the "Detect in a worker" tunable at 0, detection runs on
+    the main thread as before (GPU, falling back to CPU). The debug panel
+    shows "GPU worker" as the delegate, and the detection latency.
 
 A full calibration is also saved in `localStorage`. Press **C** (or click
 "Recalibrate") to calibrate again.
@@ -884,7 +896,9 @@ src/
   charge.ts     charge / release / overstrain (pure) charge.test.ts
   puff.ts       blendshapes / Space → puff (pure)  puff.test.ts
   swim.ts       buoyancy, drag, spike / pop (pure) swim.test.ts
-  face.ts       MediaPipe + webcam, detection loop
+  face.ts       webcam, detection loop (in the worker where it can)
+  face-detect.ts  MediaPipe + face lock (no DOM; runs in the worker or on the main thread)
+  face-worker.ts  the face worker
   faceid.ts     face recognition: descriptors of aligned face crops (face-api)
   known-faces.ts  the faces this tab calibrated: matching, storage format (pure)  known-faces.test.ts
   game/         simulation (fixed timestep), one module per feature, with its tests

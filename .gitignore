@@ -15,3 +15,5 @@ poopybird-face-*.json
 poopbird-face-*.json.gz
 poopybird-face-*.json.gz
 data/
+# Debug panel perf logs ("Save perf log", written by the dev server)
+perf-logs/
