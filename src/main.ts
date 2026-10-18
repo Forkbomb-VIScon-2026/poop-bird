@@ -8,7 +8,7 @@ import calibStrainedUrl from "./assets/calib-strained.jpg";
 import { config } from "./config";
 import { Sound } from "./audio";
 import { DebugPanel } from "./debug";
-import { DEBUG } from "./env";
+import { APP, DEBUG } from "./env";
 import { FaceTracker, describeCameraError, videoImage, type FaceBox, type FaceFrame } from "./face";
 import { FaceRecognizer, alignedFaceCrop } from "./faceid";
 import { BIRD_RADIUS, GROUND_Y, Game, SURFACE_Y, VIEW_H, wireAt } from "./game";
@@ -99,6 +99,7 @@ const camHome = homeOf(cam);
 const rotateScreen = $("screen-rotate");
 
 document.body.classList.toggle("touch", isTouch);
+document.body.classList.toggle("app", APP);
 
 function showScreen(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) show(el, k === name);
@@ -1805,10 +1806,10 @@ document.addEventListener("click", (e) => {
 /**
  * Touch devices: go fullscreen and lock to landscape, where the browser allows
  * it (Android Chrome; iOS Safari can't, so the rotate prompt covers that).
- * Must run inside a tap.
+ * Must run inside a tap. The Android app is both already (its manifest and MainActivity).
  */
 function goLandscape(): void {
-  if (!isTouch || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+  if (APP || !isTouch || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
   document.documentElement
     .requestFullscreen({ navigationUI: "hide" })
     .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape"))

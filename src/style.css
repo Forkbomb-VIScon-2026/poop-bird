@@ -35,6 +35,11 @@ body:not(.touch) .touch-only {
   display: none !important;
 }
 
+/* The Android app is on-device only: no online leaderboard (body.app, set in main.ts). */
+body.app .web-only {
+  display: none !important;
+}
+
 #app {
   position: fixed;
   inset: 0;

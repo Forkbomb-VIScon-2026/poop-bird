@@ -31,6 +31,7 @@ Other scripts:
 | `npm run build` | Typecheck and build to `dist/` (no debug tooling; this is what CI, Docker and the deploy use) |
 | `npm run build:debug` | Same, with the debug tooling included |
 | `npm run preview` | Serve the build locally |
+| `npm run app:dev` / `app:run` / `app:open` | The [Android app](#android-app) on a phone over USB: showing the dev server / the build; the project in Android Studio |
 | `npm test` | Vitest unit tests (strain and puff math, charge and spike logic, buoyancy, the wedding lifecycle, dataset sessions, collector, leaderboard) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Typecheck only (browser code, and the Node code in `tsconfig.node.json`) |
@@ -54,6 +55,71 @@ The image builds the game and serves it with Caddy on port 8080. For camera
 access on anything other than localhost, put it behind HTTPS. Compose also
 starts the face dataset collector (local credentials `local` /
 `local-dev-token`), which Caddy serves under `/api/`.
+
+### Android app
+
+The same game as an Android app: [Capacitor](https://capacitorjs.com) puts
+the web build in a WebView (`capacitor.config.ts`, the Android project in
+`android/`). There is one codebase: the web version, its dev server and its
+deploy are unchanged, and the app is built from the same `dist/`. The WebView
+is the same Chromium engine as Chrome, so it plays as fast as Chrome does (face
+detection runs in a worker in both). What the app adds is an icon, full screen
+and landscape without asking.
+
+Differences, from `APP` in `src/env.ts` (true when Capacitor's
+`window.Capacitor` is there, also under `app:dev`):
+
+- **On-device only.** No online leaderboard: everything marked `.web-only` is
+  hidden (`body.app`), and nothing goes to `/api`.
+- **No face download** at game over (the WebView can't save files).
+- **Full screen and landscape** come from the app (`MainActivity.java`, the
+  manifest), not from `requestFullscreen`.
+- The camera permission is Android's (`CAMERA` in
+  `android/app/src/main/AndroidManifest.xml`), asked the first time the game
+  opens the camera.
+
+**One-time setup** (JDK 21 and the Android SDK; no Android Studio needed):
+
+```sh
+sudo pacman -S jdk21-openjdk         # Arch; any JDK 21 works
+# Command-line tools from https://developer.android.com/studio#command-line-tools-only
+mkdir -p ~/Android/Sdk/cmdline-tools && cd ~/Android/Sdk/cmdline-tools
+unzip ~/Downloads/commandlinetools-linux-*_latest.zip && mv cmdline-tools latest
+export ANDROID_HOME=~/Android/Sdk    # also in your shell's rc file
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+```
+
+On the phone, turn on developer options and USB debugging, plug it in and
+allow the laptop (`adb devices` lists it).
+
+**Run it** (a debug build, installed over USB; nothing is published):
+
+```sh
+npm run app:dev      # the app shows the debug dev server, with live reload
+npm run app:dev -- 5180   # on another port
+npm run app:run      # the app with the production build inside, as it would ship
+npm run app:open     # the Android project in Android Studio
+```
+
+`app:dev` starts `npm run dev:debug` on localhost, forwards its port to the
+phone (`adb reverse`), and points the app at it, so edits show up in the app
+like in a browser tab, and the debug panel's perf log saves to `perf-logs/`.
+Ctrl+C stops both; the app keeps pointing at the dev server until the next
+`app:run`. Inspect the app's WebView from `chrome://inspect` on the laptop.
+
+**Without the SDK**, install an APK that CI built: the `Android` workflow
+builds `poopy-bird-apk` (the production build) and `poopy-bird-debug-panel-apk`
+(`build:debug`: the panel's "D" button bottom left, tuning) on every PR and
+push to main. Take the run's id from `gh run list --workflow Android`:
+
+```sh
+gh run download <run-id> -n poopy-bird-debug-panel-apk -D /tmp/apk
+adb install -r /tmp/apk/poopy-bird-debug-panel.apk
+```
+
+The debug panel's "Save perf log" only reaches the laptop under `app:dev`; in
+an installed build it can't save (the WebView doesn't download).
 
 ## Controls
 
@@ -925,6 +991,8 @@ src/
   random.ts     pick, rnd (seeded)
   session.ts    dataset sessions: scripts, recorder, format, checks   session.test.ts
   collect.ts    the dataset recorder page (collect.html)
+android/        the Android app's project (Capacitor; README "Android app")
+capacitor.config.ts  the app's id and name, and its web build (dist/)
 collector/
   server.ts     dataset upload/download server (Node, no deps)       server.test.ts
   leaderboard.ts  the online leaderboard's routes and storage        leaderboard.test.ts
@@ -932,6 +1000,7 @@ collector/
   Dockerfile
 scripts/
   copy-wasm.mjs    node_modules → public/mediapipe/wasm, public/faceid
+  app-dev.mjs      app:dev: the dev server, and the Android app showing it
   fetch-model.mjs  downloads face_landmarker.task
   data.ts          data:pull / data:purge
   leaderboard.ts   leaderboard moderation: list and remove runs

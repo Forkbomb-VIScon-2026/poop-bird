@@ -12,6 +12,9 @@
     "build": "npm run typecheck && vite build",
     "build:debug": "npm run typecheck && vite build --mode debug",
     "preview": "vite preview",
+    "app:run": "npm run build && cap run android",
+    "app:dev": "node scripts/app-dev.mjs",
+    "app:open": "cap open android",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
@@ -31,10 +34,13 @@
     "prebuild:debug": "node scripts/copy-wasm.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
     "@mediapipe/tasks-vision": "^1.1.0",
     "@vladmandic/face-api": "^1.7.15"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.19.2",
     "eslint": "^10.12.0",
